@@ -179,6 +179,17 @@ fun SearchScreen(vm: MainViewModel) {
     }
 }
 
+/** "FLAC Hi-Res", "FLAC" or "MP3": the file that was saved (its extension; the requested quality when the name says nothing). */
+private fun DownloadTask.fileFormat(): String {
+    val ext = savedUri?.let { android.net.Uri.decode(it).substringAfterLast('.', "").lowercase() }.orEmpty()
+    val flac = ext == "flac" || (ext !in setOf("mp3", "m4a") && quality != Quality.MP3)
+    return when {
+        !flac -> ext.uppercase().ifBlank { "MP3" }
+        quality == Quality.HI_RES -> "FLAC Hi-Res"
+        else -> "FLAC"
+    }
+}
+
 /** One track line, shared by the album and playlist pages. */
 @Composable
 private fun TrackRow(vm: MainViewModel, album: Album, track: Track, subtitle: String, showCover: Boolean = false, onPlay: () -> Unit = { vm.play(album, track) }) {
@@ -198,7 +209,10 @@ private fun TrackRow(vm: MainViewModel, album: Album, track: Track, subtitle: St
                     Spacer(Modifier.width(4.dp))
                 }
                 Text(subtitle, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                if (track.quality.isNotBlank()) { Spacer(Modifier.width(6.dp)); QualityBadge(track.quality, track.hiRes) }
+                // Downloaded songs show the format of the file on the device; the rest show the quality Qobuz streams.
+                val fmt = if (item?.status == TaskStatus.COMPLETED) item.fileFormat() else null
+                if (fmt != null) { Spacer(Modifier.width(6.dp)); QualityBadge(fmt, item!!.quality == Quality.HI_RES) }
+                else if (track.quality.isNotBlank()) { Spacer(Modifier.width(6.dp)); QualityBadge(track.quality, track.hiRes) }
             }
         }
         if (!showCover) Text(mmss(track.durationSec), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
