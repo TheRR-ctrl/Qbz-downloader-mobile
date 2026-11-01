@@ -573,12 +573,20 @@ private fun LyricsPage(vm: MainViewModel, album: Album, track: Track) {
                     androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxSize(), state = state, contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 16.dp, end = 16.dp, top = pad, bottom = pad)) {
                         itemsIndexed(lyrics.lines) { i, line ->
                             val on = !lyrics.synced || i == current
-                            val size by androidx.compose.animation.core.animateFloatAsState(if (on && lyrics.synced) 34f else 28f, androidx.compose.animation.core.tween(300), label = "size")
-                            val alpha by androidx.compose.animation.core.animateFloatAsState(if (on) 1f else .4f, androidx.compose.animation.core.tween(300), label = "alpha")
+                            // Emil's motion rules: animate transform and opacity (never font size, which re-lays out the text every frame),
+                            // ease-out, short. Lines fade with their distance from the one being sung, like a scrolling wheel.
+                            val dist = if (lyrics.synced && current >= 0) kotlin.math.abs(i - current) else 0
+                            val scale by androidx.compose.animation.core.animateFloatAsState(if (on && lyrics.synced) 1.16f else 1f, androidx.compose.animation.core.tween(if (on) 280 else 200, easing = UiEaseOut), label = "scale")
+                            val alpha by androidx.compose.animation.core.animateFloatAsState(
+                                when { !lyrics.synced || dist == 0 -> 1f; dist == 1 -> .55f; dist == 2 -> .42f; else -> .3f },
+                                androidx.compose.animation.core.tween(if (on) 280 else 200, easing = UiEaseOut), label = "alpha",
+                            )
                             Text(
-                                line.text.ifBlank { "♪" }, fontSize = size.sp, fontWeight = FontWeight.Bold,
+                                line.text.ifBlank { "♪" }, fontSize = 28.sp, fontWeight = FontWeight.Bold,
                                 color = OnPlayer.copy(alpha = alpha),
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp).let { if (lyrics.synced) it.clickable { browsing = false; vm.seekTo((line.timeMs - vm.lyricsOffsetMs).coerceAtLeast(0)) } else it },
+                                modifier = Modifier.fillMaxWidth(if (lyrics.synced) .85f else 1f).padding(vertical = 8.dp)
+                                    .graphicsLayer { scaleX = scale; scaleY = scale; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, .5f) }
+                                    .let { if (lyrics.synced) it.clickable { browsing = false; vm.seekTo((line.timeMs - vm.lyricsOffsetMs).coerceAtLeast(0)) } else it },
                             )
                         }
                     }

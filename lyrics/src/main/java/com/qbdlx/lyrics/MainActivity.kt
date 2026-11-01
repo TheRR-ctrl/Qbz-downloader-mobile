@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -135,10 +136,18 @@ class MainActivity : ComponentActivity() {
                     LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(top = pad, bottom = pad)) {
                         itemsIndexed(state.lines) { i, l ->
                             val on = i == idx
-                            val size by animateFloatAsState(if (on) 30f else 22f, tween(300), label = "size")
-                            val color by animateColorAsState(if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .7f), tween(300), label = "color")
-                            Text(l.text.ifBlank { "♪" }, fontSize = size.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal, color = color,
-                                modifier = Modifier.fillMaxWidth().clickable(enabled = state.status == Status.SYNCED) {
+                            val dist = if (idx >= 0) kotlin.math.abs(i - idx) else 0
+                            val ms = if (on) 280 else 200
+                            val scale by animateFloatAsState(if (on) 1.2f else 1f, tween(ms, easing = UiEaseOut), label = "scale")
+                            val color by animateColorAsState(
+                                if (on) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = when (dist) { 1 -> .8f; 2 -> .6f; else -> .45f }),
+                                tween(ms, easing = UiEaseOut), label = "color",
+                            )
+                            Text(l.text.ifBlank { "♪" }, fontSize = 22.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal, color = color,
+                                modifier = Modifier.fillMaxWidth(.83f)
+                                    .graphicsLayer { scaleX = scale; scaleY = scale; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, .5f) }
+                                    .clickable(enabled = state.status == Status.SYNCED) {
                                     // jump the playing app to this line (undo the manual sync offset first)
                                     browsing = false
                                     Tracker.controls()?.seekTo((l.timeMs - Tracker.offsetMs).coerceAtLeast(0))
