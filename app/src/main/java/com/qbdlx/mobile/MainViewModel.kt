@@ -647,7 +647,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private fun aiProblem(e: AiMix.AiError) = strings.aiKeyProblem(e.kind.name) + if (e.kind == AiMix.AiError.Kind.Bad) " (${e.message})" else ""
 
     /**
-     * Genius-style step 1: the AI (or, failing that, the phone) proposes mixes from the iPod's songs, one per request, optionally
+     * AI mix step 1: the AI (or, failing that, the phone) proposes mixes from the iPod's songs, one per request, optionally
      * starting from a seed song. Nothing is written to the iPod: the result is a preview the user can keep, drop or regenerate.
      */
     fun aiGenerate(requests: List<String>, size: Int, seed: com.qbdlx.mobile.ipod.IpodTrack?) {
@@ -686,7 +686,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Genius-style step 2: writes the chosen previews to the iPod as playlists (progress and Stop like every iPod task). */
+    /** AI mix step 2: writes the chosen previews to the iPod as playlists (progress and Stop like every iPod task). */
     fun aiSave(chosen: Set<Int>) {
         val uri = ipodUri ?: return
         val list = aiPreview ?: return

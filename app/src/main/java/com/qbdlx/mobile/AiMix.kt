@@ -14,7 +14,7 @@ class MixSong(val n: Int, val title: String, val artist: String, val album: Stri
 class Mix(val name: String, val ns: List<Int>)
 
 /**
- * "Genius-like" mixes made by AI, following the video-scout-pipeline pattern: the AI only PROPOSES, the code decides.
+ * AI mixes made by AI, following the video-scout-pipeline pattern: the AI only PROPOSES, the code decides.
  * Everything the AI says is checked here (numbers that exist, no repeats, size limits); with no key, no network or a bad answer
  * the caller falls back to [localMixes], so the feature never depends on the AI.
  */
@@ -23,7 +23,7 @@ object AiMix {
     const val MAX_MIXES = 8
     const val MIN_MIX = 5
     const val MAX_MIX = 50
-    /** Mix lengths offered in the dialog (Apple's Genius used 25 to 100; the phone keeps them short). */
+    /** Mix lengths offered in the dialog (the phone keeps them short). */
     val SIZES = listOf(15, 25, 50)
     const val DEFAULT_SIZE = 25
 
