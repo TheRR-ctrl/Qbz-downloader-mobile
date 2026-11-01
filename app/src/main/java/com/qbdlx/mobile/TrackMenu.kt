@@ -63,7 +63,7 @@ fun TrackMenu(vm: MainViewModel, album: Album, track: Track, expanded: Boolean, 
         Item(s.goToAlbum, Icons.Default.Album) { vm.openAlbum(album.id) }
         Item(s.goToArtist, Icons.Default.Person, track.artist.isNotBlank()) { vm.openArtist(track.artist) }
         Item(s.addToPlaylist, Icons.AutoMirrored.Filled.PlaylistAdd) { dialog = TrackDialog.Playlists; vm.loadLibrary() }
-        if (done) Item(s.sendToIpod, Icons.Default.Smartphone) { task?.let { vm.sendToIpod(it) } }
+        if (done && (vm.ipodPlugged || vm.ipodProgress != null)) Item(s.sendToIpod, Icons.Default.Smartphone) { task?.let { vm.sendToIpod(it) } }
         if (done && task?.savedUri != null) Item(s.shareTrack, Icons.Default.Share) { shareToDrive(context, listOf(task.savedUri!!), track.displayTitle, chooser = true) }
         Item(s.copyLink, Icons.Default.ContentCopy) {
             (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
