@@ -71,6 +71,11 @@ class QobuzApi(val http: OkHttpClient = OkHttpClient()) {
         trackIds.distinct().chunked(50).forEach { post("favorite/create", mapOf("track_ids" to it.joinToString(","), "type" to "track")) }
     }
 
+    /** Removes tracks from the user's favourite tracks. */
+    fun removeFavoriteTracks(trackIds: List<Long>) {
+        trackIds.distinct().chunked(50).forEach { post("favorite/delete", mapOf("track_ids" to it.joinToString(","), "type" to "track")) }
+    }
+
     fun addTrackToPlaylist(playlistId: String, trackId: Long) {
         post("playlist/addTracks", mapOf("playlist_id" to playlistId, "track_ids" to "$trackId", "no_duplicate" to "true"))
     }

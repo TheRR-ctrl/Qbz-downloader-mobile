@@ -381,6 +381,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** True when the song is in the user's Qobuz favourite tracks (as far as the library already loaded says). */
+    fun isFavorite(trackId: Long): Boolean = favTracks?.any { it.second.id == trackId } == true
+
+    /** The heart of the player: adds or removes the song in Qobuz, showing the change at once and undoing it if Qobuz refuses. */
+    fun toggleFavorite(album: Album, track: Track) {
+        val before = favTracks.orEmpty()
+        val adding = before.none { it.second.id == track.id }
+        favTracks = if (adding) listOf(album to track) + before else before.filter { it.second.id != track.id }
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) { if (adding) api.addFavoriteTracks(listOf(track.id)) else api.removeFavoriteTracks(listOf(track.id)) }
+            } catch (e: Exception) {
+                favTracks = before
+                error = e.message
+            }
+        }
+    }
+
     private fun importFrom(read: () -> String?) {
         openImport()
         importJob?.cancel()
