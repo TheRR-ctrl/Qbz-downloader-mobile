@@ -6,6 +6,10 @@ import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.background
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.basicMarquee
@@ -66,9 +70,27 @@ class MainActivity : ComponentActivity() {
             val accent by Tracker.accent.collectAsState()
             MaterialTheme(colorScheme = schemeFor(accent, isSystemInDarkTheme())) {
                 Surface(Modifier.fillMaxSize()) {
+                    CoverBackdrop(accent) // blurred cover behind everything
                     var offset by remember { mutableLongStateOf(Tracker.offsetMs) }
                     Screen(offset) { v -> offset = v; Tracker.offsetMs = v; prefs.edit().putLong("offset", v).apply() }
                 }
+            }
+        }
+    }
+
+    /** The cover shrunk to a few pixels and stretched back (a blur on every Android version), under a dark veil. Fades between songs. */
+    @Composable
+    private fun CoverBackdrop(key: Int) {
+        if (!isSystemInDarkTheme()) return // the light theme keeps its plain background (dark text would not read over the veil)
+        val cover = Tracker.cover
+        val img = remember(cover, key) {
+            cover?.let { runCatching { android.graphics.Bitmap.createScaledBitmap(it, 16, 16, true).asImageBitmap() }.getOrNull() }
+        }
+        Crossfade(img, animationSpec = tween(400, easing = UiEaseOut), label = "backdrop") { b ->
+            Box(Modifier.fillMaxSize()) {
+                if (b != null) androidx.compose.foundation.Image(b, null, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop, alpha = .55f,
+                    filterQuality = androidx.compose.ui.graphics.FilterQuality.Medium)
+                Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color.Black.copy(.35f), Color.Black.copy(.75f)))))
             }
         }
     }
