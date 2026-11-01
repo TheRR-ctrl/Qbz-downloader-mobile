@@ -23,6 +23,15 @@ class PlayQueueTest {
         assertEquals("the last track stays current", "t3", q.current)
     }
 
+    @Test fun movingAnUpcomingTrackKeepsTheCurrentOne() {
+        val q = queue(5, start = 1) // t1 played, t2 current, upcoming t3 t4 t5
+        q.moveUpcoming(2, 0)
+        assertEquals("t2", q.current)
+        assertEquals(listOf("t5", "t3", "t4"), q.state().upcoming)
+        q.moveUpcoming(0, 9) // out of range: nothing changes
+        assertEquals(listOf("t5", "t3", "t4"), q.state().upcoming)
+    }
+
     @Test fun startsWhereTheUserTapped() {
         val q = queue(5, start = 3)
         assertEquals("t4", q.current)

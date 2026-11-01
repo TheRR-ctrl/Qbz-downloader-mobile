@@ -1,5 +1,11 @@
 package com.qbdlx.mobile
 
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import com.valentinilk.shimmer.shimmer
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.BorderStroke
@@ -48,10 +54,13 @@ fun QualityBadge(text: String, hiRes: Boolean) {
 
 @Composable
 fun Cover(url: String?, size: Int, modifier: Modifier = Modifier) {
+    var loading by remember(url) { mutableStateOf(url != null) }
     AsyncImage(
         url, null,
-        modifier.size(size.dp).clip(RoundedCornerShape(8.dp)),
+        modifier.size(size.dp).clip(RoundedCornerShape(8.dp))
+            .then(if (loading) Modifier.background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .35f)).shimmer() else Modifier),
         contentScale = ContentScale.Crop,
+        onState = { loading = it is coil.compose.AsyncImagePainter.State.Loading },
     )
 }
 

@@ -1,6 +1,7 @@
 package com.qbdlx.mobile
 
 import androidx.activity.compose.BackHandler
+import com.valentinilk.shimmer.shimmer
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -68,6 +69,37 @@ import androidx.compose.ui.unit.sp
 /** Send finished MP3 downloads to an iPod nano 6G/7G and browse what is on it (experimental; see ipod/IpodDevice.kt). */
 @Composable
 fun IpodScreen(vm: MainViewModel) {
+    // iOS-flavoured palette for this screen only: system blue seed, tonal surfaces (MaterialKolor).
+    val scheme = com.materialkolor.rememberDynamicColorScheme(
+        seedColor = androidx.compose.ui.graphics.Color(0xFF0A84FF), isDark = androidx.compose.foundation.isSystemInDarkTheme(), isAmoled = false,
+        style = com.materialkolor.PaletteStyle.TonalSpot,
+    )
+    MaterialTheme(colorScheme = scheme) {
+        Box(Modifier.fillMaxSize()) {
+            IpodScreenBody(vm)
+            IpodDoneCheck(vm.ipodDone)
+        }
+    }
+}
+
+/** The check animation (Lottie) that plays for a moment when a send finishes well. */
+@Composable
+private fun IpodDoneCheck(tick: Int) {
+    var show by remember { mutableStateOf(false) }
+    var seen by remember { mutableStateOf(tick) }
+    LaunchedEffect(tick) { if (tick != seen) { seen = tick; show = true; kotlinx.coroutines.delay(1700); show = false } }
+    androidx.compose.animation.AnimatedVisibility(show, Modifier.fillMaxSize(), enter = androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(150)), exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(250))) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(150.dp).clip(RoundedCornerShape(28.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh), contentAlignment = Alignment.Center) {
+                val comp by com.airbnb.lottie.compose.rememberLottieComposition(com.airbnb.lottie.compose.LottieCompositionSpec.RawRes(R.raw.ok_check))
+                com.airbnb.lottie.compose.LottieAnimation(comp, Modifier.size(110.dp), iterations = 1)
+            }
+        }
+    }
+}
+
+@Composable
+private fun IpodScreenBody(vm: MainViewModel) {
     val s = LocalStrings.current
     BackHandler { vm.closeIpod() }
     val insp = vm.ipodInspection
@@ -221,7 +253,8 @@ fun IpodScreen(vm: MainViewModel) {
                             TextButton({ vm.ipodStop() }, enabled = !vm.ipodStopping) { Text(s.stopButton) }
                         }
                     } else {
-                        LinearProgressIndicator(Modifier.fillMaxWidth())
+                        @OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+                        androidx.compose.material3.LoadingIndicator(Modifier.size(40.dp))
                         Text(s.ipodTaskIndeterminateHint, fontSize = 12.sp, color = muted)
                     }
                 }
@@ -229,11 +262,10 @@ fun IpodScreen(vm: MainViewModel) {
         }
         if (ready) {
             item {
-                TabRow(vm.ipodTab) {
-                    Tab(vm.ipodTab == 0, { vm.ipodTab = 0 }, text = { Text("${s.ipodTabSend} (${pending.size})") })
-                    Tab(vm.ipodTab == 1, { vm.ipodTab = 1 }, text = { Text("${s.ipodTabOn} (${vm.ipodTracks.size})") })
-                    Tab(vm.ipodTab == 2, { vm.ipodTab = 2 }, text = { Text("${s.ipodTabPlaylists} (${vm.ipodPlaylists.size})") })
-                }
+                IosSegmented(
+                    listOf("${s.ipodTabSend} (${pending.size})", "${s.ipodTabOn} (${vm.ipodTracks.size})", "${s.ipodTabPlaylists} (${vm.ipodPlaylists.size})"),
+                    vm.ipodTab, { vm.ipodTab = it },
+                )
             }
         }
         if (ready && vm.ipodTab == 1) {
@@ -545,6 +577,24 @@ fun ListScrollbar(state: androidx.compose.foundation.lazy.LazyListState, modifie
 }
 
 /** A cell of the iPod library view (artist or album): cover, name and a small line; tap opens (or toggles while selecting), long press selects. */
+/** An iOS-style segmented control: a rounded track with a thumb that slides to the chosen segment on a spring. */
+@Composable
+private fun IosSegmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(cs.surfaceVariant).padding(2.dp)) {
+        val w = maxWidth / options.size
+        val x by androidx.compose.animation.core.animateDpAsState(w * selected, androidx.compose.animation.core.spring(dampingRatio = 0.8f, stiffness = 500f), label = "thumb")
+        Box(Modifier.offset(x = x).width(w).height(32.dp).clip(RoundedCornerShape(8.dp)).background(cs.surface))
+        Row {
+            options.forEachIndexed { i, label ->
+                Box(Modifier.width(w).height(32.dp).clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) { onSelect(i) }, contentAlignment = Alignment.Center) {
+                    Text(label, fontSize = 12.sp, fontWeight = if (i == selected) FontWeight.SemiBold else FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis, color = if (i == selected) cs.onSurface else cs.onSurfaceVariant)
+                }
+            }
+        }
+    }
+}
+
 /** Tap target with the same press feedback as the library cells: scale 0.97, 160 ms, strong ease-out. */
 @Composable
 private fun Modifier.pressable(onClick: () -> Unit): Modifier {
@@ -567,7 +617,10 @@ private fun LibCell(title: String, sub: String, cover: String?, selected: Boolea
     val badge by androidx.compose.animation.core.animateFloatAsState(if (selected) 1f else 0f, androidx.compose.animation.core.tween(180, easing = ease), label = "badge")
     val art: @Composable (Modifier) -> Unit = { m ->
         Box(m.clip(RoundedCornerShape(10.dp)).background(cs.surfaceVariant), contentAlignment = Alignment.Center) {
-            if (cover != null) coil.compose.AsyncImage(cover, null, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop, filterQuality = androidx.compose.ui.graphics.FilterQuality.Low)
+            var loading by remember(cover) { mutableStateOf(cover != null) }
+            if (loading) Box(Modifier.fillMaxSize().shimmer())
+            if (cover != null) coil.compose.AsyncImage(cover, null, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop, filterQuality = androidx.compose.ui.graphics.FilterQuality.Low,
+                onState = { loading = it is coil.compose.AsyncImagePainter.State.Loading })
             else Text("♪", fontSize = 22.sp, color = cs.onSurfaceVariant)
             if (badge > 0f) Box(Modifier.align(Alignment.TopEnd).padding(5.dp).size(22.dp)
                 .graphicsLayer { val k = 0.8f + 0.2f * badge; scaleX = k; scaleY = k; alpha = badge }

@@ -1034,6 +1034,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             if (stopped) playlistAfterSend = null // an error (e.g. the iPod is full) still builds the playlists from the songs that are there
             ipodMessage = (if (error == null && (covers > 0 || artworkNote != null)) text + " " + strings.ipodCovers(covers, artworkNote) else text) +
                 (if (ipodLyrics) " " + strings.ipodLyricsDone(lyricsAdded) else "")
+            if (error == null && !stopped) ipodDone++
             if (!stopped) finishIpodPlaylist() else { playlistAfterSend = null; ipodRefresh() }
         }
     }
@@ -1105,6 +1106,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Bumped when a send or a playlist build finishes well; the iPod screen plays its check animation. */
+    var ipodDone by mutableStateOf(0)
     private fun finishIpodPlaylist() {
         val pending = playlistAfterSend
         if (pending == null) { ipodRefresh(); return }
@@ -1122,6 +1125,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
             ipodLyricsStatus = null; ipodLyricsProgress = null
             ipodMessage = msgs.joinToString(" ")
+            ipodDone++
             ipodRefresh()
         }
     }
@@ -1924,6 +1928,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         resetNext(); syncNotification()
     }
     fun removeUpcoming(k: Int) { playQueue.removeUpcoming(k); refreshQueue(); resetNext(); saveQueue() }
+    fun moveUpcoming(from: Int, to: Int) { playQueue.moveUpcoming(from, to); refreshQueue(); resetNext(); saveQueue() }
     fun clearUpcoming() { playQueue.clearUpcoming(); refreshQueue(); resetNext(); saveQueue() }
 
     fun updateCrossfade(ms: Int) {
