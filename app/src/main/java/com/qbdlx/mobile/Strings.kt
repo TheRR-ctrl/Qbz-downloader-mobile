@@ -363,6 +363,9 @@ interface Strings {
     val ipodNothingLeft: String
     val nowButton: String
     val nowAccess: String
+    val nowIdentifying: String
+    val nowTapToDownload: String
+    val nowAllow: String
     val nowNothing: String
     fun nowSearching(title: String): String
     fun nowNotFound(title: String): String
@@ -798,6 +801,9 @@ object English : Strings {
     override val ipodNotReadyYet = "The iPod is not ready yet: plug it in and try again"
     override val ipodNothingLeft = "Nothing left to send: it is all on the iPod"
     override val nowButton = "Playing"
+    override val nowIdentifying = "Identifying the song…"
+    override val nowTapToDownload = "Tap to download"
+    override val nowAllow = "Allow notification access"
     override val nowAccess = "Allow notification access for QBDLX Mobile in the screen that opens, then tap again"
     override val nowNothing = "Nothing is playing in the Qobuz app (start a song there first)"
     override fun nowSearching(title: String) = "Looking for \"$title\" in Qobuz…"
@@ -1239,6 +1245,9 @@ object Spanish : Strings {
     override val ipodNotReadyYet = "El iPod aún no está listo: conéctalo e inténtalo de nuevo"
     override val ipodNothingLeft = "No queda nada por enviar: todo está en el iPod"
     override val nowButton = "Sonando"
+    override val nowIdentifying = "Identificando la canción…"
+    override val nowTapToDownload = "Pulsa para descargar"
+    override val nowAllow = "Dar acceso a las notificaciones"
     override val nowAccess = "Da acceso a las notificaciones a QBDLX Mobile en la pantalla que se abre y vuelve a pulsar"
     override val nowNothing = "No suena nada en la app de Qobuz (empieza una canción allí primero)"
     override fun nowSearching(title: String) = "Buscando \"$title\" en Qobuz…"

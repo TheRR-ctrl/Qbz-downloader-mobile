@@ -203,8 +203,8 @@ private fun AppShell(vm: MainViewModel) {
                     // Search lives in the page headers (a button at the top), not in the bottom bar.
                     NavigationBarItem(
                         modifier = Modifier.weight(1f),
-                        selected = false,
-                        onClick = { vm.downloadNowPlaying() },
+                        selected = vm.showListen,
+                        onClick = { vm.openListening() },
                         icon = { Icon(Icons.Filled.MusicNote, LocalStrings.current.nowButton) },
                         label = { Text(LocalStrings.current.nowButton, maxLines = 1, softWrap = false, fontSize = 10.sp) },
                         colors = qbdlxNavColors(),
@@ -220,7 +220,7 @@ private fun AppShell(vm: MainViewModel) {
                         )
                         NavigationBarItem(
                             modifier = Modifier.weight(1f),
-                            selected = vm.tab == t && vm.detail == null && vm.playlistDetail == null && vm.artistPage == null && !vm.showDiagnostics && !vm.showIpod && !vm.showImport,
+                            selected = vm.tab == t && vm.detail == null && vm.playlistDetail == null && vm.artistPage == null && !vm.showDiagnostics && !vm.showIpod && !vm.showImport && !vm.showListen,
                             onClick = { vm.closeAlbum(); vm.closeArtist(); vm.closePlaylist(); vm.closeDiagnostics(); vm.closeIpod(); vm.closeImport(); vm.tab = t },
                             icon = { Icon(t.icon(), LocalStrings.current.tab(t)) },
                             label = { Text(LocalStrings.current.tab(t), maxLines = 1, softWrap = false, fontSize = 10.sp) },
@@ -239,6 +239,7 @@ private fun AppShell(vm: MainViewModel) {
                     vm.showDiagnostics -> "diagnostics"
                     vm.showIpod -> "ipod"
                     vm.showImport -> "import"
+                    vm.showListen -> "listen"
                     vm.detail != null -> "album"
                     vm.playlistDetail != null -> "playlist"
                     vm.artistPage != null -> "artist"
@@ -259,6 +260,7 @@ private fun AppShell(vm: MainViewModel) {
                         "diagnostics" -> DiagnosticsScreen(vm)
                         "ipod" -> IpodScreen(vm)
                         "import" -> ImportScreen(vm)
+                        "listen" -> ListeningScreen(vm)
                         "album" -> AlbumScreen(vm)
                         "playlist" -> PlaylistScreen(vm)
                         Tab.Home.name -> HomeScreen(vm)

@@ -52,7 +52,7 @@ import kotlinx.coroutines.delay
 private fun mmss(sec: Int) = "%d:%02d".format(sec / 60, sec % 60)
 
 @Composable
-private fun Title(text: String) =
+fun Title(text: String) =
     Text(text, fontSize = 32.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 12.dp))
 
 /** A page title with the search button at its right, where the search tab used to be. */

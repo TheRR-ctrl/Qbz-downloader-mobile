@@ -344,7 +344,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun importStop() { importJob?.cancel(); importRetryJob?.cancel(); importProgress = null; notice = strings.importStopped }
 
     fun openImport() { closeAlbum(); closePlaylist(); closeDiagnostics(); closeIpod(); showImport = true }
-    fun closeImport() { showImport = false }
+    /** Closing the import screen also closes "Sonando": every navigation path already calls this, and both are full-screen extras. */
+    fun closeImport() { showImport = false; showListen = false }
 
     /** Reads the list the scanner shared (or the user picked) and looks every song up on Qobuz. */
     fun importList(uri: android.net.Uri) = importFrom {
@@ -1287,20 +1288,49 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** Set when the notification-access screen must open (the Activity does it and clears the flag). */
     var openListenerSettings by mutableStateOf(false)
 
-    /** Finds what the official Qobuz app is playing and downloads it. */
-    fun downloadNowPlaying() {
-        if (!QobuzNowPlaying.accessGranted(context)) { notice = strings.nowAccess; openListenerSettings = true; return }
+    var showListen by mutableStateOf(false); private set
+    /** The song the Qobuz app has on, and the Qobuz track it was matched to (null while looking or when none). */
+    var listenSong by mutableStateOf<PlayingNow?>(null); private set
+    var listenMatch by mutableStateOf<ImportItem?>(null); private set
+    var listenSearching by mutableStateOf(false); private set
+    var listenAccess by mutableStateOf(true); private set
+    private var listenKey: String? = null
+
+    /** "Sonando": shows the identified song; nothing is downloaded until the round button is pressed. */
+    fun openListening() {
+        closeAlbum(); closePlaylist(); closeDiagnostics(); closeIpod(); closeImport(); closeArtist()
+        showListen = true
+        refreshListening()
+    }
+
+    /** Reads what Qobuz is playing; looks the song up on Qobuz only when it changed. Called every couple of seconds while the screen is open. */
+    fun refreshListening() {
+        listenAccess = QobuzNowPlaying.accessGranted(context)
+        if (!listenAccess) { listenSong = null; listenMatch = null; listenKey = null; return }
         val playing = QobuzNowPlaying.read(context)
-        if (playing == null) { notice = strings.nowNothing; return }
-        notice = strings.nowSearching(playing.title)
+        listenSong = playing
+        val key = playing?.let { "${it.title}|${it.artist}|${it.album}" }
+        if (key == listenKey) return
+        listenKey = key; listenMatch = null
+        if (playing == null) return
         viewModelScope.launch {
-            val song = ImportedSong(playing.title, playing.artist, playing.album, playing.durationSec, "")
-            val item = withContext(Dispatchers.IO) { searchSong(applyAliases(song)) }
-            val pick = item.candidates.firstOrNull()
-            if (item.level == MatchLevel.Missing || pick == null) { notice = strings.nowNotFound(playing.title); return@launch }
-            requestDownload(DownloadRequest.Tracks(listOf(pick)))
-            notice = strings.nowDownloading(pick.second.displayTitle, pick.second.artist, item.level == MatchLevel.Sure)
+            listenSearching = true
+            try {
+                val item = withContext(Dispatchers.IO) { searchSong(applyAliases(ImportedSong(playing.title, playing.artist, playing.album, playing.durationSec, ""))) }
+                if (listenKey == key) listenMatch = item
+            } catch (e: Exception) { if (listenKey == key) listenKey = null } finally { listenSearching = false }
         }
+    }
+
+    fun askListenAccess() { notice = strings.nowAccess; openListenerSettings = true }
+
+    /** The round button of "Sonando": downloads the identified song. */
+    fun downloadListening() {
+        val song = listenSong ?: return
+        val item = listenMatch; val pick = item?.candidates?.firstOrNull()
+        if (item == null || item.level == MatchLevel.Missing || pick == null) { notice = strings.nowNotFound(song.title); return }
+        requestDownload(DownloadRequest.Tracks(listOf(pick)))
+        notice = strings.nowDownloading(pick.second.displayTitle, pick.second.artist, item.level == MatchLevel.Sure)
     }
 
     fun ipodRestore() {
