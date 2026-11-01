@@ -6,7 +6,12 @@ import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.background
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
@@ -19,6 +24,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -65,9 +72,45 @@ class MainActivity : ComponentActivity() {
             val accent by Tracker.accent.collectAsState()
             MaterialTheme(colorScheme = schemeFor(accent, isSystemInDarkTheme())) {
                 Surface(Modifier.fillMaxSize()) {
+                    CoverBackdrop(accent) // blurred cover behind everything
                     var offset by remember { mutableLongStateOf(Tracker.offsetMs) }
                     Screen(offset) { v -> offset = v; Tracker.offsetMs = v; prefs.edit().putLong("offset", v).apply() }
                 }
+            }
+        }
+    }
+
+    /** The cover shrunk to a few pixels and stretched back (a blur on every Android version), under a dark veil. Fades between songs. */
+    @Composable
+    private fun CoverBackdrop(key: Int) {
+        if (!isSystemInDarkTheme()) return // the light theme keeps its plain background (dark text would not read over the veil)
+        val cover = Tracker.cover
+        val img = remember(cover, key) {
+            cover?.let { runCatching { android.graphics.Bitmap.createScaledBitmap(it, 64, 64, true).asImageBitmap() }.getOrNull() }
+        }
+        Crossfade(img, animationSpec = tween(400, easing = UiEaseOut), label = "backdrop") { b ->
+            Box(Modifier.fillMaxSize()) {
+                // real blur on Android 12+, a smooth 64 px upscale on older versions
+                val blur = if (android.os.Build.VERSION.SDK_INT >= 31) Modifier.blur(48.dp, androidx.compose.ui.draw.BlurredEdgeTreatment.Unbounded) else Modifier
+                if (b != null) androidx.compose.foundation.Image(b, null, Modifier.fillMaxSize().then(blur), contentScale = androidx.compose.ui.layout.ContentScale.Crop, alpha = .55f,
+                    filterQuality = androidx.compose.ui.graphics.FilterQuality.Medium)
+                Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color.Black.copy(.35f), Color.Black.copy(.75f)))))
+            }
+        }
+    }
+
+    /** Three dots that light up one after another as [progress] goes 0..1, and breathe while [active]. Opacity and scale only. */
+    @Composable
+    private fun BreathDots(progress: Float, active: Boolean, modifier: Modifier = Modifier) {
+        val breathe = androidx.compose.animation.core.rememberInfiniteTransition(label = "breathe").animateFloat(
+            1f, 1.12f, androidx.compose.animation.core.infiniteRepeatable(tween(1200, easing = androidx.compose.animation.core.FastOutSlowInEasing), androidx.compose.animation.core.RepeatMode.Reverse), label = "b").value
+        val show by animateFloatAsState(if (active) 1f else .35f, tween(if (active) 280 else 200, easing = UiEaseOut), label = "dotsShow")
+        Row(modifier.graphicsLayer { alpha = show; val k = if (active) breathe else 1f; scaleX = k; scaleY = k; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, .5f) },
+            horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            for (n in 0..2) {
+                val lit by animateFloatAsState(if (progress * 3f >= n + .15f) 1f else .3f, tween(220, easing = UiEaseOut), label = "dot$n")
+                Box(Modifier.size(14.dp).graphicsLayer { alpha = lit; scaleX = .8f + .2f * lit; scaleY = .8f + .2f * lit }
+                    .background(MaterialTheme.colorScheme.primary, androidx.compose.foundation.shape.CircleShape))
             }
         }
     }
@@ -133,9 +176,28 @@ class MainActivity : ComponentActivity() {
                 BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                     // a third of the height as padding above, so the line being sung sits in the first third however many lines fit
                     val pad = if (state.status == Status.SYNCED) (maxHeight / 3 - 24.dp).coerceAtLeast(0.dp) else 12.dp
-                    LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(top = pad, bottom = pad)) {
+                    LazyColumn(Modifier.fillMaxSize()
+                        .graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }
+                        .drawWithContent {
+                            drawContent() // soft fade at the top and bottom edges
+                            val f = size.height * .12f / size.height
+                            drawRect(androidx.compose.ui.graphics.Brush.verticalGradient(
+                                0f to androidx.compose.ui.graphics.Color.Transparent, f to androidx.compose.ui.graphics.Color.Black,
+                                1f - f to androidx.compose.ui.graphics.Color.Black, 1f to androidx.compose.ui.graphics.Color.Transparent),
+                                blendMode = androidx.compose.ui.graphics.BlendMode.DstIn)
+                        }, state = listState, contentPadding = PaddingValues(top = pad, bottom = pad)) {
+                        // Intro longer than 5 s: three dots that fill up until the first line.
+                        val first = state.lines.firstOrNull()?.timeMs ?: 0L
+                        if (state.status == Status.SYNCED && first >= 5000) item(key = "intro") {
+                            BreathDots(if (idx < 0) (pos.toFloat() / first).coerceIn(0f, 1f) else 1f, idx < 0, Modifier.padding(vertical = 10.dp))
+                        }
                         itemsIndexed(state.lines) { i, l ->
                             val on = i == idx
+                            val span = (state.lines.getOrNull(i + 1)?.timeMs ?: (l.timeMs + 4000)) - l.timeMs
+                            if (state.status == Status.SYNCED && l.text.isBlank() && span >= 5000) {
+                                BreathDots(if (on) ((pos - l.timeMs).toFloat() / span).coerceIn(0f, 1f) else if (i < idx) 1f else 0f, on, Modifier.padding(vertical = 10.dp))
+                                return@itemsIndexed
+                            }
                             val dist = if (idx >= 0) kotlin.math.abs(i - idx) else 0
                             val ms = if (on) 280 else 200
                             val scale by animateFloatAsState(if (on) 1.2f else 1f, tween(ms, easing = UiEaseOut), label = "scale")
