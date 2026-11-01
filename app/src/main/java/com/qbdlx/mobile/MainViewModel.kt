@@ -1074,7 +1074,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val uri = ipodUri ?: return
         viewModelScope.launch {
             ipodChecking = true
-            ipodSpace = withContext(Dispatchers.IO) { readIpodSpace(uri) }
+            // Space is read on its own: a slow USB answer must never hold up the song list.
+            launch { ipodSpace = withContext(Dispatchers.IO) { readIpodSpace(uri) } }
             val device = com.qbdlx.mobile.ipod.IpodDevice(context, uri)
             val insp = withContext(Dispatchers.IO) { device.inspect() }
             ipodInspection = insp
