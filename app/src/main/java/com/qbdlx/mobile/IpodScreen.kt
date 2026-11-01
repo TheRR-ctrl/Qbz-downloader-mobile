@@ -293,22 +293,41 @@ fun IpodScreen(vm: MainViewModel) {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         itemsIndexed(listOf(0, 1, 7, 30)) { i, d -> FilterChip(vm.ipodDays == d, { vm.ipodFilterDays(d) }, { Text(s.ipodDateLabels[i]) }) }
                     }
+                    Text(s.ipodGroupTitle, fontSize = 12.sp, color = muted)
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        itemsIndexed(MainViewModel.IpodGroup.values().toList()) { i, g -> FilterChip(vm.ipodGroup == g, { vm.ipodSetGroup(g) }, { Text(s.ipodGroupLabels[i]) }) }
+                    }
                     Row {
                         TextButton({ vm.ipodTickShown(true) }) { Text(s.ipodTickAll) }
                         TextButton({ vm.ipodTickShown(false) }) { Text(s.ipodTickNone) }
                     }
                 }
             }
-            items(shown, key = { it.key }) { t ->
-                Row(Modifier.fillMaxWidth().clickable { vm.ipodToggle(t) }, verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(vm.ipodIsTicked(t), { vm.ipodToggle(t) })
-                    coil.compose.AsyncImage(
-                        model = t.album.coverUrl, contentDescription = null, contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                        modifier = Modifier.padding(end = 10.dp).size(44.dp).clip(RoundedCornerShape(6.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
-                    )
-                    Column(Modifier.weight(1f)) {
-                        Text(t.track.displayTitle, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
-                        Text("${t.track.artist} · ${t.album.title}", fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = muted)
+            var lastHeading: String? = null
+            shown.forEach { t ->
+                val heading = vm.ipodGroupOf(t)
+                if (heading != null && heading != lastHeading) {
+                    lastHeading = heading
+                    val groupSongs = shown.filter { vm.ipodGroupOf(it) == heading }
+                    val allTicked = groupSongs.all { vm.ipodIsTicked(it) }
+                    item(key = "h$heading") {
+                        Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text("${heading.ifBlank { s.ipodUnknownGroup }} (${groupSongs.size})", fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                            TextButton({ vm.ipodTickGroup(heading, !allTicked) }) { Text(if (allTicked) s.ipodTickNone else s.ipodTickAll, fontSize = 12.sp) }
+                        }
+                    }
+                }
+                item(key = t.key) {
+                    Row(Modifier.fillMaxWidth().clickable { vm.ipodToggle(t) }, verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(vm.ipodIsTicked(t), { vm.ipodToggle(t) })
+                        coil.compose.AsyncImage(
+                            model = t.album.coverUrl, contentDescription = null, contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                            modifier = Modifier.padding(end = 10.dp).size(44.dp).clip(RoundedCornerShape(6.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
+                        )
+                        Column(Modifier.weight(1f)) {
+                            Text(t.track.displayTitle, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
+                            Text("${t.track.artist} · ${t.album.title}", fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = muted)
+                        }
                     }
                 }
             }
