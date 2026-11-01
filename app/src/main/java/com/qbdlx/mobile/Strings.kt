@@ -338,6 +338,27 @@ interface Strings {
     val ipodPlaylistButton: String
     val ipodPlaylistTitle: String
     val ipodPlaylistLegend: String
+    val aiMixButton: String
+    val aiMixTitle: String
+    val aiMixHint: String
+    val aiMixCreate: String
+    val aiMixTooFew: String
+    val aiMixAsking: String
+    val aiMixNoKey: String
+    val aiMixBadAnswer: String
+    val aiMixByAi: String
+    val aiMixLocal: String
+    val aiKeyTitle: String
+    val aiKeyHow: String
+    val aiKeySteps: String
+    val aiKeyOpen: String
+    val aiKeyPaste: String
+    val aiKeySave: String
+    val aiKeyTesting: String
+    val aiKeyChange: String
+    val aiKeyForget: String
+    val aiKeyPrivacy: String
+    fun aiKeyProblem(kind: String): String
     val ipodPlaylistNone: String
     val ipodPlaylistLoadFailed: String
     fun ipodPlaylistDownloading(done: Int, total: Int): String
@@ -774,6 +795,34 @@ object English : Strings {
     override val ipodPlaylistButton = "Send a Qobuz playlist to the iPod…"
     override val ipodPlaylistTitle = "Choose one or more playlists"
     override val ipodPlaylistLegend = "🟢 already on the iPod · 🔴 not on the iPod (or empty)"
+    override val aiMixButton = "AI mix for the iPod…"
+    override val aiMixTitle = "Mix with AI"
+    override val aiMixHint = "What kind of mix? (optional) e.g. \"for running\", \"calm night\", \"similar to <song>\""
+    override val aiMixCreate = "Create mixes"
+    override val aiMixTooFew = "You need at least 5 songs on the iPod."
+    override val aiMixAsking = "Asking the AI…"
+    override val aiMixNoKey = "No AI key yet, so these mixes were made on the phone."
+    override val aiMixBadAnswer = "The AI did not give a usable answer, so these mixes were made on the phone."
+    override val aiMixByAi = "Made with AI."
+    override val aiMixLocal = "Made by artist and at random."
+    override val aiKeyTitle = "Gemini key (free)"
+    override val aiKeyHow = "How do I get it?"
+    override val aiKeySteps = "1. Open Google AI Studio and sign in with your Google account.\n2. Tap \"Create API key\".\n3. Copy the key (starts with AIza…) and paste it here."
+    override val aiKeyOpen = "Open Google AI Studio"
+    override val aiKeyPaste = "Paste from clipboard"
+    override val aiKeySave = "Test and save"
+    override val aiKeyTesting = "Testing the key…"
+    override val aiKeyChange = "Gemini key…"
+    override val aiKeyForget = "Remove key"
+    override val aiKeyPrivacy = "Only titles, artists and albums are sent to Google. The key stays on this phone."
+    override fun aiKeyProblem(kind: String) = when (kind) {
+        "BadKey" -> "Google rejected the key. Check that you copied all of it."
+        "Quota" -> "The AI is busy or out of free quota right now."
+        "Network" -> "No connection to Google."
+        "Blocked" -> "Google refused this request."
+        "NoKey" -> "Paste your key first."
+        else -> "The AI did not answer correctly."
+    }
     override val ipodPlaylistNone = "You have no playlists in Qobuz."
     override val ipodPlaylistLoadFailed = "Could not load the playlist from Qobuz."
     override fun ipodPlaylistDownloading(done: Int, total: Int) = "Downloading the playlist's missing songs as MP3… $done of $total"
@@ -1218,6 +1267,34 @@ object Spanish : Strings {
     override val ipodPlaylistButton = "Enviar una playlist de Qobuz al iPod…"
     override val ipodPlaylistTitle = "Elige una o varias playlists"
     override val ipodPlaylistLegend = "🟢 ya está en el iPod · 🔴 no está en el iPod (o está vacía)"
+    override val aiMixButton = "Mix con IA para el iPod…"
+    override val aiMixTitle = "Mix con IA"
+    override val aiMixHint = "¿Qué tipo de mix? (opcional) ej. \"para correr\", \"noche tranquila\", \"parecidas a <canción>\""
+    override val aiMixCreate = "Crear mixes"
+    override val aiMixTooFew = "Necesitas al menos 5 canciones en el iPod."
+    override val aiMixAsking = "Preguntándole a la IA…"
+    override val aiMixNoKey = "Aún no hay clave de IA, así que los mixes se hicieron en el teléfono."
+    override val aiMixBadAnswer = "La IA no dio una respuesta útil, así que los mixes se hicieron en el teléfono."
+    override val aiMixByAi = "Hechos con IA."
+    override val aiMixLocal = "Hechos por artista y al azar."
+    override val aiKeyTitle = "Clave de Gemini (gratis)"
+    override val aiKeyHow = "¿Cómo la consigo?"
+    override val aiKeySteps = "1. Abre Google AI Studio e inicia sesión con tu cuenta de Google.\n2. Pulsa \"Create API key\" (Crear clave).\n3. Copia la clave (empieza con AIza…) y pégala aquí."
+    override val aiKeyOpen = "Abrir Google AI Studio"
+    override val aiKeyPaste = "Pegar del portapapeles"
+    override val aiKeySave = "Probar y guardar"
+    override val aiKeyTesting = "Probando la clave…"
+    override val aiKeyChange = "Clave de Gemini…"
+    override val aiKeyForget = "Quitar la clave"
+    override val aiKeyPrivacy = "A Google solo se envían títulos, artistas y álbumes. La clave se queda en este teléfono."
+    override fun aiKeyProblem(kind: String) = when (kind) {
+        "BadKey" -> "Google rechazó la clave. Revisa que la copiaste completa."
+        "Quota" -> "La IA está ocupada o sin cuota gratis por ahora."
+        "Network" -> "Sin conexión con Google."
+        "Blocked" -> "Google rechazó esta petición."
+        "NoKey" -> "Pega primero tu clave."
+        else -> "La IA no respondió bien."
+    }
     override val ipodPlaylistNone = "No tienes playlists en Qobuz."
     override val ipodPlaylistLoadFailed = "No se pudo cargar la playlist de Qobuz."
     override fun ipodPlaylistDownloading(done: Int, total: Int) = "Descargando en MP3 las canciones que faltan de la playlist… $done de $total"

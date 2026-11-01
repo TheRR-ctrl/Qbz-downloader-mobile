@@ -584,7 +584,76 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var ipodTask by mutableStateOf<String?>(null); private set
     /** True once the person pressed Stop: the running iPod job ends at the next safe point (never in the middle of writing the library). */
     var ipodStopping by mutableStateOf(false); private set
-    fun ipodStop() { ipodStopping = true }
+    fun ipodStop() { ipodStopping = true; aiJob?.cancel() }
+
+    // ---- AI mixes for the iPod (see AiMix.kt): the AI proposes, the code validates, and with no key/answer local mixes are made ----
+    var aiKey by mutableStateOf(prefs.getString("ai_key", "") ?: ""); private set
+    var aiMixDialog by mutableStateOf(false)
+    var aiKeyDialog by mutableStateOf(false)
+    var aiKeyTesting by mutableStateOf(false); private set
+    var aiKeyError by mutableStateOf<String?>(null); private set
+    private var aiJob: kotlinx.coroutines.Job? = null
+
+    /** Tests the key against Google and saves it only if it works. The key stays in the app's private storage, never in the repo or the APK. */
+    fun aiSaveKey(raw: String) {
+        val key = raw.trim()
+        if (key.isBlank() || aiKeyTesting) return
+        aiKeyTesting = true; aiKeyError = null
+        viewModelScope.launch {
+            val err = withContext(Dispatchers.IO) { AiMix.testKey(api.http, key) }
+            aiKeyTesting = false
+            if (err == null) { aiKey = key; prefs.edit().putString("ai_key", key).apply(); aiKeyDialog = false }
+            else aiKeyError = strings.aiKeyProblem(err.kind.name)
+        }
+    }
+    fun aiForgetKey() { aiKey = ""; prefs.edit().remove("ai_key").apply() }
+
+    /** Builds mixes from the songs on the iPod and writes them as playlists. [request] is free text ("para correr", "parecidas a …"). */
+    fun aiMakeMixes(request: String) {
+        val uri = ipodUri ?: return
+        if (ipodProgress != null || ipodLyricsStatus != null || ipodTask != null) { notice = strings.ipodBusy; return }
+        val guid = ipodGuid()
+        if (guid == null) { ipodReadUsbGuid(); return }
+        val tracks = ipodTracks.filter { it.title.isNotBlank() }
+        if (tracks.size < AiMix.MIN_MIX) { ipodMessage = strings.aiMixTooFew; return }
+        aiMixDialog = false; ipodMessage = null; ipodStopping = false
+        aiJob = viewModelScope.launch {
+            val sent = tracks.shuffled().take(AiMix.MAX_SONGS_SENT)
+            val songs = sent.mapIndexed { i, t -> MixSong(i + 1, t.title, t.artist, t.album) }
+            var usedAi = true; var note: String? = null
+            try {
+                ipodLyricsStatus = strings.aiMixAsking; ipodLyricsProgress = 0 to 3
+                var mixes: List<Mix> = emptyList()
+                if (aiKey.isBlank()) { usedAi = false; note = strings.aiMixNoKey }
+                else {
+                    mixes = try {
+                        val json = withContext(Dispatchers.IO) { AiMix.ask(api.http, aiKey, request, AiMix.catalog(songs)) }
+                        AiMix.validate(json, songs.map { it.n }.toSet())
+                    } catch (e: AiMix.AiError) { note = strings.aiKeyProblem(e.kind.name); emptyList() }
+                    if (mixes.isEmpty()) { usedAi = false; if (note == null) note = strings.aiMixBadAnswer }
+                }
+                if (mixes.isEmpty()) mixes = AiMix.localMixes(songs, seed = System.nanoTime())
+                ipodLyricsProgress = 1 to 3
+                val byN = songs.associateBy { it.n }
+                val msgs = ArrayList<String>()
+                for ((i, m) in mixes.withIndex()) {
+                    if (ipodStopping) break
+                    ipodLyricsStatus = strings.ipodPlaylistMaking(m.name, i, mixes.size)
+                    ipodLyricsProgress = 1 + (i * 2) / mixes.size to 3
+                    val keys = m.ns.mapNotNull { byN[it] }.map { com.qbdlx.mobile.ipod.trackKey(it.title, it.artist, it.album) }
+                    val r = withContext(Dispatchers.IO) { com.qbdlx.mobile.ipod.IpodDevice(context, uri).makePlaylist(m.name, keys, guid) }
+                    msgs.add(strings.ipodPlaylistDone(m.name, r.added, r.missing, r.error))
+                }
+                ipodMessage = listOfNotNull(note, (if (usedAi) strings.aiMixByAi else strings.aiMixLocal), msgs.joinToString(" ")).joinToString(" ")
+                if (msgs.isNotEmpty()) ipodDone++
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                ipodMessage = strings.ipodPlaylistDownloadStopped
+            } finally {
+                ipodLyricsStatus = null; ipodLyricsProgress = null; ipodStopping = false; aiJob = null
+                ipodRefresh()
+            }
+        }
+    }
     /** (done, total) of the lyrics job, for a real progress bar. */
     var ipodLyricsProgress by mutableStateOf<Pair<Int, Int>?>(null); private set
 
