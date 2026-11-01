@@ -210,10 +210,11 @@ private fun TrackRow(vm: MainViewModel, album: Album, track: Track, subtitle: St
                     Spacer(Modifier.width(4.dp))
                 }
                 Text(subtitle, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                // Downloaded songs show the format of the file on the device; the rest show the quality Qobuz streams.
+                // Downloaded songs show the format of the file on the device, then the quality Qobuz streams.
                 val fmt = if (item?.status == TaskStatus.COMPLETED) item.fileFormat() else null
+                // Both: what is on the device, then the best Qobuz offers (so a song saved as MP3 still shows it could be 24/44).
                 if (fmt != null) { Spacer(Modifier.width(6.dp)); QualityBadge(fmt, item!!.quality == Quality.HI_RES) }
-                else if (track.quality.isNotBlank()) { Spacer(Modifier.width(6.dp)); QualityBadge(track.quality, track.hiRes) }
+                if (track.quality.isNotBlank()) { Spacer(Modifier.width(6.dp)); QualityBadge(track.quality, track.hiRes) }
             }
         }
         if (!showCover) Text(mmss(track.durationSec), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
