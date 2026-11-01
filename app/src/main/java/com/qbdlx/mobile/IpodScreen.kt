@@ -1,6 +1,8 @@
 package com.qbdlx.mobile
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
@@ -539,23 +541,36 @@ fun ListScrollbar(state: androidx.compose.foundation.lazy.LazyListState, modifie
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun LibCell(title: String, sub: String, cover: String?, selected: Boolean, grid: Boolean, onClick: () -> Unit, onLong: () -> Unit) {
-    val bg = if (selected) MaterialTheme.colorScheme.primaryContainer else androidx.compose.ui.graphics.Color.Transparent
+    val cs = MaterialTheme.colorScheme
+    // Emil Kowalski: press feedback = scale 0.97, ease-out, <200ms; state changes fade, never snap.
+    val ease = androidx.compose.animation.core.CubicBezierEasing(0.23f, 1f, 0.32f, 1f)
+    val source = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val pressed by source.collectIsPressedAsState()
+    val press by androidx.compose.animation.core.animateFloatAsState(if (pressed) 0.97f else 1f, androidx.compose.animation.core.tween(160, easing = ease), label = "press")
+    val bg by androidx.compose.animation.animateColorAsState(if (selected) cs.primaryContainer else androidx.compose.ui.graphics.Color.Transparent, androidx.compose.animation.core.tween(150, easing = ease), label = "bg")
+    val badge by androidx.compose.animation.core.animateFloatAsState(if (selected) 1f else 0f, androidx.compose.animation.core.tween(180, easing = ease), label = "badge")
     val art: @Composable (Modifier) -> Unit = { m ->
-        Box(m.clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
+        Box(m.clip(RoundedCornerShape(10.dp)).background(cs.surfaceVariant), contentAlignment = Alignment.Center) {
             if (cover != null) coil.compose.AsyncImage(cover, null, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop, filterQuality = androidx.compose.ui.graphics.FilterQuality.Low)
-            else Text("♪", fontSize = 22.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (selected) Text("✓", Modifier.align(Alignment.TopEnd).padding(4.dp), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+            else Text("♪", fontSize = 22.sp, color = cs.onSurfaceVariant)
+            if (badge > 0f) Box(Modifier.align(Alignment.TopEnd).padding(5.dp).size(22.dp)
+                .graphicsLayer { val k = 0.8f + 0.2f * badge; scaleX = k; scaleY = k; alpha = badge }
+                .clip(androidx.compose.foundation.shape.CircleShape).background(cs.primary), contentAlignment = Alignment.Center) {
+                Text("✓", color = cs.onPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            }
         }
     }
-    if (grid) Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(bg).combinedClickable(onClick = onClick, onLongClick = onLong).padding(4.dp)) {
+    val base = Modifier.fillMaxWidth().graphicsLayer { scaleX = press; scaleY = press }.clip(RoundedCornerShape(12.dp)).background(bg)
+        .combinedClickable(interactionSource = source, indication = null, onClick = onClick, onLongClick = onLong)
+    if (grid) Column(base.padding(4.dp)) {
         art(Modifier.fillMaxWidth().aspectRatio(1f))
-        Text(title, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        Text(sub, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-    } else Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(bg).combinedClickable(onClick = onClick, onLongClick = onLong).padding(vertical = 6.dp, horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(title, Modifier.padding(top = 4.dp), fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(sub, fontSize = 11.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    } else Row(base.padding(vertical = 6.dp, horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         art(Modifier.size(52.dp))
         Column(Modifier.weight(1f).padding(start = 12.dp)) {
             Text(title, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(sub, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(sub, fontSize = 12.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
