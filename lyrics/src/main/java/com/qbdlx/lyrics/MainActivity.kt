@@ -24,6 +24,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -84,11 +85,13 @@ class MainActivity : ComponentActivity() {
         if (!isSystemInDarkTheme()) return // the light theme keeps its plain background (dark text would not read over the veil)
         val cover = Tracker.cover
         val img = remember(cover, key) {
-            cover?.let { runCatching { android.graphics.Bitmap.createScaledBitmap(it, 16, 16, true).asImageBitmap() }.getOrNull() }
+            cover?.let { runCatching { android.graphics.Bitmap.createScaledBitmap(it, 64, 64, true).asImageBitmap() }.getOrNull() }
         }
         Crossfade(img, animationSpec = tween(400, easing = UiEaseOut), label = "backdrop") { b ->
             Box(Modifier.fillMaxSize()) {
-                if (b != null) androidx.compose.foundation.Image(b, null, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop, alpha = .55f,
+                // real blur on Android 12+, a smooth 64 px upscale on older versions
+                val blur = if (android.os.Build.VERSION.SDK_INT >= 31) Modifier.blur(48.dp, androidx.compose.ui.draw.BlurredEdgeTreatment.Unbounded) else Modifier
+                if (b != null) androidx.compose.foundation.Image(b, null, Modifier.fillMaxSize().then(blur), contentScale = androidx.compose.ui.layout.ContentScale.Crop, alpha = .55f,
                     filterQuality = androidx.compose.ui.graphics.FilterQuality.Medium)
                 Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color.Black.copy(.35f), Color.Black.copy(.75f)))))
             }
