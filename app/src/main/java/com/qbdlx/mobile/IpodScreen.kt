@@ -360,7 +360,7 @@ private fun IpodScreenBody(vm: MainViewModel) {
                                 androidx.compose.material3.LinearProgressIndicator(progress = { (1f - free.toFloat() / total).coerceIn(0f, 1f) }, Modifier.fillMaxWidth())
                                 Text(s.ipodSpace(fmt(free), fmt(total)), fontSize = 13.sp)
                             }
-                        }
+                        } ?: Text(s.ipodSpaceUnknown, fontSize = 13.sp, color = muted)
                     }
                 }
             }

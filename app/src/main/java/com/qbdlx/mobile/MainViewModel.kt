@@ -1004,17 +1004,26 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun updateIpodGuid(text: String) { ipodGuidText = text; prefs.edit().putString("ipod_guid", text).apply() }
 
-    /** Looks at the chosen iPod (off the main thread): is it usable, and which songs does it already have? */
     /** (free bytes, total bytes) of the iPod's storage, or null when Android won't say. */
     var ipodSpace by mutableStateOf<Pair<Long, Long>?>(null); private set
-    private fun readIpodSpace(uri: android.net.Uri): Pair<Long, Long>? = runCatching {
-        val volId = android.provider.DocumentsContract.getTreeDocumentId(uri).substringBefore(':')
-        val sm = context.getSystemService(android.os.storage.StorageManager::class.java)
-        val vol = sm.storageVolumes.firstOrNull { it.uuid.equals(volId, ignoreCase = true) || (volId == "primary" && it.isPrimary) }
-        val path = (if (android.os.Build.VERSION.SDK_INT >= 30) vol?.directory?.path else null) ?: vol?.uuid?.let { "/storage/$it" }
-        val st = android.os.StatFs(path ?: return null)
-        st.availableBytes to st.totalBytes
-    }.getOrNull()
+    private fun statOf(path: String?): Pair<Long, Long>? = path?.let {
+        runCatching { android.os.StatFs(it).let { st -> st.availableBytes to st.totalBytes } }.getOrNull()?.takeIf { p -> p.second > 0 }
+    }
+    private fun readIpodSpace(uri: android.net.Uri): Pair<Long, Long>? {
+        val volId = runCatching { android.provider.DocumentsContract.getTreeDocumentId(uri).substringBefore(':') }.getOrNull() ?: return null
+        val paths = mutableListOf<String?>()
+        runCatching {
+            val sm = context.getSystemService(android.os.storage.StorageManager::class.java)
+            val vol = sm.storageVolumes.firstOrNull { it.uuid.equals(volId, ignoreCase = true) || (volId == "primary" && it.isPrimary) }
+            if (android.os.Build.VERSION.SDK_INT >= 30) paths += vol?.directory?.path
+            paths += vol?.uuid?.let { "/storage/$it" }
+        }
+        paths += "/storage/$volId"
+        paths += "/mnt/media_rw/$volId"
+        runCatching { context.getExternalFilesDirs(null).forEach { d -> if (d != null && (volId == "primary" || d.path.contains(volId, true))) paths += d.path } }
+        if (volId == "primary") paths += android.os.Environment.getExternalStorageDirectory().path
+        return paths.firstNotNullOfOrNull { statOf(it) }
+    }
 
     var ipodPlaylists by mutableStateOf<List<com.qbdlx.mobile.ipod.IpodPlaylist>>(emptyList()); private set
     var ipodOpenPlaylist by mutableStateOf<Long?>(null)
