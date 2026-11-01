@@ -357,8 +357,8 @@ fun LibraryScreen(vm: MainViewModel) {
                     // The list entry may carry only one cover: ask for the rest of the mosaic once the row is on screen.
                     LaunchedEffect(pl.id) { vm.ensurePlaylistCovers(pl) }
                     LibraryRow(pl.coverUrl, pl.name, listOf(pl.owner, if (pl.tracksCount > 0) s.tracks(pl.tracksCount) else "").filter { it.isNotBlank() }.joinToString(" • "),
-                        onClick = { vm.openPlaylist(pl.id) }, onDownload = { vm.requestDownload(DownloadRequest.WholePlaylist(pl)) },
-                        covers = vm.playlistCovers[pl.id] ?: pl.covers)
+                        onClick = { vm.openPlaylist(pl.id) },
+                        covers = vm.playlistCovers[pl.id] ?: pl.covers) { open, close -> CollectionMenu(vm, null, pl, open, close) }
                 }
             }
             LibraryView.Albums -> {
@@ -367,8 +367,8 @@ fun LibraryScreen(vm: MainViewModel) {
                 if (list.isNotEmpty()) item { DownloadAllButton(vm) { vm.requestDownload(DownloadRequest.Albums(list)) } }
                 items(list, key = { "a" + it.id }) { al ->
                     LibraryRow(al.coverUrl, al.title, listOf("Álbum", al.artist).filter { it.isNotBlank() }.joinToString(" • "),
-                        onClick = { vm.openAlbum(al.id) }, onDownload = { vm.requestDownload(DownloadRequest.WholeAlbum(al)) },
-                        badge = al.quality, hiRes = al.hiRes)
+                        onClick = { vm.openAlbum(al.id) },
+                        badge = al.quality, hiRes = al.hiRes) { open, close -> CollectionMenu(vm, al, null, open, close) }
                 }
             }
             LibraryView.Tracks -> {
@@ -431,7 +431,7 @@ private fun EmptyText(text: String) =
     Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(16.dp))
 
 @Composable
-private fun LibraryRow(coverUrl: String?, title: String, subtitle: String, onClick: () -> Unit, onDownload: () -> Unit, covers: List<String> = emptyList(), badge: String? = null, hiRes: Boolean = false) {
+private fun LibraryRow(coverUrl: String?, title: String, subtitle: String, onClick: () -> Unit, covers: List<String> = emptyList(), badge: String? = null, hiRes: Boolean = false, menuContent: @Composable (Boolean, () -> Unit) -> Unit) {
     var menu by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         if (covers.size >= 2) CoverMosaic(covers, 64) else Cover(coverUrl, 64)
@@ -445,9 +445,7 @@ private fun LibraryRow(coverUrl: String?, title: String, subtitle: String, onCli
         }
         Box {
             IconButton({ menu = true }) { Icon(Icons.Default.MoreVert, null) }
-            androidx.compose.material3.DropdownMenu(menu, { menu = false }) {
-                androidx.compose.material3.DropdownMenuItem({ Text(LocalStrings.current.download) }, { menu = false; onDownload() }, leadingIcon = { Icon(Icons.Default.Download, null) })
-            }
+            menuContent(menu) { menu = false }
         }
     }
 }

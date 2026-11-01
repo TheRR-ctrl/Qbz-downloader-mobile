@@ -1827,6 +1827,32 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    private fun enqueueAll(items: List<Pair<Album, Track>>, next: Boolean) {
+        val list = items.filter { it.second.streamable }
+        if (list.isEmpty()) return
+        if (playQueue.current == null) { playList(list, 0); return }
+        if (next) list.asReversed().forEach { playQueue.insertNext(it) } else list.forEach { playQueue.append(it) }
+        refreshQueue(); resetNext(); notice = strings.queuedAll(list.size)
+    }
+
+    /** What an album's or playlist's menu does with its songs: play now, play next, or add to the end of the queue. */
+    fun playCollection(album: Album?, playlist: Playlist?, mode: Int) {
+        viewModelScope.launch {
+            try {
+                val items = withContext(Dispatchers.IO) { if (album != null) albumTracks(album.id) else api.getPlaylist(playlist!!.id).tracks }
+                when (mode) { 0 -> playList(items, 0); 1 -> enqueueAll(items, true); else -> enqueueAll(items, false) }
+            } catch (e: Exception) { error = e.message }
+        }
+    }
+
+    /** Ticks only the downloaded songs of [album] in "Para enviar" and opens the iPod screen. */
+    fun sendAlbumToIpod(album: Album) {
+        val done = downloads.tasks.filter { it.status == TaskStatus.COMPLETED && it.album.id == album.id }
+        if (done.isEmpty()) { notice = strings.noneDownloaded; return }
+        ipodTickShown(false); ipodTickTasks(done, true)
+        ipodTab = 0; openIpod()
+    }
+
     /** Marks only this downloaded song as "to send" and opens the iPod screen on that tab. */
     fun sendToIpod(task: DownloadTask) {
         ipodTickShown(false); ipodTickTasks(listOf(task), true)

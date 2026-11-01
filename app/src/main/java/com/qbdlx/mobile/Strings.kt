@@ -58,6 +58,12 @@ interface Strings {
     val download: String
     val downloadAlbum: String
     val downloaded: String
+    val playAll: String
+    val noneDownloaded: String
+    val details: String
+    val detailTracks: String
+    val detailOwner: String
+    fun queuedAll(n: Int): String
     fun addedToPlaylist(name: String): String
     val playNext: String
     val addToQueue: String
@@ -477,6 +483,12 @@ object English : Strings {
     override val download = "Download"
     override val downloadAlbum = "Download album"
     override val downloaded = "Downloaded"
+    override val playAll = "Play"
+    override val noneDownloaded = "None of its songs are downloaded"
+    override val details = "Details"
+    override val detailTracks = "Tracks"
+    override val detailOwner = "Created by"
+    override fun queuedAll(n: Int) = "Added $n songs to the queue"
     override fun addedToPlaylist(name: String) = "Added to $name"
     override val playNext = "Play next"
     override val addToQueue = "Add to queue"
@@ -912,6 +924,12 @@ object Spanish : Strings {
     override val download = "Descargar"
     override val downloadAlbum = "Descargar álbum"
     override val downloaded = "Descargado"
+    override val playAll = "Reproducir"
+    override val noneDownloaded = "Ninguna de sus canciones está descargada"
+    override val details = "Detalles"
+    override val detailTracks = "Canciones"
+    override val detailOwner = "Creada por"
+    override fun queuedAll(n: Int) = "Se añadieron $n canciones a la cola"
     override fun addedToPlaylist(name: String) = "Agregada a $name"
     override val playNext = "Reproducir a continuación"
     override val addToQueue = "Añadir a la cola"
