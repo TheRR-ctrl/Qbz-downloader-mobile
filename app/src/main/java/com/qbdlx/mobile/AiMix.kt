@@ -93,15 +93,52 @@ Responde solo JSON.
     }
 
     /** Plain REST call, like the pipeline's gemini.py: the key goes in a header, never in the URL. Throws [AiError]; returns the JSON text. */
-    fun ask(http: OkHttpClient, key: String, request: String, catalog: String): String {
+    fun ask(http: OkHttpClient, key: String, request: String, catalog: String): String = generate(http, key, systemPrompt(), schema(),
+        "Pedido: ${request.ifBlank { "Hazme mixes variados con lo mejor de mi catálogo." }.take(300)}\n\nCatálogo:\n$catalog")
+
+    const val MAX_IDEAS = 5
+
+    fun ideasPrompt() = """
+Eres un curador musical. Recibes una muestra del catálogo de canciones de una persona (número|título|artista|álbum).
+Propón $MAX_IDEAS ideas de mixes que se puedan armar con esa música, cada una como un pedido corto en español (3 a 8 palabras), por ejemplo "Para conducir de noche" o "Lo más movido de <artista>".
+Que sean distintas entre sí y que encajen con lo que hay en el catálogo. Responde solo JSON.
+""".trim()
+
+    fun ideasSchema(): JSONObject = JSONObject("""
+{"type":"OBJECT","properties":{"ideas":{"type":"ARRAY","items":{"type":"STRING"}}},"required":["ideas"]}
+""".trimIndent())
+
+    /** Turns the AI's JSON into short, clean, distinct ideas (at most [MAX_IDEAS]). Bad JSON gives an empty list. */
+    fun validateIdeas(json: String): List<String> {
+        val arr = try { JSONObject(stripFence(json)).optJSONArray("ideas") } catch (_: Exception) { null } ?: return emptyList()
+        val seen = HashSet<String>()
+        val out = ArrayList<String>()
+        for (i in 0 until arr.length()) {
+            val t = TextClean.visible(arr.optString(i)).replace('\n', ' ').trim().trim('"', '\'', '.').take(60)
+            if (t.length >= 3 && seen.add(t.lowercase())) out.add(t)
+            if (out.size >= MAX_IDEAS) break
+        }
+        return out
+    }
+
+    /** Without AI: ideas taken from the library itself (its most repeated artists), plus a surprise. */
+    fun localIdeas(songs: List<MixSong>): List<String> {
+        val top = songs.groupBy { it.artist.trim() }.filterKeys { it.isNotBlank() }.entries
+            .filter { it.value.size >= MIN_MIX }.sortedByDescending { it.value.size }.take(MAX_IDEAS - 1).map { "Lo mejor de ${it.key}" }
+        return (top + "Sorpresa con todo mi catálogo").take(MAX_IDEAS)
+    }
+
+    fun askIdeas(http: OkHttpClient, key: String, catalog: String): String =
+        generate(http, key, ideasPrompt(), ideasSchema(), "Catálogo:\n$catalog")
+
+    private fun generate(http: OkHttpClient, key: String, system: String, schema: JSONObject, userText: String): String {
         if (key.isBlank()) throw AiError(AiError.Kind.NoKey, "no key")
         var last: AiError = AiError(AiError.Kind.Bad, "no model answered")
         for (model in MODELS) {
             val body = JSONObject()
-                .put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", systemPrompt()))))
-                .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text",
-                    "Pedido: ${request.ifBlank { "Hazme mixes variados con lo mejor de mi catálogo." }.take(300)}\n\nCatálogo:\n$catalog")))))
-                .put("generationConfig", JSONObject().put("responseMimeType", "application/json").put("responseSchema", schema()).put("temperature", 0.8))
+                .put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", system))))
+                .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", userText)))))
+                .put("generationConfig", JSONObject().put("responseMimeType", "application/json").put("responseSchema", schema).put("temperature", 0.8))
             val req = Request.Builder()
                 .url("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent")
                 .header("x-goog-api-key", key.trim())

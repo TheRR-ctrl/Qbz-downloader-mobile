@@ -341,6 +341,11 @@ interface Strings {
     val aiMixButton: String
     val aiMixTitle: String
     val aiMixHint: String
+    val aiIdeasButton: String
+    val aiIdeasAsking: String
+    val aiIdeasStop: String
+    val aiIdeasStopped: String
+    val aiIdeasLocal: String
     val aiMixCreate: String
     val aiMixTooFew: String
     val aiMixAsking: String
@@ -797,6 +802,11 @@ object English : Strings {
     override val ipodPlaylistLegend = "🟢 already on the iPod · 🔴 not on the iPod (or empty)"
     override val aiMixButton = "AI mix for the iPod…"
     override val aiMixTitle = "Mix with AI"
+    override val aiIdeasButton = "💡 Suggest mixes"
+    override val aiIdeasAsking = "Thinking of ideas…"
+    override val aiIdeasStop = "Stop"
+    override val aiIdeasStopped = "Stopped."
+    override val aiIdeasLocal = "Ideas taken from your library."
     override val aiMixHint = "What kind of mix? (optional) e.g. \"for running\", \"calm night\", \"similar to <song>\""
     override val aiMixCreate = "Create mixes"
     override val aiMixTooFew = "You need at least 5 songs on the iPod."
@@ -807,7 +817,7 @@ object English : Strings {
     override val aiMixLocal = "Made by artist and at random."
     override val aiKeyTitle = "Gemini key (free)"
     override val aiKeyHow = "How do I get it?"
-    override val aiKeySteps = "1. Open Google AI Studio and sign in with your Google account.\n2. Tap \"Create API key\".\n3. Copy the key (starts with AIza…) and paste it here."
+    override val aiKeySteps = "1. Open Google AI Studio and sign in with your Google account.\n2. Tap \"Create API key\".\n3. Copy the key (starts with AIza… or AQ.) and paste it here."
     override val aiKeyOpen = "Open Google AI Studio"
     override val aiKeyPaste = "Paste from clipboard"
     override val aiKeySave = "Test and save"
@@ -1269,6 +1279,11 @@ object Spanish : Strings {
     override val ipodPlaylistLegend = "🟢 ya está en el iPod · 🔴 no está en el iPod (o está vacía)"
     override val aiMixButton = "Mix con IA para el iPod…"
     override val aiMixTitle = "Mix con IA"
+    override val aiIdeasButton = "💡 Sugerirme mixes"
+    override val aiIdeasAsking = "Pensando ideas…"
+    override val aiIdeasStop = "Parar"
+    override val aiIdeasStopped = "Detenido."
+    override val aiIdeasLocal = "Ideas sacadas de tu biblioteca."
     override val aiMixHint = "¿Qué tipo de mix? (opcional) ej. \"para correr\", \"noche tranquila\", \"parecidas a <canción>\""
     override val aiMixCreate = "Crear mixes"
     override val aiMixTooFew = "Necesitas al menos 5 canciones en el iPod."
@@ -1279,7 +1294,7 @@ object Spanish : Strings {
     override val aiMixLocal = "Hechos por artista y al azar."
     override val aiKeyTitle = "Clave de Gemini (gratis)"
     override val aiKeyHow = "¿Cómo la consigo?"
-    override val aiKeySteps = "1. Abre Google AI Studio e inicia sesión con tu cuenta de Google.\n2. Pulsa \"Create API key\" (Crear clave).\n3. Copia la clave (empieza con AIza…) y pégala aquí."
+    override val aiKeySteps = "1. Abre Google AI Studio e inicia sesión con tu cuenta de Google.\n2. Pulsa \"Create API key\" (Crear clave).\n3. Copia la clave (empieza con AIza… o AQ.) y pégala aquí."
     override val aiKeyOpen = "Abrir Google AI Studio"
     override val aiKeyPaste = "Pegar del portapapeles"
     override val aiKeySave = "Probar y guardar"

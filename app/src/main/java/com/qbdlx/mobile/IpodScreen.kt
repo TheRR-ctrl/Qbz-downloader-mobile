@@ -157,6 +157,17 @@ private fun IpodScreenBody(vm: MainViewModel) {
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     androidx.compose.material3.OutlinedTextField(req, { req = it }, label = { Text(s.aiMixHint, fontSize = 12.sp) }, minLines = 2)
+                    if (vm.aiIdeasBusy) {
+                        LinearProgressIndicator(Modifier.fillMaxWidth())
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(s.aiIdeasAsking, fontSize = 12.sp, color = muted, modifier = Modifier.weight(1f))
+                            TextButton({ vm.aiIdeasStop() }) { Text(s.aiIdeasStop) }
+                        }
+                    } else androidx.compose.material3.OutlinedButton({ vm.aiSuggest() }, Modifier.fillMaxWidth()) { Text(s.aiIdeasButton) }
+                    vm.aiIdeasNote?.let { Text(it, fontSize = 12.sp, color = muted) }
+                    if (vm.aiIdeas.isNotEmpty()) LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(vm.aiIdeas) { idea -> androidx.compose.material3.SuggestionChip({ req = idea }, { Text(idea) }) }
+                    }
                     Text(s.aiKeyPrivacy, fontSize = 12.sp, color = muted)
                     TextButton({ vm.aiKeyDialog = true }) { Text(s.aiKeyChange) }
                 }
@@ -183,7 +194,7 @@ private fun IpodScreenBody(vm: MainViewModel) {
                         val cm = ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                         key = cm.primaryClip?.getItemAt(0)?.text?.toString().orEmpty().trim()
                     }, Modifier.fillMaxWidth()) { Text(s.aiKeyPaste) }
-                    androidx.compose.material3.OutlinedTextField(key, { key = it }, singleLine = true, label = { Text("AIza…") },
+                    androidx.compose.material3.OutlinedTextField(key, { key = it }, singleLine = true, label = { Text("AIza… / AQ.…") },
                         visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
                     if (vm.aiKeyTesting) { LinearProgressIndicator(Modifier.fillMaxWidth()); Text(s.aiKeyTesting, fontSize = 12.sp, color = muted) }
                     vm.aiKeyError?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }

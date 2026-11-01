@@ -608,6 +608,34 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
     fun aiForgetKey() { aiKey = ""; prefs.edit().remove("ai_key").apply() }
 
+    var aiIdeas by mutableStateOf<List<String>>(emptyList()); private set
+    var aiIdeasBusy by mutableStateOf(false); private set
+    var aiIdeasNote by mutableStateOf<String?>(null); private set
+    private var aiIdeasJob: kotlinx.coroutines.Job? = null
+    fun aiIdeasStop() { aiIdeasJob?.cancel() }
+    /** Asks the AI for a few mix ideas from a sample of the library. Only proposes: nothing is written until "Crear" is pressed. Falls back to ideas from the library itself. */
+    fun aiSuggest() {
+        if (aiIdeasBusy) return
+        val tracks = ipodTracks.filter { it.title.isNotBlank() }
+        if (tracks.size < AiMix.MIN_MIX) { aiIdeasNote = strings.aiMixTooFew; return }
+        aiIdeasBusy = true; aiIdeasNote = null
+        aiIdeasJob = viewModelScope.launch {
+            val songs = tracks.shuffled().take(AiMix.MAX_SONGS_SENT / 2).mapIndexed { i, t -> MixSong(i + 1, t.title, t.artist, t.album) }
+            try {
+                var ideas: List<String> = emptyList()
+                if (aiKey.isBlank()) aiIdeasNote = strings.aiMixNoKey
+                else {
+                    ideas = try { AiMix.validateIdeas(withContext(Dispatchers.IO) { AiMix.askIdeas(api.http, aiKey, AiMix.catalog(songs)) }) }
+                    catch (e: AiMix.AiError) { aiIdeasNote = strings.aiKeyProblem(e.kind.name); emptyList() }
+                    if (ideas.isEmpty() && aiIdeasNote == null) aiIdeasNote = strings.aiMixBadAnswer
+                }
+                if (ideas.isEmpty()) ideas = AiMix.localIdeas(songs).also { aiIdeasNote = (aiIdeasNote?.plus(" ") ?: "") + strings.aiIdeasLocal }
+                aiIdeas = ideas
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                aiIdeasNote = strings.aiIdeasStopped
+            } finally { aiIdeasBusy = false; aiIdeasJob = null }
+        }
+    }
     /** Builds mixes from the songs on the iPod and writes them as playlists. [request] is free text ("para correr", "parecidas a …"). */
     fun aiMakeMixes(request: String) {
         val uri = ipodUri ?: return

@@ -30,4 +30,16 @@ class AiMixTest {
         val m = AiMix.localMixes(songs, seed = 1)
         assertTrue(m.isNotEmpty()); assertTrue(m.any { it.name == "Sorpresa" })
     }
+
+    @Test fun ideasAreCleanedDedupedAndCapped() {
+        val json = """{"ideas":["Para correr","  para correr ","\"Noche tranquila.\"","","ab","a\u200bB c","Uno","Dos","Tres"]}"""
+        val r = AiMix.validateIdeas(json)
+        assertEquals(listOf("Para correr", "Noche tranquila", "aB c", "Uno", "Dos"), r)
+        assertTrue(AiMix.validateIdeas("not json").isEmpty())
+    }
+
+    @Test fun localIdeasUseTopArtists() {
+        val songs = (1..6).map { MixSong(it, "t$it", "Queen", "a") } + (7..9).map { MixSong(it, "t$it", "Solo", "a") }
+        assertEquals(listOf("Lo mejor de Queen", "Sorpresa con todo mi catálogo"), AiMix.localIdeas(songs))
+    }
 }
