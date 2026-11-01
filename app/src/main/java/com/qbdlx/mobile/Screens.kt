@@ -63,11 +63,6 @@ private fun TitleWithSearch(text: String, vm: MainViewModel) {
 
 @Composable
 fun LoginScreen(vm: MainViewModel) {
-    var appId by remember { mutableStateOf(vm.savedAppId) }
-    var secret by remember { mutableStateOf(vm.savedAppSecret) }
-    var tokenMode by remember { mutableStateOf(false) }
-    var a by remember { mutableStateOf("") }
-    var b by remember { mutableStateOf("") }
     val s = LocalStrings.current
 
     val activity = androidx.compose.ui.platform.LocalContext.current
@@ -85,30 +80,6 @@ fun LoginScreen(vm: MainViewModel) {
         Text("QBDLX Mobile", fontSize = 28.sp, fontWeight = FontWeight.Bold)
         Button({ vm.startWebLogin() }, enabled = !vm.busy, modifier = Modifier.fillMaxWidth()) { Text(s.logInWithQobuz) }
         vm.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        Text(s.orManually, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        OutlinedTextField(appId, { appId = it }, label = { Text(s.appId) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(
-            secret, { secret = it }, label = { Text(s.appSecret) }, singleLine = true,
-            visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth(),
-        )
-        OutlinedTextField(
-            a, { a = it }, singleLine = true, modifier = Modifier.fillMaxWidth(),
-            label = { Text(if (tokenMode) s.userId else s.email) },
-            keyboardOptions = KeyboardOptions(keyboardType = if (tokenMode) KeyboardType.Number else KeyboardType.Email),
-        )
-        OutlinedTextField(
-            b, { b = it }, singleLine = true, modifier = Modifier.fillMaxWidth(),
-            label = { Text(if (tokenMode) s.authToken else s.password) },
-            visualTransformation = PasswordVisualTransformation(),
-        )
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Switch(tokenMode, { tokenMode = it; a = ""; b = "" })
-            Spacer(Modifier.width(8.dp))
-            Text(s.useToken)
-        }
-        Button({ vm.login(appId, secret, tokenMode, a, b) }, enabled = !vm.busy, modifier = Modifier.fillMaxWidth()) {
-            if (vm.busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Text(s.logIn)
-        }
         // Settings is only reachable once logged in, so offer the language here too.
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
             listOf(Language.ENGLISH, Language.SPANISH).forEach { l ->
@@ -682,14 +653,6 @@ fun SettingsScreen(vm: MainViewModel) {
             headlineContent = { Text(s.amoledBlack) },
             trailingContent = { Switch(vm.amoled, { vm.updateAmoled(it) }) },
         )
-        var secret by remember { mutableStateOf(vm.customSecret) }
-        SectionHeading(s.appSecretTitle, Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp))
-        Text(s.appSecretHelp(vm.appId), Modifier.padding(horizontal = 16.dp, vertical = 4.dp), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(secret, { secret = it }, singleLine = true, label = { Text("App Secret") }, modifier = Modifier.weight(1f))
-            Spacer(Modifier.width(8.dp))
-            Button({ vm.updateCustomSecret(secret) }) { Text(s.save) }
-        }
         Text(s.updateCredsHelp, Modifier.padding(horizontal = 16.dp, vertical = 4.dp), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Button(
             { vm.refreshQobuzCredentials() },
