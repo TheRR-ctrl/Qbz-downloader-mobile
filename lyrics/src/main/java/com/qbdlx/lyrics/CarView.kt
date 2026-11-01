@@ -21,7 +21,7 @@ class Row(val id: String, val title: String, val subtitle: String = "", val curr
 object CarView {
     /** The rows for the car screen: the song, then the current lyric line with its neighbours (or a message). */
     fun rows(state: LyricsState, posMs: Long): List<Row> {
-        val head = state.track?.let { listOf(Row("track", "♫  " + header(it.title, it.artist))) }.orEmpty()
+        val head = state.track?.let { listOf(Row("track", header(it.title, it.artist), cover = true)) }.orEmpty()
         return head + when (state.status) {
             Status.NO_ACCESS -> listOf(Row("msg", "Falta el acceso a notificaciones", "Ábrelo en el teléfono: Q Lyrics"))
             Status.NO_MEDIA -> listOf(Row("msg", "Pon una canción para ver su letra"))
@@ -45,6 +45,6 @@ object CarView {
         if (lines.isEmpty()) return listOf(Row("msg", "♪"))
         fun at(i: Int, id: String) = Row(id, lines.getOrNull(i)?.text?.ifBlank { "♪" } ?: "♪")
         val mid = if (idx < 0) "♪ …" else "▶ " + lines[idx].text.ifBlank { "♪" }
-        return listOf(Row("l-now", mid, current = true, cover = true), at(idx + 1, "l-next"), at(idx + 2, "l-next2"))
+        return listOf(Row("l-now", mid, current = true), at(idx + 1, "l-next"), at(idx + 2, "l-next2"))
     }
 }

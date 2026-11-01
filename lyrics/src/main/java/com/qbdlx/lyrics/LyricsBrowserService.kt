@@ -81,6 +81,6 @@ class LyricsBrowserService : MediaBrowserService() {
     private companion object {
         const val ROOT_ID = "root"
         /** The car redraws a moment after the list changes, so the line is switched slightly early to look in time. */
-        const val LEAD_MS = 350L
+        const val LEAD_MS = 1000L
     }
 }
