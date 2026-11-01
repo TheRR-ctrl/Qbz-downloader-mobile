@@ -270,8 +270,58 @@ fun IpodScreen(vm: MainViewModel) {
                     else Text("${s.ipodDeleteSelected} (${vm.ipodSelectedPids.size})", color = MaterialTheme.colorScheme.error)
                 }
             }
+            val libMode = vm.ipodLibMode && q.isEmpty()
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    androidx.compose.material3.FilterChip(!vm.ipodLibMode, { vm.ipodLibMode = false }, label = { Text(s.ipodViewList) })
+                    androidx.compose.material3.FilterChip(vm.ipodLibMode, { vm.ipodLibMode = true; vm.ipodLibArtist = null; vm.ipodLibAlbum = null }, label = { Text(s.ipodViewLibrary) })
+                }
+            }
+            if (libMode) {
+                val artist = vm.ipodLibArtist; val album = vm.ipodLibAlbum
+                item {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (artist != null) TextButton({ if (album != null) vm.ipodLibAlbum = null else vm.ipodLibArtist = null }) { Text("← " + (if (album != null) artist.ifBlank { "—" } else s.ipodViewArtists)) }
+                        Text(listOfNotNull(artist?.ifBlank { "—" }, album?.ifBlank { "—" }).joinToString(" › ").ifEmpty { s.ipodViewArtists }, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+                if (artist == null) {
+                    val artists = onIpod.groupBy { it.artist }.toList().sortedBy { it.first.lowercase() }
+                    artists.forEach { (name, ts) ->
+                        item(key = "la$name") {
+                            Column(Modifier.fillMaxWidth().clickable { vm.ipodLibArtist = name }.padding(vertical = 10.dp)) {
+                                Text(name.ifBlank { "—" }, fontWeight = FontWeight.Medium)
+                                Text(s.ipodLibArtistCount(ts.map { it.album }.distinct().size, ts.size), fontSize = 12.sp, color = muted)
+                            }
+                        }
+                    }
+                } else if (album == null) {
+                    val albums = onIpod.filter { it.artist == artist }.groupBy { it.album }.toList().sortedBy { it.first.lowercase() }
+                    albums.forEach { (name, ts) ->
+                        item(key = "lb$artist$name") {
+                            Row(Modifier.fillMaxWidth().clickable { vm.ipodLibAlbum = name }, verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f).padding(vertical = 10.dp)) {
+                                    Text(name.ifBlank { "—" }, fontWeight = FontWeight.Medium)
+                                    Text(s.ipodPlaylistSongs(ts.size, 0), fontSize = 12.sp, color = muted)
+                                }
+                                val all = ts.all { it.pid in vm.ipodSelectedPids }
+                                Checkbox(all, { vm.ipodSelectVisible(ts.map { it.pid }, !all) })
+                            }
+                        }
+                    }
+                } else {
+                    onIpod.filter { it.artist == artist && it.album == album }.forEach { t ->
+                        item(key = "lt${t.pid}") {
+                            Row(Modifier.fillMaxWidth().clickable { vm.ipodToggleTrack(t.pid) }, verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(vm.ipodSelectedPids.contains(t.pid), { vm.ipodToggleTrack(t.pid) })
+                                Text((if (t.trackNumber > 0) "${t.trackNumber}.  " else "") + t.title, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(start = 8.dp))
+                            }
+                        }
+                    }
+                }
+            }
             var lastGroup = ""
-            onIpod.forEach { t ->
+            if (!libMode) onIpod.forEach { t ->
                 val group = "${t.artist}\u0000${t.album}"
                 if (group != lastGroup) {
                     lastGroup = group

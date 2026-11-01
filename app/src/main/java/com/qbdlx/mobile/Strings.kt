@@ -376,6 +376,10 @@ interface Strings {
     val ipodUsbRead: String
     val ipodTabSend: String
     val ipodTabOn: String
+    val ipodViewList: String
+    val ipodViewLibrary: String
+    val ipodViewArtists: String
+    fun ipodLibArtistCount(albums: Int, songs: Int): String
     val ipodTabPlaylists: String
     fun ipodPlaylistSongs(n: Int, missing: Int): String
     val ipodPlaylistsEmpty: String
@@ -804,6 +808,10 @@ object English : Strings {
     override val ipodUsbRead = "Read the identifier over USB"
     override val ipodTabSend = "To send"
     override val ipodTabOn = "On the iPod"
+    override val ipodViewList = "List"
+    override val ipodViewLibrary = "Library"
+    override val ipodViewArtists = "Artists"
+    override fun ipodLibArtistCount(albums: Int, songs: Int) = "$albums album(s) · $songs songs"
     override val ipodTabPlaylists = "Playlists"
     override fun ipodPlaylistSongs(n: Int, missing: Int) = "$n songs" + if (missing > 0) " · $missing not found" else ""
     override val ipodPlaylistsEmpty = "There are no playlists on the iPod."
@@ -1231,6 +1239,10 @@ object Spanish : Strings {
     override val ipodUsbRead = "Leer el identificador por USB"
     override val ipodTabSend = "Para enviar"
     override val ipodTabOn = "En el iPod"
+    override val ipodViewList = "Lista"
+    override val ipodViewLibrary = "Biblioteca"
+    override val ipodViewArtists = "Artistas"
+    override fun ipodLibArtistCount(albums: Int, songs: Int) = "$albums álbum(es) · $songs canciones"
     override val ipodTabPlaylists = "Playlists"
     override fun ipodPlaylistSongs(n: Int, missing: Int) = "$n canciones" + if (missing > 0) " · $missing no encontradas" else ""
     override val ipodPlaylistsEmpty = "No hay playlists en el iPod."

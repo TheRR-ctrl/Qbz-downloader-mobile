@@ -879,6 +879,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     var ipodPlaylists by mutableStateOf<List<com.qbdlx.mobile.ipod.IpodPlaylist>>(emptyList()); private set
     var ipodOpenPlaylist by mutableStateOf<Long?>(null)
+    /** Library view of the songs on the iPod: artists → albums → songs. */
+    var ipodLibMode by mutableStateOf(false)
+    var ipodLibArtist by mutableStateOf<String?>(null)
+    var ipodLibAlbum by mutableStateOf<String?>(null)
 
     fun ipodRefresh() {
         val uri = ipodUri ?: return
