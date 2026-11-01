@@ -1009,7 +1009,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private fun statOf(path: String?): Pair<Long, Long>? = path?.let {
         runCatching { android.os.StatFs(it).let { st -> st.availableBytes to st.totalBytes } }.getOrNull()?.takeIf { p -> p.second > 0 }
     }
+    /** Space through the folder permission the app already holds (what file managers use): fstatvfs on the root document's descriptor, no paths needed. */
+    private fun statViaSaf(uri: android.net.Uri): Pair<Long, Long>? = runCatching {
+        val root = android.provider.DocumentsContract.buildDocumentUriUsingTree(uri, android.provider.DocumentsContract.getTreeDocumentId(uri))
+        context.contentResolver.openFileDescriptor(root, "r")?.use { pfd ->
+            val st = android.system.Os.fstatvfs(pfd.fileDescriptor)
+            (st.f_bavail * st.f_frsize) to (st.f_blocks * st.f_frsize)
+        }
+    }.getOrNull()?.takeIf { it.second > 0 }
+
     private fun readIpodSpace(uri: android.net.Uri): Pair<Long, Long>? {
+        statViaSaf(uri)?.let { return it }
         val volId = runCatching { android.provider.DocumentsContract.getTreeDocumentId(uri).substringBefore(':') }.getOrNull() ?: return null
         val paths = mutableListOf<String?>()
         runCatching {
