@@ -1,0 +1,3 @@
+<resources>
+    <style name="Theme.Lyrics" parent="android:Theme.Material.NoActionBar" />
+</resources>

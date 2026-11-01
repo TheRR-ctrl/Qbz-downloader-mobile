@@ -1,0 +1,3 @@
+<resources>
+    <style name="Theme.QBDLX" parent="android:Theme.Material.NoActionBar" />
+</resources>
