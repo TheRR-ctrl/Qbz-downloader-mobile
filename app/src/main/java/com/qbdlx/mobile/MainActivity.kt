@@ -213,15 +213,15 @@ private fun AppShell(vm: MainViewModel) {
                         if (t == Tab.Settings && (vm.ipodPlugged || vm.ipodProgress != null)) NavigationBarItem(
                             modifier = Modifier.weight(1f),
                             selected = vm.showIpod,
-                            onClick = { vm.closeAlbum(); vm.closePlaylist(); vm.closeDiagnostics(); vm.closeImport(); vm.openIpod() },
+                            onClick = { vm.closeAlbum(); vm.closeArtist(); vm.closePlaylist(); vm.closeDiagnostics(); vm.closeImport(); vm.openIpod() },
                             icon = { Icon(Icons.Filled.Smartphone, LocalStrings.current.ipodEntry) },
                             label = { Text(LocalStrings.current.ipodEntry, maxLines = 1, softWrap = false, fontSize = 10.sp) },
                             colors = qbdlxNavColors(),
                         )
                         NavigationBarItem(
                             modifier = Modifier.weight(1f),
-                            selected = vm.tab == t && vm.detail == null && vm.playlistDetail == null && !vm.showDiagnostics && !vm.showIpod && !vm.showImport,
-                            onClick = { vm.closeAlbum(); vm.closePlaylist(); vm.closeDiagnostics(); vm.closeIpod(); vm.closeImport(); vm.tab = t },
+                            selected = vm.tab == t && vm.detail == null && vm.playlistDetail == null && vm.artistPage == null && !vm.showDiagnostics && !vm.showIpod && !vm.showImport,
+                            onClick = { vm.closeAlbum(); vm.closeArtist(); vm.closePlaylist(); vm.closeDiagnostics(); vm.closeIpod(); vm.closeImport(); vm.tab = t },
                             icon = { Icon(t.icon(), LocalStrings.current.tab(t)) },
                             label = { Text(LocalStrings.current.tab(t), maxLines = 1, softWrap = false, fontSize = 10.sp) },
                             colors = qbdlxNavColors(),
@@ -241,6 +241,7 @@ private fun AppShell(vm: MainViewModel) {
                     vm.showImport -> "import"
                     vm.detail != null -> "album"
                     vm.playlistDetail != null -> "playlist"
+                    vm.artistPage != null -> "artist"
                     else -> vm.tab.name
                 }
                 AnimatedContent(
@@ -254,6 +255,7 @@ private fun AppShell(vm: MainViewModel) {
                     label = "screen",
                 ) { key ->
                     when (key) {
+                        "artist" -> ArtistScreen(vm)
                         "diagnostics" -> DiagnosticsScreen(vm)
                         "ipod" -> IpodScreen(vm)
                         "import" -> ImportScreen(vm)

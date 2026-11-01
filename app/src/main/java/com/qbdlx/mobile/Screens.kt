@@ -314,6 +314,23 @@ fun PlaylistScreen(vm: MainViewModel) {
     }
 }
 
+/** An artist's page: their picture, a button to download everything, and their albums (newest first). */
+@Composable
+fun ArtistScreen(vm: MainViewModel) {
+    val a = vm.artistPage ?: return
+    BackHandler { vm.closeArtist() }
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp + LocalBottomInset.current)) {
+        item {
+            DetailHeader(a.image, a.name, listOf(LocalStrings.current.artistsTab, "${a.albums.size} ${LocalStrings.current.albums.lowercase()}"), null,
+                onBack = { vm.closeArtist() }, onDownload = { vm.requestDownload(DownloadRequest.Albums(a.albums)) })
+        }
+        items(a.albums, key = { "aa" + it.id }) { al ->
+            LibraryRow(al.coverUrl, al.title, al.year,
+                onClick = { vm.openAlbum(al.id) }, badge = al.quality, hiRes = al.hiRes) { open, close -> CollectionMenu(vm, al, null, open, close) }
+        }
+    }
+}
+
 private enum class LibraryView { Tracks, Albums, Artists, Playlists, History }
 
 /** The user's Library, like the web player's: their playlists, favorite albums and favorite tracks. */
