@@ -385,6 +385,8 @@ interface Strings {
     val ipodSelectAllVisible: String
     val ipodDeleteSelectedTitle: String
     fun ipodDeleteSelectedWarning(n: Int): String
+    fun ipodDeleteListsNote(n: Int): String
+    val ipodDeleteListCheck: String
     fun ipodSummary(on: Int, pending: Int, already: Int): String
     fun ipodSpace(free: String, total: String): String
     val ipodArtistAll: String
@@ -809,6 +811,8 @@ object English : Strings {
     override fun ipodSelectedCount(n: Int) = "$n selected"
     override val ipodSelectAllVisible = "Select all shown"
     override val ipodDeleteSelectedTitle = "Delete selected songs?"
+    override fun ipodDeleteListsNote(n: Int) = if (n > 0) " $n playlist(s) will be deleted too." else ""
+    override val ipodDeleteListCheck = "Delete the list and its songs"
     override fun ipodDeleteSelectedWarning(n: Int) = "$n songs and their audio files will be removed from the iPod. A library backup is made first. This cannot restore the audio files."
     override fun ipodSpace(free: String, total: String) = "$free free of $total"
     override fun ipodSummary(on: Int, pending: Int, already: Int) = "$on on the iPod · $pending to send" + if (already > 0) " · $already already there" else ""
@@ -1233,6 +1237,8 @@ object Spanish : Strings {
     override fun ipodSelectedCount(n: Int) = "$n seleccionadas"
     override val ipodSelectAllVisible = "Seleccionar todos los visibles"
     override val ipodDeleteSelectedTitle = "¿Borrar las canciones seleccionadas?"
+    override fun ipodDeleteListsNote(n: Int) = if (n > 0) " También se borrarán $n playlist(s)." else ""
+    override val ipodDeleteListCheck = "Borrar la lista y sus canciones"
     override fun ipodDeleteSelectedWarning(n: Int) = "Se eliminarán del iPod $n canciones y sus archivos de audio. Primero se guardará una copia de la biblioteca. Los archivos de audio no se pueden recuperar desde esa copia."
     override fun ipodSpace(free: String, total: String) = "$free libres de $total"
     override fun ipodSummary(on: Int, pending: Int, already: Int) = "$on en el iPod · $pending por enviar" + if (already > 0) " · $already ya estaban" else ""
