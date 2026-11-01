@@ -11,6 +11,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.background
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
@@ -98,6 +99,22 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /** Three dots that light up one after another as [progress] goes 0..1, and breathe while [active]. Opacity and scale only. */
+    @Composable
+    private fun BreathDots(progress: Float, active: Boolean, modifier: Modifier = Modifier) {
+        val breathe = androidx.compose.animation.core.rememberInfiniteTransition(label = "breathe").animateFloat(
+            1f, 1.12f, androidx.compose.animation.core.infiniteRepeatable(tween(1200, easing = androidx.compose.animation.core.FastOutSlowInEasing), androidx.compose.animation.core.RepeatMode.Reverse), label = "b").value
+        val show by animateFloatAsState(if (active) 1f else .35f, tween(if (active) 280 else 200, easing = UiEaseOut), label = "dotsShow")
+        Row(modifier.graphicsLayer { alpha = show; val k = if (active) breathe else 1f; scaleX = k; scaleY = k; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, .5f) },
+            horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            for (n in 0..2) {
+                val lit by animateFloatAsState(if (progress * 3f >= n + .15f) 1f else .3f, tween(220, easing = UiEaseOut), label = "dot$n")
+                Box(Modifier.size(14.dp).graphicsLayer { alpha = lit; scaleX = .8f + .2f * lit; scaleY = .8f + .2f * lit }
+                    .background(MaterialTheme.colorScheme.primary, androidx.compose.foundation.shape.CircleShape))
+            }
+        }
+    }
+
     @Composable
     private fun Screen(offset: Long, setOffset: (Long) -> Unit) {
         val state by Tracker.state.collectAsState()
@@ -169,8 +186,18 @@ class MainActivity : ComponentActivity() {
                                 1f - f to androidx.compose.ui.graphics.Color.Black, 1f to androidx.compose.ui.graphics.Color.Transparent),
                                 blendMode = androidx.compose.ui.graphics.BlendMode.DstIn)
                         }, state = listState, contentPadding = PaddingValues(top = pad, bottom = pad)) {
+                        // Intro longer than 5 s: three dots that fill up until the first line.
+                        val first = state.lines.firstOrNull()?.timeMs ?: 0L
+                        if (state.status == Status.SYNCED && first >= 5000) item(key = "intro") {
+                            BreathDots(if (idx < 0) (pos.toFloat() / first).coerceIn(0f, 1f) else 1f, idx < 0, Modifier.padding(vertical = 10.dp))
+                        }
                         itemsIndexed(state.lines) { i, l ->
                             val on = i == idx
+                            val span = (state.lines.getOrNull(i + 1)?.timeMs ?: (l.timeMs + 4000)) - l.timeMs
+                            if (state.status == Status.SYNCED && l.text.isBlank() && span >= 5000) {
+                                BreathDots(if (on) ((pos - l.timeMs).toFloat() / span).coerceIn(0f, 1f) else if (i < idx) 1f else 0f, on, Modifier.padding(vertical = 10.dp))
+                                return@itemsIndexed
+                            }
                             val dist = if (idx >= 0) kotlin.math.abs(i - idx) else 0
                             val ms = if (on) 280 else 200
                             val scale by animateFloatAsState(if (on) 1.2f else 1f, tween(ms, easing = UiEaseOut), label = "scale")

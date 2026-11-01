@@ -12,8 +12,8 @@ android {
         applicationId = "com.qbdlx.lyrics"
         minSdk = 29
         targetSdk = 35
-        versionCode = 27
-        versionName = "0.8.2"
+        versionCode = 28
+        versionName = "0.8.3"
     }
 
     // A release build signed with a key given on the command line (-PreleaseKeystore=... -PreleasePassword=...); never stored in the repo.
