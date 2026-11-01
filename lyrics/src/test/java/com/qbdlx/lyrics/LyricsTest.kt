@@ -1,0 +1,84 @@
+package com.qbdlx.lyrics
+
+import org.json.JSONArray
+import org.junit.Assert.*
+import org.junit.Test
+
+class LyricsTest {
+    private val lrc = "[ar:Someone]\n[00:12.50] First\n[00:20.00][01:00.5] Chorus\n[00:30.123] Second\n"
+
+    @Test fun parsesStampsTagsAndRepeatedLines() {
+        val l = Lrc.parse(lrc)
+        assertEquals(listOf(12_500L, 20_000L, 30_123L, 60_500L), l.map { it.timeMs })
+        assertEquals(listOf("First", "Chorus", "Second", "Chorus"), l.map { it.text })
+    }
+
+    @Test fun findsTheCurrentLine() {
+        val l = Lrc.parse(lrc)
+        assertEquals(-1, Lrc.indexAt(l, 5_000))
+        assertEquals(0, Lrc.indexAt(l, 12_500))
+        assertEquals(1, Lrc.indexAt(l, 29_999))
+        assertEquals(3, Lrc.indexAt(l, 999_999))
+    }
+
+    @Test fun carRowsShowNeighboursAndMarkTheCurrentLine() {
+        val st = LyricsState(Status.SYNCED, TrackInfo("T", "A", "B", 200_000, "p"), Lrc.parse(lrc), true)
+        val rows = CarView.rows(st, 21_000)
+        assertEquals(listOf("First", "▶ Chorus", "Second", "Chorus"), rows.map { it.title })
+        assertEquals("T - A", rows.first { it.current }.subtitle)
+        assertEquals(1, rows.count { it.current })
+    }
+
+    @Test fun beforeTheFirstLineShowsAMusicNote() {
+        val st = LyricsState(Status.SYNCED, null, Lrc.parse(lrc), true)
+        assertEquals(listOf("♪", "♪ …"), CarView.rows(st, 0).take(2).map { it.title })
+    }
+
+    @Test fun messagesWhenThereIsNoLyric() {
+        assertTrue(CarView.rows(LyricsState(Status.NOT_FOUND), 0)[0].title.contains("No hay letra"))
+        assertTrue(CarView.rows(LyricsState(Status.NO_ACCESS), 0)[0].title.contains("acceso"))
+    }
+
+    @Test fun searchPrefersSyncedResultsWithMatchingDuration() {
+        val r = JSONArray("""[
+          {"duration":300,"plainLyrics":"x","syncedLyrics":null},
+          {"duration":201,"plainLyrics":"p","syncedLyrics":"[00:01.00] hi"},
+          {"duration":200,"plainLyrics":"p2","syncedLyrics":null}]""")
+        assertEquals("[00:01.00] hi", LrcLib.pickBest(r, 200)!!.synced)
+        assertNull(LrcLib.pickBest(JSONArray("""[{"duration":300,"plainLyrics":"x"}]"""), 200))
+        assertEquals("near", LrcLib.pickBest(JSONArray("""[{"duration":207,"plainLyrics":"near"}]"""), 200)!!.plain)
+    }
+
+    @Test fun cleansStreamingSuffixes() {
+        assertEquals("Song", TrackText.clean("Song (Remastered 2011)"))
+        assertEquals("Song", TrackText.clean("Song [Hi-Res]"))
+        assertEquals("Song (Part 1)", TrackText.clean("Song (Part 1)"))
+    }
+
+    @Test fun rejectsAnotherSongWithASimilarName() {
+        val other = JSONArray("""[{"trackName":"Atte El Insuperable","artistName":"Otro Artista","duration":200,"plainLyrics":"wrong"}]""")
+        assertNull(LrcLib.pickBest(other, 200, "Atte El Insuperable", "Carin León"))
+        val right = JSONArray("""[{"trackName":"Atte El Insuperable (Remastered 2020)","artistName":"Carin León","duration":200,"plainLyrics":"ok"}]""")
+        assertEquals("ok", LrcLib.pickBest(right, 200, "Atte El Insuperable", "Carin León")!!.plain)
+        assertTrue(LrcLib.sameSong("That's What I Like", "Bruno Mars", "That's What I Like (feat. Gucci Mane) (2017 Remix)", "Bruno Mars"))
+        assertFalse(LrcLib.sameSong("Holdin On", "Someone Else", "Holdin On", "Flume"))
+    }
+}
+
+class PrefetchTest {
+    @org.junit.Test fun sameSongSameKeyWhateverTheApp() {
+        assertEquals(Prefetch.storeKey("Rasputin", "Boney M."), Prefetch.storeKey("RASPUTIN", "boney m"))
+        assertEquals(Prefetch.storeKey("Song", "A, B"), Prefetch.storeKey("Song", "A"))
+        assertEquals(Prefetch.storeKey("Song", "Daddy Yankee feat. X"), Prefetch.storeKey("Song", "Daddy Yankee"))
+        assertNotEquals(Prefetch.storeKey("One", "A"), Prefetch.storeKey("Two", "A"))
+        val t = TrackInfo("Rasputin", "Boney M.", "x", 1000, "app.one"); val u = TrackInfo("Rasputin", "Boney M.", "y", 2000, "app.two")
+        assertEquals(t.storeKey, u.storeKey); assertNotEquals(t.key, u.key)
+    }
+
+    @org.junit.Test fun theSharedListRoundTrips() {
+        val list = listOf(PrefetchTrack("Título ñ", "Artista", "Álbum", 200), PrefetchTrack("B", "", "", 0))
+        val back = Prefetch.parse(Prefetch.encode(list))!!
+        assertEquals(listOf("Título ñ", "B"), back.map { it.title }); assertEquals(200, back[0].durationSec); assertEquals("Álbum", back[0].album)
+        assertNull(Prefetch.parse("not json")); assertNull(Prefetch.parse("{\"other\":1}"))
+    }
+}

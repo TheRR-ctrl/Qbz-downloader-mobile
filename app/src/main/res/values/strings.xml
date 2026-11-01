@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">QBDLX Mobile</string>
+    <string name="widget_description">Now playing: cover, title and playback buttons</string>
+    <string name="widget_previous">Previous</string>
+    <string name="widget_play_pause">Play / pause</string>
+    <string name="widget_next">Next</string>
+</resources>

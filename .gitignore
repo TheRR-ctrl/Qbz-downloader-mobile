@@ -1,0 +1,12 @@
+.gradle/
+build/
+local.properties
+*.iml
+.idea/
+captures/
+*.jks
+*.keystore
+QBDLX-Mobile-debug.apk
+.kotlin/
+QBDLX-Mobile-source.zip
+CONTEXT-app-secret.md
