@@ -2,6 +2,9 @@ package com.qbdlx.mobile
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -285,29 +288,37 @@ fun IpodScreen(vm: MainViewModel) {
                         Text(listOfNotNull(artist?.ifBlank { "—" }, album?.ifBlank { "—" }).joinToString(" › ").ifEmpty { s.ipodViewArtists }, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
-                if (artist == null) {
-                    val artists = onIpod.groupBy { it.artist }.toList().sortedBy { it.first.lowercase() }
-                    artists.forEach { (name, ts) ->
-                        item(key = "la$name") {
-                            Column(Modifier.fillMaxWidth().clickable { vm.ipodLibArtist = name }.padding(vertical = 10.dp)) {
-                                Text(name.ifBlank { "—" }, fontWeight = FontWeight.Medium)
-                                Text(s.ipodLibArtistCount(ts.map { it.album }.distinct().size, ts.size), fontSize = 12.sp, color = muted)
-                            }
+                val selecting = vm.ipodSelectedPids.isNotEmpty()
+                data class Cell(val key: String, val title: String, val sub: String, val cover: String?, val pids: List<Long>, val open: () -> Unit)
+                val cells: List<Cell> = if (artist == null) {
+                    onIpod.groupBy { it.artist }.toList().sortedBy { it.first.lowercase() }.map { (name, ts) ->
+                        Cell("la$name", name.ifBlank { "—" }, s.ipodLibArtistCount(ts.map { it.album }.distinct().size, ts.size),
+                            ts.firstNotNullOfOrNull { vm.ipodCoverFor(it.artist, it.album) }, ts.map { it.pid }) { vm.ipodLibArtist = name }
+                    }
+                } else {
+                    onIpod.filter { it.artist == artist }.groupBy { it.album }.toList().sortedBy { it.first.lowercase() }.map { (name, ts) ->
+                        Cell("lb$artist$name", name.ifBlank { "—" }, s.ipodPlaylistSongs(ts.size, 0), vm.ipodCoverFor(artist, name), ts.map { it.pid }) { vm.ipodLibAlbum = name }
+                    }
+                }
+                if (album == null) {
+                    item {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            androidx.compose.material3.FilterChip(!vm.ipodGrid, { vm.ipodGrid = false }, label = { Text(s.ipodViewRows) })
+                            androidx.compose.material3.FilterChip(vm.ipodGrid, { vm.ipodGrid = true }, label = { Text(s.ipodViewGrid) })
                         }
                     }
-                } else if (album == null) {
-                    val albums = onIpod.filter { it.artist == artist }.groupBy { it.album }.toList().sortedBy { it.first.lowercase() }
-                    albums.forEach { (name, ts) ->
-                        item(key = "lb$artist$name") {
-                            Row(Modifier.fillMaxWidth().clickable { vm.ipodLibAlbum = name }, verticalAlignment = Alignment.CenterVertically) {
-                                Column(Modifier.weight(1f).padding(vertical = 10.dp)) {
-                                    Text(name.ifBlank { "—" }, fontWeight = FontWeight.Medium)
-                                    Text(s.ipodPlaylistSongs(ts.size, 0), fontSize = 12.sp, color = muted)
+                    val onTap = { c: Cell -> if (selecting) vm.ipodSelectVisible(c.pids, !c.pids.all { it in vm.ipodSelectedPids }) else c.open() }
+                    if (vm.ipodGrid) {
+                        cells.chunked(3).forEach { rowCells ->
+                            item(key = "g" + rowCells.first().key) {
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    rowCells.forEach { c -> Box(Modifier.weight(1f)) { LibCell(c.title, c.sub, c.cover, c.pids.all { it in vm.ipodSelectedPids }, true, { onTap(c) }) { vm.ipodSelectVisible(c.pids, !c.pids.all { it in vm.ipodSelectedPids }) } } }
+                                    repeat(3 - rowCells.size) { Spacer(Modifier.weight(1f)) }
                                 }
-                                val all = ts.all { it.pid in vm.ipodSelectedPids }
-                                Checkbox(all, { vm.ipodSelectVisible(ts.map { it.pid }, !all) })
                             }
                         }
+                    } else cells.forEach { c ->
+                        item(key = c.key) { LibCell(c.title, c.sub, c.cover, c.pids.all { it in vm.ipodSelectedPids }, false, { onTap(c) }) { vm.ipodSelectVisible(c.pids, !c.pids.all { it in vm.ipodSelectedPids }) } }
                     }
                 } else {
                     onIpod.filter { it.artist == artist && it.album == album }.forEach { t ->
@@ -488,5 +499,30 @@ fun ListScrollbar(state: androidx.compose.foundation.lazy.LazyListState, modifie
             Modifier.align(Alignment.TopEnd).padding(end = 3.dp).offset(y = offset).width(5.dp).height(thumb)
                 .background(color.copy(alpha = 0.7f), RoundedCornerShape(3.dp)),
         )
+    }
+}
+
+/** A cell of the iPod library view (artist or album): cover, name and a small line; tap opens (or toggles while selecting), long press selects. */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun LibCell(title: String, sub: String, cover: String?, selected: Boolean, grid: Boolean, onClick: () -> Unit, onLong: () -> Unit) {
+    val bg = if (selected) MaterialTheme.colorScheme.primaryContainer else androidx.compose.ui.graphics.Color.Transparent
+    val art: @Composable (Modifier) -> Unit = { m ->
+        Box(m.clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
+            if (cover != null) coil.compose.AsyncImage(cover, null, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+            else Text("♪", fontSize = 22.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (selected) Text("✓", Modifier.align(Alignment.TopEnd).padding(4.dp), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+        }
+    }
+    if (grid) Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(bg).combinedClickable(onClick = onClick, onLongClick = onLong).padding(4.dp)) {
+        art(Modifier.fillMaxWidth().aspectRatio(1f))
+        Text(title, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(sub, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    } else Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(bg).combinedClickable(onClick = onClick, onLongClick = onLong).padding(vertical = 6.dp, horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        art(Modifier.size(52.dp))
+        Column(Modifier.weight(1f).padding(start = 12.dp)) {
+            Text(title, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(sub, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
