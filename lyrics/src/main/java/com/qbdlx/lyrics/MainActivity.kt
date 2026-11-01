@@ -85,7 +85,7 @@ class MainActivity : ComponentActivity() {
         LaunchedEffect(state.track?.key) { browsing = false }
         LaunchedEffect(idx, browsing) { if (!browsing && idx >= 0) listState.animateScrollToItem(idx) } // the list padding puts that item in the first third
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Q Lyrics", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Text("Q Lyrics", fontSize = 32.sp, fontWeight = FontWeight.Bold)
             val pre by Prefetch.state.collectAsState()
             if (pre.running || pre.total > 0) {
                 Text(
@@ -98,7 +98,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
             if (!pre.running) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton({ fromPhone() }, Modifier.weight(1f)) { Text("Bajar letras de la música del teléfono", fontSize = 12.sp) }
+                PillTonal({ fromPhone() }, Modifier.weight(1f)) { Text("Bajar letras de la música del teléfono", fontSize = 12.sp) }
             }
             if (!pre.running) Text("Para tu biblioteca de Qobuz: en QBDLX Mobile → Ajustes → «Enviar lista de canciones a Q Lyrics».", fontSize = 11.sp)
             if (state.status == Status.NO_ACCESS) {
@@ -119,16 +119,16 @@ class MainActivity : ComponentActivity() {
                 if (state.status == Status.PLAIN) Text("Solo hay letra sin sincronizar.", fontSize = 12.sp)
                 Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Ajuste de sincronía: ${offset} ms", Modifier.weight(1f), fontSize = 12.sp)
-                    OutlinedButton({ setOffset(offset - 250) }) { Text("−") }
-                    OutlinedButton({ setOffset(offset + 250) }) { Text("+") }
+                    PillTonal({ setOffset(offset - 250) }) { Text("−") }
+                    PillTonal({ setOffset(offset + 250) }) { Text("+") }
                 }
                 var floating by remember { mutableStateOf(FloatingService.running) }
-                OutlinedButton({
+                PillTonal({
                     if (!Settings.canDrawOverlays(this@MainActivity))
                         startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:$packageName"))) // then tap the button again
                     else { FloatingService.toggle(this@MainActivity); floating = !floating }
                 }) { Text(if (floating) "Cerrar ventana flotante" else "Ventana flotante con la letra") }
-                if (browsing && state.status == Status.SYNCED) Button({ browsing = false }) { Text("Resincronizar") }
+                if (browsing && state.status == Status.SYNCED) PillButton({ browsing = false }) { Text("Resincronizar") }
                 BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                     // a third of the height as padding above, so the line being sung sits in the first third however many lines fit
                     val pad = if (state.status == Status.SYNCED) (maxHeight / 3 - 24.dp).coerceAtLeast(0.dp) else 12.dp

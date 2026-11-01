@@ -24,11 +24,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -60,7 +58,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            MaterialTheme(colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()) {
+            MaterialTheme(colorScheme = if (isSystemInDarkTheme()) qobuzDarkScheme() else lightColorScheme()) {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) { ScannerScreen(vm) }
             }
         }
@@ -91,7 +89,7 @@ private fun ScannerScreen(vm: ScanViewModel) {
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         item {
-            Text("QBDLX Scanner", fontSize = 26.sp, fontWeight = FontWeight.Bold)
+            Text("QBDLX Scanner", fontSize = 32.sp, fontWeight = FontWeight.Bold)
             Text(
                 t(
                     "Busca las canciones de tu teléfono y crea una lista para importar en QBDLX Mobile. Si una canción no tiene nombre útil, la reconoce por su sonido.",
@@ -100,7 +98,7 @@ private fun ScannerScreen(vm: ScanViewModel) {
                 fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        item {
+        item { QCard {
             Text(t("Lista de Spotify", "Spotify list"), fontWeight = FontWeight.SemiBold)
             Text(
                 t("Pega el enlace de una playlist o álbum público de Spotify; se comparte en el mismo formato que el escaneo y QBDLX Mobile la busca en Qobuz.",
@@ -111,7 +109,7 @@ private fun ScannerScreen(vm: ScanViewModel) {
                 value = vm.spotifyLink, onValueChange = { vm.spotifyLink = it }, singleLine = true, modifier = Modifier.fillMaxWidth(),
                 label = { Text("open.spotify.com/playlist/…") },
             )
-            Button(vm::readSpotify, Modifier.fillMaxWidth(), enabled = vm.spotifyLink.isNotBlank() && !vm.spotifyBusy) {
+            PillButton(vm::readSpotify, Modifier.fillMaxWidth(), enabled = vm.spotifyLink.isNotBlank() && !vm.spotifyBusy) {
                 Text(if (vm.spotifyBusy) t("Leyendo…", "Reading…") else t("Leer lista", "Read list"))
             }
             vm.spotifyError?.let {
@@ -130,20 +128,20 @@ private fun ScannerScreen(vm: ScanViewModel) {
                         if (l.songs.size >= 100) t(" (Spotify solo muestra las primeras 100)", " (Spotify only shows the first 100)") else "",
                     fontWeight = FontWeight.Medium,
                 )
-                Button({ vm.shareSpotifyIntent()?.let(context::startActivity) }, Modifier.fillMaxWidth()) { Text(t("Compartir lista", "Share list")) }
+                PillButton({ vm.shareSpotifyIntent()?.let(context::startActivity) }, Modifier.fillMaxWidth()) { Text(t("Compartir lista", "Share list")) }
             }
             Spacer(Modifier.height(8.dp))
-        }
-        item {
+        }}
+        item { QCard {
             OutlinedTextField(
                 value = vm.keyDraft, onValueChange = vm::editKey, singleLine = true, modifier = Modifier.fillMaxWidth(),
                 label = { Text(t("Clave de AcoustID (gratis)", "AcoustID key (free)")) },
             )
-            OutlinedButton(
+            PillTonal(
                 { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://acoustid.org/new-application"))) },
                 Modifier.fillMaxWidth(),
             ) { Text(t("Obtener clave gratis (acoustid.org)", "Get a free key (acoustid.org)")) }
-            Button(vm::saveKey, Modifier.fillMaxWidth(), enabled = vm.keyDraft.isNotBlank() && !vm.checkingKey) {
+            PillButton(vm::saveKey, Modifier.fillMaxWidth(), enabled = vm.keyDraft.isNotBlank() && !vm.checkingKey) {
                 Text(if (vm.checkingKey) t("Probando…", "Testing…") else t("Guardar y probar clave", "Save and test key"))
             }
             vm.keyStatus?.let { st ->
@@ -162,8 +160,8 @@ private fun ScannerScreen(vm: ScanViewModel) {
                     "Opens the page in your browser: sign in, register an application with any name and paste the key here."),
                 fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-        }
-        item {
+        }}
+        item { QCard {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(t("Solo carpetas comunes", "Only common folders"), fontWeight = FontWeight.SemiBold)
@@ -171,8 +169,8 @@ private fun ScannerScreen(vm: ScanViewModel) {
                 }
                 Switch(vm.onlyCommon, vm::updateOnlyCommon)
             }
-        }
-        item {
+        }}
+        item { QCard {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(t("Reconocer todas por sonido", "Recognise all by sound"), fontWeight = FontWeight.SemiBold)
@@ -180,8 +178,8 @@ private fun ScannerScreen(vm: ScanViewModel) {
                 }
                 Switch(vm.allBySound, vm::updateAllBySound)
             }
-        }
-        item {
+        }}
+        item { QCard {
             Text(t("Carpetas omitidas", "Skipped folders"), fontWeight = FontWeight.SemiBold)
             Text(
                 t("Las canciones de estas carpetas no se escanean (audios de WhatsApp, notas de voz…). Basta con parte del nombre de la carpeta.",
@@ -199,8 +197,8 @@ private fun ScannerScreen(vm: ScanViewModel) {
                 OutlinedTextField(newFolder, { newFolder = it }, Modifier.weight(1f), singleLine = true, label = { Text(t("Añadir carpeta", "Add folder")) })
                 TextButton({ vm.omitAdd(newFolder); newFolder = "" }, enabled = newFolder.isNotBlank()) { Text(t("Añadir", "Add")) }
             }
-        }
-        item {
+        }}
+        item { QCard {
             Text(t("Tarjeta SD u otras carpetas", "SD card or other folders"), fontWeight = FontWeight.SemiBold)
             Text(
                 t("La música de la tarjeta SD suele aparecer sola. Si no sale, elige aquí la tarjeta (o una carpeta) y se leerá directamente.",
@@ -213,21 +211,21 @@ private fun ScannerScreen(vm: ScanViewModel) {
                     TextButton({ vm.removeTree(u) }) { Text(t("Quitar", "Remove")) }
                 }
             }
-            OutlinedButton({ pickTree.launch(null) }, Modifier.fillMaxWidth()) { Text(t("Elegir tarjeta SD o carpeta", "Pick SD card or folder")) }
-        }
+            PillTonal({ pickTree.launch(null) }, Modifier.fillMaxWidth()) { Text(t("Elegir tarjeta SD o carpeta", "Pick SD card or folder")) }
+        }}
         item {
             if (progress != null) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (progress.total > 0) LinearProgressIndicator({ progress.done / progress.total.toFloat() }, Modifier.fillMaxWidth()) else LinearProgressIndicator(Modifier.fillMaxWidth())
                     Text("${progress.done}/${progress.total}  ${progress.current}", fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Clip, modifier = Modifier.basicMarquee())
-                    OutlinedButton(vm::cancel) { Text(t("Cancelar", "Cancel")) }
+                    PillTonal(vm::cancel) { Text(t("Cancelar", "Cancel")) }
                 }
             } else {
                 if (vm.resumable) {
                     Text(t("Un escaneo quedó a medias: ${songs?.size ?: 0} canciones ya están guardadas.", "A scan was left unfinished: ${songs?.size ?: 0} songs are already saved."), fontSize = 13.sp)
-                    Button(::start, Modifier.fillMaxWidth()) { Text(t("Continuar escaneo", "Continue scan")) }
+                    PillButton(::start, Modifier.fillMaxWidth()) { Text(t("Continuar escaneo", "Continue scan")) }
                     TextButton(vm::startOver) { Text(t("Empezar de cero", "Start over")) }
-                } else Button(::start, Modifier.fillMaxWidth()) { Text(if (songs == null) t("Escanear canciones", "Scan songs") else t("Escanear de nuevo", "Scan again")) }
+                } else PillButton(::start, Modifier.fillMaxWidth()) { Text(if (songs == null) t("Escanear canciones", "Scan songs") else t("Escanear de nuevo", "Scan again")) }
             }
         }
         vm.message?.let { m ->
@@ -250,16 +248,16 @@ private fun ScannerScreen(vm: ScanViewModel) {
                     fontWeight = FontWeight.SemiBold,
                 )
                 Spacer(Modifier.height(6.dp))
-                Button({ vm.shareIntent()?.let(context::startActivity) }, Modifier.fillMaxWidth(), enabled = songs.isNotEmpty()) { Text(t("Compartir lista", "Share list")) }
+                PillButton({ vm.shareIntent()?.let(context::startActivity) }, Modifier.fillMaxWidth(), enabled = songs.isNotEmpty()) { Text(t("Compartir lista", "Share list")) }
             }
             // No key: the same file name can exist in several folders, and a repeated key crashes a LazyColumn.
             items(songs) { s ->
                 Column {
-                    Text(s.title.ifBlank { s.file }, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(s.title.ifBlank { s.file }, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(
-                        listOf(s.artist, s.album).filter { it.isNotBlank() }.joinToString(" · ").ifBlank { t("sin identificar", "unidentified") } +
+                        listOf(s.artist, s.album).filter { it.isNotBlank() }.joinToString(" • ").ifBlank { t("sin identificar", "unidentified") } +
                             when (s.source) { Source.AcoustId -> "  ·  🎧 ${(s.confidence * 100).toInt()}%"; Source.Unknown -> "  ·  ?"; else -> "" },
-                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
                     if (s.folder.isNotBlank()) {
                         val short = OmittedFolders.shortName(s.folder)

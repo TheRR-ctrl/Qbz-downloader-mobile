@@ -8,7 +8,7 @@ import androidx.core.graphics.ColorUtils
 
 /** A colour scheme built around [seed] (an ARGB colour, 0 for the default one), so the screen follows the playing app's colour. */
 fun schemeFor(seed: Int, dark: Boolean): ColorScheme {
-    if (seed == 0) return if (dark) darkColorScheme() else lightColorScheme()
+    if (seed == 0) return if (dark) qobuzDarkScheme() else lightColorScheme()
     val hsl = FloatArray(3).also { ColorUtils.colorToHSL(seed, it) }
     val h = hsl[0]; val s = hsl[1].coerceIn(0.35f, 1f)
     fun c(sat: Float, light: Float) = Color.hsl(h, sat.coerceIn(0f, 1f), light)
