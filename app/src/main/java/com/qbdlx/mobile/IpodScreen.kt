@@ -485,11 +485,11 @@ fun IpodScreen(vm: MainViewModel) {
                     }
                 }
                 item(key = t.key) {
-                    Row(Modifier.fillMaxWidth().clickable { vm.ipodToggle(t) }, verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().pressable { vm.ipodToggle(t) }, verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(vm.ipodIsTicked(t), { vm.ipodToggle(t) })
                         coil.compose.AsyncImage(
                             model = t.album.coverUrl, contentDescription = null, contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                            modifier = Modifier.padding(end = 10.dp).size(44.dp).clip(RoundedCornerShape(6.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
+                            modifier = Modifier.padding(end = 10.dp).size(44.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
                         )
                         Column(Modifier.weight(1f)) {
                             Text(t.track.displayTitle, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
@@ -538,6 +538,15 @@ fun ListScrollbar(state: androidx.compose.foundation.lazy.LazyListState, modifie
 }
 
 /** A cell of the iPod library view (artist or album): cover, name and a small line; tap opens (or toggles while selecting), long press selects. */
+/** Tap target with the same press feedback as the library cells: scale 0.97, 160 ms, strong ease-out. */
+@Composable
+private fun Modifier.pressable(onClick: () -> Unit): Modifier {
+    val source = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val pressed by source.collectIsPressedAsState()
+    val k by androidx.compose.animation.core.animateFloatAsState(if (pressed) 0.97f else 1f, androidx.compose.animation.core.tween(160, easing = androidx.compose.animation.core.CubicBezierEasing(0.23f, 1f, 0.32f, 1f)), label = "press")
+    return this.graphicsLayer { scaleX = k; scaleY = k }.clickable(interactionSource = source, indication = null, onClick = onClick)
+}
+
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun LibCell(title: String, sub: String, cover: String?, selected: Boolean, grid: Boolean, onClick: () -> Unit, onLong: () -> Unit) {
