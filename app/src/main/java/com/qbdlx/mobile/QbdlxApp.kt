@@ -14,6 +14,7 @@ class QbdlxApp : Application(), ViewModelStoreOwner {
 
     override fun onCreate() {
         super.onCreate()
+        DefaultFolder.init(this)
         // Keep the last crash, so it can be shared from Settings and the cause found.
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { t, e ->

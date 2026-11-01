@@ -613,9 +613,9 @@ object English : Strings {
     override val maxConcurrentHelp = "How many tracks download at the same time. Lowering it never interrupts a running download."
 
     override val folderTitle = "Download folder"
-    override val folderHelp = "Where new downloads are saved, with a folder per artist and album. Without a choice, Music/QobuzDownloaderX is used. " +
+    override val folderHelp = "Where new downloads are saved, with a folder per artist and album. Without a choice, Music/${DefaultFolder.name} is used. " +
         "Android doesn't allow choosing the storage root or the Download folder."
-    override val folderDefault = "Default: Music/QobuzDownloaderX"
+    override val folderDefault get() = "Default: Music/${DefaultFolder.name}"
     override fun folderCurrent(isInternal: Boolean, volume: String, path: String) =
         (if (isInternal) "Internal storage" else "SD card ($volume)") + if (path.isEmpty()) "" else "/$path"
     override val folderChoose = "Choose folder"
@@ -638,7 +638,7 @@ object English : Strings {
     override val folderSaved = "Download folder saved"
     override val folderResetDone = "Using the default folder"
     override fun folderNotWritable(reason: String?) = "Can't save files in that folder" + if (reason.isNullOrBlank()) "" else ": $reason"
-    override val folderBanner = "The chosen download folder isn't available. Downloads are going to Music/QobuzDownloaderX meanwhile."
+    override val folderBanner get() = "The chosen download folder isn't available. Downloads are going to Music/${DefaultFolder.name} meanwhile."
     override val folderBannerChoose = "Choose another"
     override val folderBannerDismiss = "Got it"
     override val wifiOnlyTitle = "Download only on Wi-Fi"
@@ -1054,9 +1054,9 @@ object Spanish : Strings {
     override val maxConcurrentHelp = "Cuántas pistas se descargan al mismo tiempo. Bajar el número nunca interrumpe una descarga en curso."
 
     override val folderTitle = "Carpeta de descargas"
-    override val folderHelp = "Dónde se guardan las descargas nuevas, con una carpeta por artista y álbum. Si no eliges ninguna, se usa Música/QobuzDownloaderX. " +
+    override val folderHelp = "Dónde se guardan las descargas nuevas, con una carpeta por artista y álbum. Si no eliges ninguna, se usa Música/${DefaultFolder.name}. " +
         "Android no permite elegir la raíz del almacenamiento ni la carpeta Descargas."
-    override val folderDefault = "Predeterminada: Música/QobuzDownloaderX"
+    override val folderDefault get() = "Predeterminada: Música/${DefaultFolder.name}"
     override fun folderCurrent(isInternal: Boolean, volume: String, path: String) =
         (if (isInternal) "Almacenamiento interno" else "Tarjeta SD ($volume)") + if (path.isEmpty()) "" else "/$path"
     override val folderChoose = "Elegir carpeta"
@@ -1079,7 +1079,7 @@ object Spanish : Strings {
     override val folderSaved = "Carpeta de descargas guardada"
     override val folderResetDone = "Usando la carpeta predeterminada"
     override fun folderNotWritable(reason: String?) = "No se puede guardar en esa carpeta" + if (reason.isNullOrBlank()) "" else ": $reason"
-    override val folderBanner = "La carpeta de descargas elegida no está disponible. Mientras tanto, las descargas se guardan en Música/QobuzDownloaderX."
+    override val folderBanner get() = "La carpeta de descargas elegida no está disponible. Mientras tanto, las descargas se guardan en Música/${DefaultFolder.name}."
     override val folderBannerChoose = "Elegir otra"
     override val folderBannerDismiss = "Entendido"
     override val wifiOnlyTitle = "Descargar solo con Wi-Fi"
