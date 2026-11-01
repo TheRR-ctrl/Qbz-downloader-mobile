@@ -20,11 +20,46 @@ class Mix(val name: String, val ns: List<Int>)
  */
 object AiMix {
     const val MAX_SONGS_SENT = 700
-    const val MAX_MIXES = 5
+    const val MAX_MIXES = 8
     const val MIN_MIX = 5
-    const val MAX_MIX = 40
-    /** Tried in order: when one is busy or out of quota the next one answers (same idea as the pipeline's ClienteConRespaldo). */
-    val MODELS = listOf("gemini-2.5-flash", "gemini-2.5-flash-lite")
+    const val MAX_MIX = 50
+    /** Mix lengths offered in the dialog (Apple's Genius used 25 to 100; the phone keeps them short). */
+    val SIZES = listOf(15, 25, 50)
+    const val DEFAULT_SIZE = 25
+
+    /** Known good models, best first. Google retires models: `gemini-2.5-flash*` is now limited to keys that already used it. */
+    val PREFERRED = listOf("gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-3.8-flash", "gemini-2.5-flash-lite", "gemini-2.5-flash")
+    private val NOT_TEXT = listOf("tts", "image", "live", "audio", "embedding", "robotics", "omni", "transcribe", "computer", "native", "thinking", "preview", "exp")
+    @Volatile private var cachedModels: List<String>? = null
+
+    /** Picks, from what Google says it offers, the text models to try: the preferred ones first, then any other stable "flash". */
+    fun rankModels(names: List<String>): List<String> {
+        val ok = names.map { it.removePrefix("models/") }.filter { n -> n.startsWith("gemini-") && "flash" in n && NOT_TEXT.none { it in n } }
+        val pref = PREFERRED.filter { it in ok }
+        val rest = ok.filter { it !in PREFERRED }.sortedDescending()
+        return (pref + rest).distinct().take(4)
+    }
+
+    /** Asks Google which models this key can use (so a retired model never breaks the feature); falls back to [PREFERRED] if that fails. */
+    fun models(http: OkHttpClient, key: String): List<String> {
+        cachedModels?.let { return it }
+        val req = Request.Builder().url("https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000").header("x-goog-api-key", key.trim()).build()
+        val found = try {
+            http.newCall(req).execute().use { r ->
+                if (!r.isSuccessful) emptyList() else {
+                    val arr = JSONObject(r.body?.string().orEmpty()).optJSONArray("models") ?: JSONArray()
+                    (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }.filter { o ->
+                        val m = o.optJSONArray("supportedGenerationMethods")
+                        m != null && (0 until m.length()).any { m.optString(it) == "generateContent" }
+                    }.map { it.optString("name") }
+                }
+            }
+        } catch (_: Exception) { emptyList() }
+        val ranked = rankModels(found)
+        if (ranked.isEmpty()) return PREFERRED
+        cachedModels = ranked
+        return ranked
+    }
 
     /** Compact list for the prompt: only titles, artists and albums leave the phone (no audio, no covers, no account data). */
     fun catalog(songs: List<MixSong>): String =
@@ -32,11 +67,12 @@ object AiMix {
 
     private fun clean(s: String) = s.replace('|', '/').replace('\n', ' ').trim().take(80)
 
-    fun systemPrompt() = """
+    fun systemPrompt(size: Int = DEFAULT_SIZE) = """
 Eres un curador musical. Recibes el catálogo de canciones de una persona, una por línea con el formato número|título|artista|álbum, y un pedido.
 Crea mixes (playlists) SOLO con canciones del catálogo, citándolas por su número. No inventes canciones ni números.
-Cada mix: un nombre corto en español y entre $MIN_MIX y $MAX_MIX canciones ordenadas para escucharse de corrido (energía, ánimo, artistas que se mezclen bien).
-Si el pedido nombra una canción o artista, haz mixes de música parecida a eso usando lo que haya en el catálogo.
+Cada mix: un nombre corto en español y unas $size canciones (nunca menos de $MIN_MIX ni más de $MAX_MIX) ordenadas para escucharse de corrido (energía, ánimo, artistas que se mezclen bien).
+Si hay varios pedidos, haz un mix por cada uno, en ese orden. Si el pedido nombra una canción o artista, haz mixes de música parecida a eso usando lo que haya en el catálogo.
+Si se da una canción de partida, cada mix debe empezar con ella y el resto debe parecerse a ella (género, época, ánimo, artistas afines).
 Responde solo JSON.
 """.trim()
 
@@ -49,7 +85,7 @@ Responde solo JSON.
      * Turns the AI's JSON into accepted mixes. Drops unknown numbers and repeats, cuts to [MAX_MIX], drops mixes under [MIN_MIX],
      * keeps at most [wanted] mixes and de-duplicates names. Anything that is not valid JSON gives an empty list.
      */
-    fun validate(json: String, valid: Set<Int>, wanted: Int = MAX_MIXES): List<Mix> {
+    fun validate(json: String, valid: Set<Int>, wanted: Int = MAX_MIXES, seed: Int? = null, maxLen: Int = MAX_MIX): List<Mix> {
         val arr = try { JSONObject(stripFence(json)).optJSONArray("mixes") } catch (_: Exception) { null } ?: return emptyList()
         val out = ArrayList<Mix>()
         val names = HashSet<String>()
@@ -60,7 +96,8 @@ Responde solo JSON.
             val ids = o.optJSONArray("ids") ?: continue
             val seen = LinkedHashSet<Int>()
             for (k in 0 until ids.length()) { val n = ids.optInt(k, -1); if (n in valid) seen.add(n) }
-            val list = seen.toList().take(MAX_MIX)
+            if (seed != null && seed in valid) { seen.remove(seed); val l = LinkedHashSet<Int>(); l.add(seed); l.addAll(seen); seen.clear(); seen.addAll(l) }
+            val list = seen.toList().take(maxLen.coerceIn(MIN_MIX, MAX_MIX))
             if (list.size >= MIN_MIX) out.add(Mix(name, list))
             if (out.size >= wanted) break
         }
@@ -70,12 +107,18 @@ Responde solo JSON.
     private fun stripFence(s: String): String = s.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
 
     /** Without AI: one mix per artist with enough songs, plus a shuffled "Sorpresa". Deterministic for a given [seed]. */
-    fun localMixes(songs: List<MixSong>, wanted: Int = MAX_MIXES, seed: Long = 0L): List<Mix> {
+    fun localMixes(songs: List<MixSong>, wanted: Int = MAX_MIXES, seed: Long = 0L, size: Int = MAX_MIX, first: MixSong? = null): List<Mix> {
         val out = ArrayList<Mix>()
+        if (first != null) {
+            val same = songs.filter { it.n != first.n && it.artist.isNotBlank() && it.artist.trim() == first.artist.trim() }
+            val others = songs.filter { it.n != first.n && it !in same }.shuffled(java.util.Random(seed))
+            val ns = (listOf(first) + same + others).map { it.n }.take(size.coerceIn(MIN_MIX, MAX_MIX))
+            if (ns.size >= MIN_MIX) return listOf(Mix("Parecidas a ${first.title.take(30)}", ns))
+        }
         songs.groupBy { it.artist.trim() }.filterKeys { it.isNotBlank() }.entries
             .filter { it.value.size >= MIN_MIX }.sortedByDescending { it.value.size }.take(wanted - 1)
-            .forEach { (a, l) -> out.add(Mix(a, l.take(MAX_MIX).map { it.n })) }
-        if (songs.size >= MIN_MIX) out.add(Mix("Sorpresa", songs.shuffled(java.util.Random(seed)).take(MAX_MIX).map { it.n }))
+            .forEach { (a, l) -> out.add(Mix(a, l.take(size).map { it.n })) }
+        if (songs.size >= MIN_MIX) out.add(Mix("Sorpresa", songs.shuffled(java.util.Random(seed)).take(size).map { it.n }))
         return out.take(wanted)
     }
 
@@ -93,8 +136,12 @@ Responde solo JSON.
     }
 
     /** Plain REST call, like the pipeline's gemini.py: the key goes in a header, never in the URL. Throws [AiError]; returns the JSON text. */
-    fun ask(http: OkHttpClient, key: String, request: String, catalog: String): String = generate(http, key, systemPrompt(), schema(),
-        "Pedido: ${request.ifBlank { "Hazme mixes variados con lo mejor de mi catálogo." }.take(300)}\n\nCatálogo:\n$catalog")
+    fun ask(http: OkHttpClient, key: String, requests: List<String>, catalog: String, size: Int = DEFAULT_SIZE, seedLine: String? = null): String {
+        val pedidos = if (requests.isEmpty()) "Hazme mixes variados con lo mejor de mi catálogo."
+        else "Pedidos (un mix por cada uno, en este orden):\n" + requests.joinToString("\n") { "- ${it.take(200)}" }
+        val partida = seedLine?.let { "\nCanción de partida (va primera en cada mix): $it" } ?: ""
+        return generate(http, key, systemPrompt(size), schema(), "$pedidos\nTamaño: unas $size canciones por mix.$partida\n\nCatálogo:\n$catalog")
+    }
 
     const val MAX_IDEAS = 5
 
@@ -134,7 +181,7 @@ Que sean distintas entre sí y que encajen con lo que hay en el catálogo. Respo
     private fun generate(http: OkHttpClient, key: String, system: String, schema: JSONObject, userText: String): String {
         if (key.isBlank()) throw AiError(AiError.Kind.NoKey, "no key")
         var last: AiError = AiError(AiError.Kind.Bad, "no model answered")
-        for (model in MODELS) {
+        for (model in models(http, key)) {
             val body = JSONObject()
                 .put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", system))))
                 .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", userText)))))
@@ -155,9 +202,12 @@ Que sean distintas entre sí y que encajen con lo que hay en el catálogo. Respo
                             if (t.isNullOrBlank()) last = AiError(AiError.Kind.Bad, "empty answer") else return t
                         }
                         // A wrong key will not get better with another model: stop. Quota or overload: try the next one.
-                        r.code == 400 && text.contains("API_KEY_INVALID") || r.code == 401 || r.code == 403 -> throw AiError(AiError.Kind.BadKey, "HTTP ${r.code}")
+                        r.code == 400 && text.contains("API_KEY_INVALID") || r.code == 401 -> throw AiError(AiError.Kind.BadKey, "HTTP ${r.code}")
+                        // 403/404 on one model usually means "this model is not open to your key / was retired": try the next one.
+                        r.code == 403 -> last = AiError(AiError.Kind.BadKey, "HTTP 403 $model")
+                        r.code == 404 -> { cachedModels = null; last = AiError(AiError.Kind.Bad, "HTTP 404 $model") }
                         r.code == 429 || r.code >= 500 -> last = AiError(AiError.Kind.Quota, "HTTP ${r.code}")
-                        else -> last = AiError(AiError.Kind.Bad, "HTTP ${r.code}")
+                        else -> last = AiError(AiError.Kind.Bad, "HTTP ${r.code} $model")
                     }
                 }
             } catch (e: AiError) { if (e.kind == AiError.Kind.BadKey || e.kind == AiError.Kind.Blocked) throw e; last = e }

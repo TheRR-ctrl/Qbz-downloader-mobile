@@ -346,6 +346,19 @@ interface Strings {
     val aiIdeasStop: String
     val aiIdeasStopped: String
     val aiIdeasLocal: String
+    val aiMixIntro: String
+    val aiSeedPick: String
+    fun aiSeedChosen(t: String): String
+    val aiSeedTitle: String
+    val aiSeedSearch: String
+    val aiSeedClear: String
+    fun aiSizeLabel(n: Int): String
+    val aiGenerate: String
+    val aiPreviewTitle: String
+    val aiPreviewHint: String
+    fun aiPreviewSave(n: Int): String
+    val aiPreviewRegen: String
+    fun aiPreviewSongs(n: Int): String
     val aiMixCreate: String
     val aiMixTooFew: String
     val aiMixAsking: String
@@ -800,8 +813,21 @@ object English : Strings {
     override val ipodPlaylistButton = "Send a Qobuz playlist to the iPod…"
     override val ipodPlaylistTitle = "Choose one or more playlists"
     override val ipodPlaylistLegend = "🟢 already on the iPod · 🔴 not on the iPod (or empty)"
-    override val aiMixButton = "AI mix for the iPod…"
-    override val aiMixTitle = "Mix with AI"
+    override val aiMixButton = "Genius with AI for the iPod…"
+    override val aiMixTitle = "Genius with AI"
+    override val aiMixIntro = "Genius for your iPod: pick a song to start from, or an idea, and the AI builds mixes from the music you already have on it."
+    override val aiSeedPick = "🎵 Start from a song (optional)"
+    override fun aiSeedChosen(t: String) = "🎵 Starting from: $t"
+    override val aiSeedTitle = "Song to start from"
+    override val aiSeedSearch = "Search your iPod…"
+    override val aiSeedClear = "Clear"
+    override fun aiSizeLabel(n: Int) = "$n songs"
+    override val aiGenerate = "Make mixes"
+    override val aiPreviewTitle = "Your Genius mixes"
+    override val aiPreviewHint = "Check the ones you want. Nothing is saved to the iPod until you press Save."
+    override fun aiPreviewSave(n: Int) = "Save to iPod ($n)"
+    override val aiPreviewRegen = "↻ Make new ones"
+    override fun aiPreviewSongs(n: Int) = "$n songs"
     override val aiIdeasButton = "💡 Suggest mixes"
     override val aiIdeasAsking = "Thinking of ideas…"
     override val aiIdeasStop = "Stop"
@@ -1277,8 +1303,21 @@ object Spanish : Strings {
     override val ipodPlaylistButton = "Enviar una playlist de Qobuz al iPod…"
     override val ipodPlaylistTitle = "Elige una o varias playlists"
     override val ipodPlaylistLegend = "🟢 ya está en el iPod · 🔴 no está en el iPod (o está vacía)"
-    override val aiMixButton = "Mix con IA para el iPod…"
-    override val aiMixTitle = "Mix con IA"
+    override val aiMixButton = "Genius con IA para el iPod…"
+    override val aiMixTitle = "Genius con IA"
+    override val aiMixIntro = "Genius para tu iPod: elige una canción de partida o una idea, y la IA arma mixes con la música que ya tienes en él."
+    override val aiSeedPick = "🎵 Partir de una canción (opcional)"
+    override fun aiSeedChosen(t: String) = "🎵 Partiendo de: $t"
+    override val aiSeedTitle = "Canción de partida"
+    override val aiSeedSearch = "Buscar en tu iPod…"
+    override val aiSeedClear = "Quitar"
+    override fun aiSizeLabel(n: Int) = "$n canciones"
+    override val aiGenerate = "Armar mixes"
+    override val aiPreviewTitle = "Tus mixes Genius"
+    override val aiPreviewHint = "Marca los que quieras. No se guarda nada en el iPod hasta que pulses Guardar."
+    override fun aiPreviewSave(n: Int) = "Guardar en el iPod ($n)"
+    override val aiPreviewRegen = "↻ Armar otros"
+    override fun aiPreviewSongs(n: Int) = "$n canciones"
     override val aiIdeasButton = "💡 Sugerirme mixes"
     override val aiIdeasAsking = "Pensando ideas…"
     override val aiIdeasStop = "Parar"

@@ -24,6 +24,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.lazy.LazyColumn
@@ -149,14 +151,28 @@ private fun IpodScreenBody(vm: MainViewModel) {
             dismissButton = { TextButton({ vm.ipodPlaylistPicker = false }) { Text(s.cancel) } },
         )
     }
-    if (vm.aiMixDialog) {
+    if (vm.aiMixDialog && vm.aiPreview == null) {
         var req by remember { mutableStateOf("") }
+        var size by remember { mutableStateOf(AiMix.DEFAULT_SIZE) }
+        var seed by remember { mutableStateOf<com.qbdlx.mobile.ipod.IpodTrack?>(null) }
+        var seedDialog by remember { mutableStateOf(false) }
+        val picked = remember { androidx.compose.runtime.mutableStateListOf<String>() }
         androidx.compose.material3.AlertDialog(
-            onDismissRequest = { vm.aiMixDialog = false },
+            onDismissRequest = { if (!vm.aiGenerating) vm.aiMixDialog = false },
             title = { Text(s.aiMixTitle) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    androidx.compose.material3.OutlinedTextField(req, { req = it }, label = { Text(s.aiMixHint, fontSize = 12.sp) }, minLines = 2)
+                Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(s.aiMixIntro, fontSize = 13.sp, color = muted)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        androidx.compose.material3.OutlinedButton({ seedDialog = true }, Modifier.weight(1f)) {
+                            Text(seed?.let { s.aiSeedChosen("${it.title} – ${it.artist}") } ?: s.aiSeedPick, maxLines = 2)
+                        }
+                        if (seed != null) TextButton({ seed = null }) { Text(s.aiSeedClear) }
+                    }
+                    androidx.compose.material3.OutlinedTextField(req, { req = it }, label = { Text(s.aiMixHint, fontSize = 12.sp) }, minLines = 2, modifier = Modifier.fillMaxWidth())
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(AiMix.SIZES) { n -> FilterChip(size == n, { size = n }, { Text(s.aiSizeLabel(n)) }) }
+                    }
                     if (vm.aiIdeasBusy) {
                         LinearProgressIndicator(Modifier.fillMaxWidth())
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -165,15 +181,89 @@ private fun IpodScreenBody(vm: MainViewModel) {
                         }
                     } else androidx.compose.material3.OutlinedButton({ vm.aiSuggest() }, Modifier.fillMaxWidth()) { Text(s.aiIdeasButton) }
                     vm.aiIdeasNote?.let { Text(it, fontSize = 12.sp, color = muted) }
-                    if (vm.aiIdeas.isNotEmpty()) LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(vm.aiIdeas) { idea -> androidx.compose.material3.SuggestionChip({ req = idea }, { Text(idea) }) }
+                    // Ideas as a list: tick as many as you like, one mix is made for each.
+                    vm.aiIdeas.forEach { idea ->
+                        val on = idea in picked
+                        Row(Modifier.fillMaxWidth().clickable { if (on) picked.remove(idea) else picked.add(idea) }, verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(on, { if (it) picked.add(idea) else picked.remove(idea) })
+                            Text(idea, fontSize = 14.sp)
+                        }
                     }
+                    if (vm.aiGenerating) {
+                        LinearProgressIndicator(Modifier.fillMaxWidth())
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(s.aiMixAsking, fontSize = 12.sp, color = muted, modifier = Modifier.weight(1f))
+                            TextButton({ vm.aiGenerateStop() }) { Text(s.aiIdeasStop) }
+                        }
+                    }
+                    vm.aiPreviewNote?.let { Text(it, fontSize = 12.sp, color = muted) }
                     Text(s.aiKeyPrivacy, fontSize = 12.sp, color = muted)
                     TextButton({ vm.aiKeyDialog = true }) { Text(s.aiKeyChange) }
                 }
+                if (seedDialog) {
+                    var q by remember { mutableStateOf("") }
+                    val all = vm.ipodTracks.filter { it.title.isNotBlank() }
+                    val shown = all.filter { q.isBlank() || it.title.contains(q, true) || it.artist.contains(q, true) }.take(60)
+                    androidx.compose.material3.AlertDialog(
+                        onDismissRequest = { seedDialog = false },
+                        title = { Text(s.aiSeedTitle) },
+                        text = {
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                androidx.compose.material3.OutlinedTextField(q, { q = it }, singleLine = true, label = { Text(s.aiSeedSearch) }, modifier = Modifier.fillMaxWidth())
+                                LazyColumn(Modifier.heightIn(max = 320.dp)) {
+                                    items(shown) { t ->
+                                        Column(Modifier.fillMaxWidth().clickable { seed = t; seedDialog = false }.padding(vertical = 8.dp)) {
+                                            Text(t.title, fontSize = 14.sp, maxLines = 1)
+                                            Text(t.artist, fontSize = 12.sp, color = muted, maxLines = 1)
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        confirmButton = {},
+                        dismissButton = { TextButton({ seedDialog = false }) { Text(s.cancel) } },
+                    )
+                }
             },
-            confirmButton = { TextButton({ vm.aiMakeMixes(req) }) { Text(s.aiMixCreate) } },
-            dismissButton = { TextButton({ vm.aiMixDialog = false }) { Text(s.cancel) } },
+            confirmButton = {
+                TextButton({
+                    val reqs = picked.toList() + listOfNotNull(req.trim().takeIf { it.isNotBlank() })
+                    vm.aiGenerate(reqs, size, seed)
+                }, enabled = !vm.aiGenerating) { Text(s.aiGenerate) }
+            },
+            dismissButton = { TextButton({ vm.aiMixDialog = false }, enabled = !vm.aiGenerating) { Text(s.cancel) } },
+        )
+    }
+    vm.aiPreview?.let { previews ->
+        val on = remember(previews) { androidx.compose.runtime.mutableStateListOf<Int>().also { l -> l.addAll(previews.indices) } }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { if (!vm.aiGenerating) vm.aiPreviewClose() },
+            title = { Text(s.aiPreviewTitle) },
+            text = {
+                Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(s.aiPreviewHint, fontSize = 12.sp, color = muted)
+                    vm.aiPreviewNote?.let { Text(it, fontSize = 12.sp, color = muted) }
+                    previews.forEachIndexed { i, m ->
+                        Row(Modifier.fillMaxWidth().clickable { if (i in on) on.remove(i) else on.add(i) }, verticalAlignment = Alignment.Top) {
+                            Checkbox(i in on, { if (it) on.add(i) else on.remove(i) })
+                            Column(Modifier.padding(top = 10.dp)) {
+                                Text(m.name, fontWeight = FontWeight.SemiBold)
+                                Text(s.aiPreviewSongs(m.songs.size), fontSize = 12.sp, color = muted)
+                                m.songs.take(3).forEach { Text("${it.title} – ${it.artist}", fontSize = 12.sp, color = muted, maxLines = 1) }
+                            }
+                        }
+                    }
+                    if (vm.aiGenerating) {
+                        LinearProgressIndicator(Modifier.fillMaxWidth())
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(s.aiMixAsking, fontSize = 12.sp, color = muted, modifier = Modifier.weight(1f))
+                            TextButton({ vm.aiGenerateStop() }) { Text(s.aiIdeasStop) }
+                        }
+                    } else androidx.compose.material3.OutlinedButton({ vm.aiRegenerate() }, Modifier.fillMaxWidth()) { Text(s.aiPreviewRegen) }
+                }
+            },
+            confirmButton = { TextButton({ vm.aiSave(on.toSet()) }, enabled = on.isNotEmpty() && !vm.aiGenerating) { Text(s.aiPreviewSave(on.size)) } },
+            dismissButton = { TextButton({ vm.aiPreviewClose() }, enabled = !vm.aiGenerating) { Text(s.cancel) } },
         )
     }
     if (vm.aiKeyDialog) {

@@ -42,4 +42,28 @@ class AiMixTest {
         val songs = (1..6).map { MixSong(it, "t$it", "Queen", "a") } + (7..9).map { MixSong(it, "t$it", "Solo", "a") }
         assertEquals(listOf("Lo mejor de Queen", "Sorpresa con todo mi catálogo"), AiMix.localIdeas(songs))
     }
+
+    @Test fun seedGoesFirstAndSizeIsRespected() {
+        val ids = (1..30).joinToString(",")
+        val json = """{"mixes":[{"name":"Parecidas","ids":[$ids]}]}"""
+        val r = AiMix.validate(json, (1..30).toSet(), wanted = 1, seed = 7, maxLen = 15)
+        assertEquals(15, r[0].ns.size)
+        assertEquals(7, r[0].ns[0])
+        assertEquals(1, r[0].ns.count { it == 7 })
+    }
+
+    @Test fun rankModelsPrefersCurrentOnesAndSkipsNonText() {
+        val names = listOf("models/gemini-2.5-flash", "models/gemini-3.8-flash-tts", "models/gemini-3.5-flash-lite", "models/gemini-3.8-flash",
+            "models/gemini-3.9-flash-image", "models/gemini-3.6-flash", "models/gemini-3.0-flash-preview", "models/gemini-3.5-pro", "models/embedding-001")
+        assertEquals(listOf("gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-3.8-flash", "gemini-2.5-flash"), AiMix.rankModels(names))
+        assertTrue(AiMix.rankModels(emptyList()).isEmpty())
+    }
+
+    @Test fun localMixFromSeedStartsWithItAndKeepsSameArtist() {
+        val songs = (1..8).map { MixSong(it, "t$it", if (it <= 3) "Queen" else "Otro$it", "a") }
+        val m = AiMix.localMixes(songs, wanted = 3, seed = 1L, size = 6, first = songs[0])
+        assertEquals(1, m.size)
+        assertEquals(listOf(1, 2, 3), m[0].ns.take(3))
+        assertEquals(6, m[0].ns.size)
+    }
 }
