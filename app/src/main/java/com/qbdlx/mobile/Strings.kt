@@ -321,6 +321,7 @@ interface Strings {
     fun ipodFixAlbumsFailed(error: String): String
     val ipodPlaylistButton: String
     val ipodPlaylistTitle: String
+    val ipodPlaylistLegend: String
     val ipodPlaylistNone: String
     val ipodPlaylistLoadFailed: String
     fun ipodPlaylistDownloading(done: Int, total: Int): String
@@ -739,6 +740,7 @@ object English : Strings {
     override fun ipodFixAlbumsFailed(error: String) = "Could not fix the albums: $error"
     override val ipodPlaylistButton = "Send a Qobuz playlist to the iPod…"
     override val ipodPlaylistTitle = "Choose one or more playlists"
+    override val ipodPlaylistLegend = "🟢 already on the iPod · 🔴 not on the iPod (or empty)"
     override val ipodPlaylistNone = "You have no playlists in Qobuz."
     override val ipodPlaylistLoadFailed = "Could not load the playlist from Qobuz."
     override fun ipodPlaylistDownloading(done: Int, total: Int) = "Downloading the playlist's missing songs as MP3… $done of $total"
@@ -1165,6 +1167,7 @@ object Spanish : Strings {
     override fun ipodFixAlbumsFailed(error: String) = "No se pudieron reparar los álbumes: $error"
     override val ipodPlaylistButton = "Enviar una playlist de Qobuz al iPod…"
     override val ipodPlaylistTitle = "Elige una o varias playlists"
+    override val ipodPlaylistLegend = "🟢 ya está en el iPod · 🔴 no está en el iPod (o está vacía)"
     override val ipodPlaylistNone = "No tienes playlists en Qobuz."
     override val ipodPlaylistLoadFailed = "No se pudo cargar la playlist de Qobuz."
     override fun ipodPlaylistDownloading(done: Int, total: Int) = "Descargando en MP3 las canciones que faltan de la playlist… $done de $total"

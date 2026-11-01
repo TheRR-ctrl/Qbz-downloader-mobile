@@ -91,6 +91,8 @@ fun IpodScreen(vm: MainViewModel) {
             title = { Text(s.ipodPlaylistTitle) },
             text = {
                 val pls = vm.myPlaylists
+                Column {
+                Text(s.ipodPlaylistLegend, fontSize = 12.sp, color = muted)
                 when {
                     pls == null -> Text("…")
                     pls.isEmpty() -> Text(s.ipodPlaylistNone)
@@ -99,9 +101,12 @@ fun IpodScreen(vm: MainViewModel) {
                         val on = p.id in picked
                         Row(Modifier.fillMaxWidth().clickable { picked = if (on) picked - p.id else picked + p.id }, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                             androidx.compose.material3.Checkbox(on, { picked = if (on) picked - p.id else picked + p.id })
-                            Text("${p.name} · ${p.tracksCount}", Modifier.padding(vertical = 8.dp))
+                            val onDevice = vm.ipodPlaylists.any { it.name.trim().equals(p.name.trim(), ignoreCase = true) && it.trackPids.isNotEmpty() }
+                            androidx.compose.foundation.layout.Box(Modifier.size(10.dp).clip(androidx.compose.foundation.shape.CircleShape).background(if (onDevice) androidx.compose.ui.graphics.Color(0xFF2E7D32) else androidx.compose.ui.graphics.Color(0xFFC62828)))
+                            Text("${p.name} · ${p.tracksCount}", Modifier.padding(vertical = 8.dp, horizontal = 8.dp))
                         }
                     } }
+                }
                 }
             },
             confirmButton = { TextButton({ vm.ipodSendPlaylists((vm.myPlaylists ?: emptyList()).filter { it.id in picked }) }, enabled = picked.isNotEmpty()) { Text(s.ipodPlaylistSendN(picked.size)) } },
