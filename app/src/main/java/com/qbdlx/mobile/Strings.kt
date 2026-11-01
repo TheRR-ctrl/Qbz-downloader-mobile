@@ -22,16 +22,6 @@ enum class Language(val code: String) {
 interface Strings {
     // Login
     val logInWithQobuz: String
-    val orManually: String
-    val appId: String
-    val appSecret: String
-    val email: String
-    val password: String
-    val userId: String
-    val authToken: String
-    val useToken: String
-    val logIn: String
-    val fillAllFields: String
     val signingIn: String
 
     // Web login
@@ -105,10 +95,7 @@ interface Strings {
     val amoledBlack: String
     val language: String
     fun languageName(l: Language): String
-    val appSecretTitle: String
-    fun appSecretHelp(appId: String): String
     val save: String
-    val secretSaved: String
     fun signedInAs(name: String): String
     val logOut: String
     val disclaimer: String
@@ -143,7 +130,6 @@ interface Strings {
     val dlTabFailed: String
     val dlDeleteHint: String
     val statusPaused: String
-    val statusDownloading: String
     val statusFailed: String
     val statusCanceled: String
     fun dlSummary(done: Int, total: Int, active: Int): String
@@ -239,7 +225,6 @@ interface Strings {
     fun sleepRemaining(min: Int): String
     val equalizer: String
     val noEqualizer: String
-    val playQualityTitle: String
     val history: String
     fun exploreWith(artist: String): String
     val exploreTopTracks: String
@@ -258,7 +243,6 @@ interface Strings {
     val repeat: String
     val previous: String
     val next: String
-    val closePlayer: String
     val more: String
     val viewAlbum: String
     val playbackSection: String
@@ -363,17 +347,11 @@ interface Strings {
     val ipodEntry: String
     val ipodBusy: String
     val ipodTitle: String
-    val ipodWarning: String
     val ipodHelp: String
     val ipodChoose: String
     val ipodChange: String
     val ipodNone: String
     fun ipodProblem(kind: com.qbdlx.mobile.ipod.IpodDevice.Problem, detail: String?): String
-    fun ipodReady(count: Int): String
-    val ipodGuidFound: String
-    val ipodGuidMissing: String
-    val ipodGuidLabel: String
-    val ipodUsbRead: String
     val ipodTabSend: String
     val ipodTabOn: String
     val ipodViewList: String
@@ -426,16 +404,6 @@ interface Strings {
 
 object English : Strings {
     override val logInWithQobuz = "Log in with Qobuz"
-    override val orManually = "Or enter your details manually"
-    override val appId = "App ID"
-    override val appSecret = "App Secret"
-    override val email = "Email"
-    override val password = "Password"
-    override val userId = "User ID"
-    override val authToken = "Auth token"
-    override val useToken = "Log in with user ID + token"
-    override val logIn = "Log in"
-    override val fillAllFields = "Fill in all fields"
     override val signingIn = "Signing in…"
 
     override val logInToQobuz = "Log in to Qobuz"
@@ -524,12 +492,7 @@ object English : Strings {
         Language.ENGLISH -> "English"
         Language.SPANISH -> "Español"
     }
-    override val appSecretTitle = "App Secret (download signature)"
-    override fun appSecretHelp(appId: String) = "Downloads are signed with the App Secret of App ID $appId. If they fail " +
-        "with \"Invalid Request Signature\", paste the secret QBDLX desktop uses for that App ID (it writes it as " +
-        "\"App secret:\" in its logs folder). Leave empty to use the default."
     override val save = "Save"
-    override val secretSaved = "App Secret saved"
     override fun signedInAs(name: String) = "Signed in as ${name.ifBlank { "Qobuz user" }}"
     override val logOut = "Log out"
     override val disclaimer = "QBDLX is not endorsed, certified or approved by Qobuz. Use it according to the Qobuz API Terms of Use."
@@ -563,7 +526,6 @@ object English : Strings {
     override val dlTabFailed = "Failed"
     override val dlDeleteHint = "Removing an item only takes it off this list; the music file stays on your phone."
     override val statusPaused = "Paused"
-    override val statusDownloading = "Downloading"
     override val statusFailed = "Failed"
     override val statusCanceled = "Canceled"
     override fun dlSummary(done: Int, total: Int, active: Int) = "$done of $total done · $active active"
@@ -665,7 +627,6 @@ object English : Strings {
     override fun sleepRemaining(min: Int) = "Sleep timer: $min min left"
     override val equalizer = "Equalizer"
     override val noEqualizer = "No equalizer app found on this phone"
-    override val playQualityTitle = "Listening quality"
     override val history = "History"
     override fun exploreWith(artist: String) = "With $artist"
     override val exploreTopTracks = "MOST PLAYED"
@@ -684,7 +645,6 @@ object English : Strings {
     override val repeat = "Repeat"
     override val previous = "Previous"
     override val next = "Next"
-    override val closePlayer = "Close player"
     override val more = "More"
     override val viewAlbum = "Go to album"
     override val playbackSection = "Playback"
@@ -791,7 +751,6 @@ object English : Strings {
     override val ipodEntry = "iPod"
     override val ipodBusy = "Error: a transfer to the iPod is already running. Wait for it to finish (or open the iPod screen to follow it)."
     override val ipodTitle = "iPod"
-    override val ipodWarning = "Experimental. It writes to the iPod's own library. Covers and the library method were confirmed on a real nano 6G (one cover per album, shared by its songs). If a track shows the generic icon, tell me. A backup of the library is made before every change, and you can restore it here."
     override val ipodHelp = "Connect the iPod with a USB OTG adapter, wait until Android shows it as a drive, then choose its top folder (the one that contains iPod_Control). Android cannot read iPods formatted for Mac (HFS+): they won't show up. Only MP3 downloads can be sent. Keep the iPod on \"manually manage music\" and don't sync it with iTunes afterwards."
     override val ipodChoose = "Choose the iPod"
     override val ipodChange = "Select iPod"
@@ -803,11 +762,6 @@ object English : Strings {
         com.qbdlx.mobile.ipod.IpodDevice.Problem.LEFTOVER_FILES -> "The iPod has unfinished database files (${detail ?: ""}). Eject it safely from a computer first."
         com.qbdlx.mobile.ipod.IpodDevice.Problem.UNREADABLE -> "The iPod could not be read" + (detail?.let { ": $it" } ?: "") + "."
     }
-    override fun ipodReady(count: Int) = if (count < 0) "iPod found." else "iPod found · $count songs on it."
-    override val ipodGuidFound = "Device identifier read from the iPod."
-    override val ipodGuidMissing = "The iPod's identifier could not be read. Type its 16 characters (the FireWire GUID, like 000A27001234ABCD)."
-    override val ipodGuidLabel = "FireWire GUID"
-    override val ipodUsbRead = "Read the identifier over USB"
     override val ipodTabSend = "To send"
     override val ipodTabOn = "On the iPod"
     override val ipodViewList = "List"
@@ -859,16 +813,6 @@ object English : Strings {
 
 object Spanish : Strings {
     override val logInWithQobuz = "Iniciar sesión con Qobuz"
-    override val orManually = "O ingresa tus datos manualmente"
-    override val appId = "App ID"
-    override val appSecret = "App Secret"
-    override val email = "Correo"
-    override val password = "Contraseña"
-    override val userId = "ID de usuario"
-    override val authToken = "Token de acceso"
-    override val useToken = "Iniciar sesión con ID de usuario + token"
-    override val logIn = "Iniciar sesión"
-    override val fillAllFields = "Completa todos los campos"
     override val signingIn = "Iniciando sesión…"
 
     override val logInToQobuz = "Iniciar sesión en Qobuz"
@@ -957,12 +901,7 @@ object Spanish : Strings {
         Language.ENGLISH -> "English"
         Language.SPANISH -> "Español"
     }
-    override val appSecretTitle = "App Secret (firma de descargas)"
-    override fun appSecretHelp(appId: String) = "Las descargas se firman con el App Secret del App ID $appId. Si fallan " +
-        "con \"Invalid Request Signature\", pega aquí el secret que usa QBDLX de escritorio para ese App ID (lo " +
-        "escribe como \"App secret:\" en su carpeta logs). Déjalo vacío para usar el predeterminado."
     override val save = "Guardar"
-    override val secretSaved = "App Secret guardado"
     override fun signedInAs(name: String) = "Sesión iniciada como ${name.ifBlank { "usuario de Qobuz" }}"
     override val logOut = "Cerrar sesión"
     override val disclaimer = "QBDLX no está respaldado, certificado ni aprobado por Qobuz. Úsalo conforme a los Términos de uso de la API de Qobuz."
@@ -996,7 +935,6 @@ object Spanish : Strings {
     override val dlTabFailed = "Fallidas"
     override val dlDeleteHint = "Quitar un elemento solo lo saca de esta lista; el archivo de música se queda en tu teléfono."
     override val statusPaused = "Pausada"
-    override val statusDownloading = "Descargando"
     override val statusFailed = "Fallida"
     override val statusCanceled = "Cancelada"
     override fun dlSummary(done: Int, total: Int, active: Int) = "$done de $total listas · $active activas"
@@ -1098,7 +1036,6 @@ object Spanish : Strings {
     override fun sleepRemaining(min: Int) = "Temporizador: faltan $min min"
     override val equalizer = "Ecualizador"
     override val noEqualizer = "No hay ecualizador en este teléfono"
-    override val playQualityTitle = "Calidad al escuchar"
     override val history = "Historial"
     override fun exploreWith(artist: String) = "Con $artist"
     override val exploreTopTracks = "LO MÁS ESCUCHADO"
@@ -1117,7 +1054,6 @@ object Spanish : Strings {
     override val repeat = "Repetir"
     override val previous = "Anterior"
     override val next = "Siguiente"
-    override val closePlayer = "Cerrar reproductor"
     override val more = "Más"
     override val viewAlbum = "Ir al álbum"
     override val playbackSection = "Reproducción"
@@ -1224,7 +1160,6 @@ object Spanish : Strings {
     override val ipodEntry = "iPod"
     override val ipodBusy = "Error: ya hay una transferencia al iPod en curso. Espera a que termine (o abre la pantalla del iPod para seguirla)."
     override val ipodTitle = "iPod"
-    override val ipodWarning = "Experimental. Escribe en la biblioteca del propio iPod. Las carátulas y el método de biblioteca están confirmados en un nano 6G real (una carátula por álbum, compartida por sus canciones). Si una pista muestra el icono genérico, avísame. Antes de cada cambio se hace una copia de seguridad y aquí puedes restaurarla."
     override val ipodHelp = "Conecta el iPod con un adaptador USB OTG, espera a que Android lo muestre como unidad y elige su carpeta principal (la que contiene iPod_Control). Android no puede leer iPods con formato de Mac (HFS+): no aparecerán. Solo se pueden enviar descargas en MP3. Deja el iPod en \"administrar música manualmente\" y no lo sincronices con iTunes después."
     override val ipodChoose = "Elegir el iPod"
     override val ipodChange = "Seleccionar iPod"
@@ -1236,11 +1171,6 @@ object Spanish : Strings {
         com.qbdlx.mobile.ipod.IpodDevice.Problem.LEFTOVER_FILES -> "El iPod tiene archivos de base de datos sin terminar (${detail ?: ""}). Expúlsalo antes de forma segura desde una computadora."
         com.qbdlx.mobile.ipod.IpodDevice.Problem.UNREADABLE -> "No se pudo leer el iPod" + (detail?.let { ": $it" } ?: "") + "."
     }
-    override fun ipodReady(count: Int) = if (count < 0) "iPod encontrado." else "iPod encontrado · $count canciones."
-    override val ipodGuidFound = "Identificador del dispositivo leído del iPod."
-    override val ipodGuidMissing = "No se pudo leer el identificador del iPod. Escribe sus 16 caracteres (el FireWire GUID, como 000A27001234ABCD)."
-    override val ipodGuidLabel = "FireWire GUID"
-    override val ipodUsbRead = "Leer el identificador por USB"
     override val ipodTabSend = "Para enviar"
     override val ipodTabOn = "En el iPod"
     override val ipodViewList = "Lista"

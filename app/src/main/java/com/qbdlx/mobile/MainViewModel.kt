@@ -81,7 +81,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var libraryLoading by mutableStateOf(false); private set
 
     /** App secret typed in Settings; overrides the one read from the web player when set. */
-    var customSecret by mutableStateOf(prefs.getString("custom_app_secret", "").orEmpty()); private set
+    // The manual App Secret field is gone; an old saved override must not keep silently winning over the real secret.
+    init { prefs.edit().remove("custom_app_secret").apply() }
     val appId: String get() = api.appId
     var results by mutableStateOf<List<Album>>(emptyList()); private set
     /** Songs matching the last search, shown under the "Songs" tab of Search. */
@@ -243,10 +244,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         // Resume the previous session from the saved token, if there is one.
         val id = prefs.getString("user_id", null)
         val token = prefs.getString("token", null)
-        // A custom secret is sufficient to restore a session even when the
-        // original web-player secret was not persisted or is no longer usable.
         if (!id.isNullOrBlank() && !token.isNullOrBlank() && savedAppId.isNotBlank() &&
-            (savedAppSecret.isNotBlank() || customSecret.isNotBlank())
+            savedAppSecret.isNotBlank()
         ) {
             signingIn = true
             run { tokenLogin(savedAppId, savedAppSecret, id, token, "sesión restaurada (guardado)") }
@@ -1315,15 +1314,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun closeDiagnostics() { showDiagnostics = false }
 
     fun updateAmoled(v: Boolean) { amoled = v; prefs.edit().putBoolean("amoled", v).apply() }
-    fun updateCustomSecret(secret: String) {
-        customSecret = secret.trim()
-        prefs.edit().putString("custom_app_secret", customSecret).apply()
-        // The custom value always wins; clearing it restores the base secret
-        // associated with the currently saved App ID.
-        api.appSecret = customSecret.ifBlank { savedAppSecret }
-        api.secretSource = if (customSecret.isNotBlank()) "personalizado (Ajustes)" else "reproductor web / guardado"
-        notice = strings.secretSaved
-    }
 
     fun loadLibrary(force: Boolean = false) {
         if (libraryLoading || (!force && myPlaylists != null)) return
@@ -1353,26 +1343,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
     /** "Preguntar siempre": the stored quality is kept (playback and the dialog's highlight still use it). */
     fun chooseAskAlways() { askQuality = true; prefs.edit().putBoolean("ask_quality", true).apply() }
-
-    fun login(appId: String, appSecret: String, tokenMode: Boolean, a: String, b: String) {
-        // A previously saved custom secret can be used when the base secret
-        // field is empty. The App ID and the login credentials remain required.
-        if (appId.isBlank() || (appSecret.isBlank() && customSecret.isBlank()) || a.isBlank() || b.isBlank()) {
-            error = strings.fillAllFields; return
-        }
-        run {
-            if (tokenMode) tokenLogin(appId.trim(), appSecret.trim(), a.trim(), b.trim(), "manual (login con token)")
-            else {
-                val baseSecret = appSecret.trim()
-                api.appId = appId.trim()
-                api.appSecret = customSecret.ifBlank { baseSecret }
-                api.secretSource = if (customSecret.isNotBlank()) "personalizado (Ajustes)" else "manual (login)"
-                userName = api.loginWithPassword(a.trim(), b)
-                prefs.edit().putString("app_id", api.appId).putString("app_secret", baseSecret).apply()
-                onLoggedIn()
-            }
-        }
-    }
 
     fun startWebLogin() { error = null; webLogin = true }
     fun cancelWebLogin() { webLogin = false }
@@ -1418,14 +1388,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private fun tokenLogin(appId: String, appSecret: String, userId: String, token: String, source: String) {
         val effectiveAppId = appId.trim()
         val baseSecret = appSecret.trim()
-        val effectiveSecret = customSecret.ifBlank { baseSecret }
+        val effectiveSecret = baseSecret
         if (effectiveAppId.isBlank() || effectiveSecret.isBlank() || userId.isBlank() || token.isBlank()) {
             throw IllegalArgumentException("Missing App ID, App Secret, user ID, or session token")
         }
 
         api.appId = effectiveAppId
         api.appSecret = effectiveSecret
-        api.secretSource = if (customSecret.isNotBlank()) "personalizado (Ajustes)" else source
+        api.secretSource = source
         userName = api.loginWithToken(userId, token)
         prefs.edit().putString("app_id", effectiveAppId).putString("app_secret", baseSecret)
             .putString("user_id", userId).putString("token", token).apply()
@@ -1705,8 +1675,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val sel = chosen
             ?: throw ApiException("Ningún App Secret reconstruido fue aceptado por Qobuz (request_sig). Puede que Qobuz haya cambiado el método.")
 
-        // Save the matching pair together; clear any custom override so it can't reintroduce a mismatch.
-        customSecret = ""
+        // Save the matching pair together.
         prefs.edit()
             .putString("app_id", creds.appId)
             .putString("app_secret", sel.secret)

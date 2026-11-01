@@ -87,12 +87,6 @@ class QobuzApi(val http: OkHttpClient = OkHttpClient()) {
     }
 
     /** Returns the display name of the logged-in user. */
-    fun loginWithPassword(email: String, password: String): String {
-        val json = get("user/login", mapOf("email" to email, "password" to password, "app_id" to appId))
-        authToken = json.getString("user_auth_token")
-        return json.optJSONObject("user")?.optString("display_name").orEmpty()
-    }
-
     fun loginWithToken(userId: String, token: String): String {
         authToken = token
         val json = get("user/get", mapOf("user_id" to userId, "user_auth_token" to token, "app_id" to appId))
