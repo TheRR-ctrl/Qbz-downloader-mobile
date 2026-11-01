@@ -215,6 +215,7 @@ fun IpodScreen(vm: MainViewModel) {
                 TabRow(vm.ipodTab) {
                     Tab(vm.ipodTab == 0, { vm.ipodTab = 0 }, text = { Text("${s.ipodTabSend} (${pending.size})") })
                     Tab(vm.ipodTab == 1, { vm.ipodTab = 1 }, text = { Text("${s.ipodTabOn} (${vm.ipodTracks.size})") })
+                    Tab(vm.ipodTab == 2, { vm.ipodTab = 2 }, text = { Text("${s.ipodTabPlaylists} (${vm.ipodPlaylists.size})") })
                 }
             }
         }
@@ -274,6 +275,42 @@ fun IpodScreen(vm: MainViewModel) {
                             fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f).padding(start = 8.dp),
                         )
+                    }
+                }
+            }
+        }
+        if (ready && vm.ipodTab == 2) {
+            val byPid = vm.ipodTracks.associateBy { it.pid }
+            item {
+                OutlinedButton({ vm.confirmIpodDeleteSelected = true }, Modifier.fillMaxWidth(), enabled = vm.ipodSelectedPids.isNotEmpty() && !busy && !vm.ipodClearing) {
+                    Text("${s.ipodDeleteSelected} (${vm.ipodSelectedPids.size})", color = MaterialTheme.colorScheme.error)
+                }
+            }
+            if (vm.ipodPlaylists.isEmpty()) item { Text(s.ipodPlaylistsEmpty, color = muted) }
+            vm.ipodPlaylists.forEach { pl ->
+                val songs = pl.trackPids.mapNotNull { byPid[it] }
+                val open = vm.ipodOpenPlaylist == pl.pid
+                item(key = "pl${pl.pid}") {
+                    Column(Modifier.fillMaxWidth().clickable { vm.ipodOpenPlaylist = if (open) null else pl.pid }.padding(vertical = 8.dp)) {
+                        Text(pl.name.ifBlank { "—" }, fontWeight = FontWeight.SemiBold)
+                        Text(s.ipodPlaylistSongs(songs.size, pl.trackPids.size - songs.size), fontSize = 12.sp, color = muted)
+                    }
+                }
+                if (open) {
+                    item(key = "pls${pl.pid}") {
+                        val all = songs.isNotEmpty() && songs.all { it.pid in vm.ipodSelectedPids }
+                        TextButton({ vm.ipodSelectVisible(songs.map { it.pid }, !all) }, enabled = songs.isNotEmpty()) { Text(s.ipodSelectPlaylist) }
+                    }
+                    songs.forEach { t ->
+                        item(key = "pl${pl.pid}t${t.pid}") {
+                            Row(Modifier.fillMaxWidth().clickable { vm.ipodToggleTrack(t.pid) }, verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(vm.ipodSelectedPids.contains(t.pid), { vm.ipodToggleTrack(t.pid) })
+                                Column(Modifier.weight(1f).padding(start = 8.dp)) {
+                                    Text(t.title, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(t.artist, fontSize = 12.sp, color = muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                            }
+                        }
                     }
                 }
             }

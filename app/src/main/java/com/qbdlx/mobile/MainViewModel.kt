@@ -866,6 +866,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         st.availableBytes to st.totalBytes
     }.getOrNull()
 
+    var ipodPlaylists by mutableStateOf<List<com.qbdlx.mobile.ipod.IpodPlaylist>>(emptyList()); private set
+    var ipodOpenPlaylist by mutableStateOf<Long?>(null)
+
     fun ipodRefresh() {
         val uri = ipodUri ?: return
         viewModelScope.launch {
@@ -879,6 +882,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 ipodOnDevice = tracks?.map { com.qbdlx.mobile.ipod.trackKey(it.title, it.artist, it.album) }?.toSet().orEmpty()
                 ipodSongCount = tracks?.size ?: -1
                 ipodTracks = tracks.orEmpty()
+                ipodPlaylists = withContext(Dispatchers.IO) { runCatching { device.listPlaylists() }.getOrNull() }.orEmpty()
                 if (insp.guid == null && !ipodGuidKnown) ipodReadUsbGuid() // the serial number is the identifier: no need to ask the person
             }
             ipodChecking = false

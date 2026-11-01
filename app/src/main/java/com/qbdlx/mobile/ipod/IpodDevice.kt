@@ -87,6 +87,9 @@ class IpodDevice(private val context: Context, private val treeUri: Uri) {
     /** The tracks the iPod already has, read from a copy of its library. */
     fun listTracks(): List<IpodTrack> = withLibrary(readOnly = true) { lib, _ -> lib.listTracks() }
 
+    /** The playlists stored on the iPod. */
+    fun listPlaylists(): List<IpodPlaylist> = withLibrary(readOnly = true) { lib, _ -> lib.listPlaylists() }
+
     /** A read-only technical report (table layouts, artwork folder, one old and one new track row) to find out why artwork/metadata are missing. */
     fun report(): String {
         val art = runCatching {
