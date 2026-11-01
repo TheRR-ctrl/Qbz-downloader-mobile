@@ -375,6 +375,10 @@ interface Strings {
     val ipodUsbRead: String
     val ipodTabSend: String
     val ipodTabOn: String
+    val ipodTabPlaylists: String
+    fun ipodPlaylistSongs(n: Int, missing: Int): String
+    val ipodPlaylistsEmpty: String
+    val ipodSelectPlaylist: String
     val ipodSearch: String
     val ipodDeleteSelected: String
     fun ipodSelectedCount(n: Int): String
@@ -796,6 +800,10 @@ object English : Strings {
     override val ipodUsbRead = "Read the identifier over USB"
     override val ipodTabSend = "To send"
     override val ipodTabOn = "On the iPod"
+    override val ipodTabPlaylists = "Playlists"
+    override fun ipodPlaylistSongs(n: Int, missing: Int) = "$n songs" + if (missing > 0) " · $missing not found" else ""
+    override val ipodPlaylistsEmpty = "There are no playlists on the iPod."
+    override val ipodSelectPlaylist = "Select all its songs"
     override val ipodSearch = "Search title, artist or album"
     override val ipodDeleteSelected = "Delete selected files"
     override fun ipodSelectedCount(n: Int) = "$n selected"
@@ -1216,6 +1224,10 @@ object Spanish : Strings {
     override val ipodUsbRead = "Leer el identificador por USB"
     override val ipodTabSend = "Para enviar"
     override val ipodTabOn = "En el iPod"
+    override val ipodTabPlaylists = "Playlists"
+    override fun ipodPlaylistSongs(n: Int, missing: Int) = "$n canciones" + if (missing > 0) " · $missing no encontradas" else ""
+    override val ipodPlaylistsEmpty = "No hay playlists en el iPod."
+    override val ipodSelectPlaylist = "Seleccionar todas sus canciones"
     override val ipodSearch = "Buscar título, artista o álbum"
     override val ipodDeleteSelected = "Borrar archivos seleccionados"
     override fun ipodSelectedCount(n: Int) = "$n seleccionadas"
