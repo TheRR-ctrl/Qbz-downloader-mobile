@@ -115,6 +115,7 @@ class PlaybackService : MediaBrowserService() {
                 val c = QbdlxApp.playback
                 val np = c?.nowPlaying
                 var sig = ""
+                if (np == null) sig = qobuzRows()?.joinToString("|") { it.id + it.title }.orEmpty()
                 if (c != null && np != null) {
                     if (c.isPlaying) c.ensureLyrics()
                     sig = CarLyrics.rows(np.second.displayTitle, np.first.artist, c.lyrics, c.positionMs + c.lyricsOffsetMs + CAR_LEAD_MS).joinToString("|") { it.id + it.title }
@@ -122,6 +123,28 @@ class PlaybackService : MediaBrowserService() {
                 if (sig != carShown) { carShown = sig; notifyChildrenChanged(LYRICS_ID) }
                 delay(300)
             }
+        }
+    }
+
+    // ---- Lyrics of what the official Qobuz app plays (needs notification access, as the import does) -----------------------
+    private var qKey = ""
+    private var qLyrics: Lyrics? = null
+    private var qLoading = false
+
+    /** Car rows for the song Qobuz is playing; null when the player here is idle and Qobuz has nothing either (or access was not given). */
+    private fun qobuzRows(): List<CarRow>? {
+        if (!QobuzNowPlaying.accessGranted(this)) return null
+        val q = QobuzNowPlaying.read(this) ?: return null
+        val key = "${q.title}|${q.artist}|${q.durationSec}"
+        if (key != qKey) {
+            qKey = key; qLyrics = null; qLoading = true
+            scope.launch {
+                val l = kotlinx.coroutines.withContext(Dispatchers.IO) { runCatching { LyricsClient.fetch(q.artist, q.title, q.album, q.durationSec) }.getOrNull() }
+                if (qKey == key) { qLyrics = l; qLoading = false }
+            }
+        }
+        return CarLyrics.rows(q.title, q.artist, qLyrics, q.positionMs + CAR_LEAD_MS).ifEmpty {
+            listOf(CarRow("ltrack", q.title, q.artist), CarRow("lmsg", if (qLoading) label("Buscando la letra…", "Looking for the lyrics…") else label("Esta canción no tiene letra sincronizada", "This song has no synced lyrics")))
         }
     }
 
@@ -159,7 +182,7 @@ class PlaybackService : MediaBrowserService() {
             ))
             LYRICS_ID -> {
                 val np = c?.nowPlaying
-                val rows = if (c != null && np != null) CarLyrics.rows(np.second.displayTitle, np.first.artist, c.lyrics, c.positionMs + c.lyricsOffsetMs + CAR_LEAD_MS) else emptyList()
+                val rows = if (c != null && np != null) CarLyrics.rows(np.second.displayTitle, np.first.artist, c.lyrics, c.positionMs + c.lyricsOffsetMs + CAR_LEAD_MS) else (qobuzRows() ?: emptyList())
                 result.sendResult(
                     if (rows.isEmpty()) mutableListOf(item("lmsg", if (np == null) label("Pon una canción para ver su letra", "Play a song to see its lyrics") else label("Esta canción no tiene letra sincronizada", "This song has no synced lyrics"), playable))
                     else rows.map { r -> item(r.id, r.title, playable, r.subtitle) }.toMutableList(),
