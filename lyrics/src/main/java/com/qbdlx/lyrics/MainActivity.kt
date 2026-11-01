@@ -129,7 +129,7 @@ class MainActivity : ComponentActivity() {
         LaunchedEffect(state.track?.key) { browsing = false }
         LaunchedEffect(idx, browsing) { if (!browsing && idx >= 0) listState.animateScrollToItem(idx) } // the list padding puts that item in the first third
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Q Lyrics", fontSize = 32.sp, fontWeight = FontWeight.Bold)
+            Text("Q Lyrics", fontSize = 28.sp, fontWeight = FontWeight.Bold)
             val pre by Prefetch.state.collectAsState()
             if (pre.running || pre.total > 0) {
                 Text(
@@ -141,10 +141,16 @@ class MainActivity : ComponentActivity() {
                     TextButton({ Prefetch.cancel() }) { Text("Cancelar") }
                 }
             }
-            if (!pre.running) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                PillTonal({ fromPhone() }, Modifier.weight(1f)) { Text("Bajar letras de la música del teléfono", fontSize = 12.sp) }
+            var tab by androidx.compose.runtime.saveable.rememberSaveable { mutableIntStateOf(0) }
+            val tools = tab == 1
+            TabRow(selectedTabIndex = tab, containerColor = Color.Transparent) {
+                Tab(tab == 0, { tab = 0 }, text = { Text("Letra") })
+                Tab(tab == 1, { tab = 1 }, text = { Text("Ajustes") })
             }
-            if (!pre.running) Text("Para tu biblioteca de Qobuz: en QBDLX Mobile → Ajustes → «Enviar lista de canciones a Q Lyrics».", fontSize = 11.sp)
+            if (!pre.running && tools) {
+                PillTonal({ fromPhone() }, Modifier.fillMaxWidth()) { Text("Bajar letras de la música del teléfono", fontSize = 12.sp) }
+                Text("Para tu biblioteca de Qobuz: en QBDLX Mobile → Ajustes → «Enviar lista de canciones a Q Lyrics».", fontSize = 11.sp)
+            }
             if (state.status == Status.NO_ACCESS) {
                 Text("Para saber qué canción suena, la app necesita «Acceso a notificaciones». Actívalo para Q Lyrics (no lee tus notificaciones, solo la canción en reproducción).")
                 Button({ startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }) { Text("Dar acceso") }
@@ -161,19 +167,19 @@ class MainActivity : ComponentActivity() {
                 if (state.status == Status.NOT_FOUND) Text("No hay letra para esta canción.")
                 if (state.status == Status.ERROR) Text("No se pudo cargar la letra (${Tracker.lastError}). Se reintenta sola.")
                 if (state.status == Status.PLAIN) Text("Solo hay letra sin sincronizar.", fontSize = 12.sp)
-                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (tools) Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Ajuste de sincronía: ${offset} ms", Modifier.weight(1f), fontSize = 12.sp)
                     PillTonal({ setOffset(offset - 250) }) { Text("−") }
                     PillTonal({ setOffset(offset + 250) }) { Text("+") }
                 }
                 var floating by remember { mutableStateOf(FloatingService.running) }
-                PillTonal({
+                if (tools) PillTonal({
                     if (!Settings.canDrawOverlays(this@MainActivity))
                         startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:$packageName"))) // then tap the button again
                     else { FloatingService.toggle(this@MainActivity); floating = !floating }
                 }) { Text(if (floating) "Cerrar ventana flotante" else "Ventana flotante con la letra") }
                 if (browsing && state.status == Status.SYNCED) PillButton({ browsing = false }) { Text("Resincronizar") }
-                BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+                if (!tools) BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                     // a third of the height as padding above, so the line being sung sits in the first third however many lines fit
                     val pad = if (state.status == Status.SYNCED) (maxHeight / 3 - 24.dp).coerceAtLeast(0.dp) else 12.dp
                     LazyColumn(Modifier.fillMaxSize()
