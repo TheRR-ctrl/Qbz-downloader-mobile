@@ -411,8 +411,8 @@ fun IpodScreen(vm: MainViewModel) {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         itemsIndexed(listOf(0, 1, 7, 30)) { i, d -> FilterChip(vm.ipodDays == d, { vm.ipodFilterDays(d) }, { Text(s.ipodDateLabels[i]) }) }
                     }
-                    Text(s.ipodGroupTitle, fontSize = 12.sp, color = muted)
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (!vm.ipodSendLib) Text(s.ipodGroupTitle, fontSize = 12.sp, color = muted)
+                    if (!vm.ipodSendLib) LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         itemsIndexed(MainViewModel.IpodGroup.values().toList()) { i, g -> FilterChip(vm.ipodGroup == g, { vm.ipodSetGroup(g) }, { Text(s.ipodGroupLabels[i]) }) }
                     }
                     Row {
@@ -421,9 +421,56 @@ fun IpodScreen(vm: MainViewModel) {
                     }
                 }
             }
+            val libView = vm.ipodSendLib
+            val sArtist = vm.ipodSendArtist; val sAlbum = vm.ipodSendAlbum
+            if (pending.isNotEmpty()) {
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(libView, { vm.ipodSendLib = true; vm.ipodSendArtist = null; vm.ipodSendAlbum = null }, { Text(s.ipodViewLibrary) })
+                        FilterChip(!libView, { vm.ipodSendLib = false }, { Text(s.ipodViewList) })
+                        if (libView && sAlbum == null) {
+                            Spacer(Modifier.width(8.dp))
+                            FilterChip(!vm.ipodGrid, { vm.ipodGrid = false }, { Text(s.ipodViewRows) })
+                            FilterChip(vm.ipodGrid, { vm.ipodGrid = true }, { Text(s.ipodViewGrid) })
+                        }
+                    }
+                }
+                if (libView) item {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (sArtist != null) TextButton({ if (sAlbum != null) vm.ipodSendAlbum = null else vm.ipodSendArtist = null }) { Text("← " + (if (sAlbum != null) sArtist.ifBlank { "—" } else s.ipodViewArtists)) }
+                        Text(listOfNotNull(sArtist?.ifBlank { "—" }, sAlbum?.ifBlank { "—" }).joinToString(" › ").ifEmpty { s.ipodViewArtists }, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+            if (libView && pending.isNotEmpty() && (sArtist == null || sAlbum == null)) {
+                data class SCell(val key: String, val title: String, val sub: String, val cover: String?, val songs: List<DownloadTask>, val open: () -> Unit)
+                val cells: List<SCell> = if (sArtist == null) {
+                    shown.groupBy { it.track.artist }.toList().sortedBy { it.first.lowercase() }.map { (name, ts) ->
+                        SCell("sa$name", name.ifBlank { "—" }, s.ipodLibArtistCount(ts.map { it.album.title }.distinct().size, ts.size), ts.firstNotNullOfOrNull { it.album.coverUrl }?.replace("_600", "_230"), ts) { vm.ipodSendArtist = name }
+                    }
+                } else {
+                    shown.filter { it.track.artist == sArtist }.groupBy { it.album.title }.toList().sortedBy { it.first.lowercase() }.map { (name, ts) ->
+                        SCell("sb$sArtist$name", name.ifBlank { "—" }, s.ipodPlaylistSongs(ts.size, 0), ts.firstNotNullOfOrNull { it.album.coverUrl }?.replace("_600", "_230"), ts) { vm.ipodSendAlbum = name }
+                    }
+                }
+                val toggleCell = { c: SCell -> vm.ipodTickTasks(c.songs, !c.songs.all { vm.ipodIsTicked(it) }) }
+                if (vm.ipodGrid) {
+                    cells.chunked(3).forEach { rowCells ->
+                        item(key = "g" + rowCells.first().key) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                rowCells.forEach { c -> Box(Modifier.weight(1f)) { LibCell(c.title, c.sub, c.cover, c.songs.all { vm.ipodIsTicked(it) }, true, { c.open() }) { toggleCell(c) } } }
+                                repeat(3 - rowCells.size) { Spacer(Modifier.weight(1f)) }
+                            }
+                        }
+                    }
+                } else cells.forEach { c ->
+                    item(key = c.key) { LibCell(c.title, c.sub, c.cover, c.songs.all { vm.ipodIsTicked(it) }, false, { c.open() }) { toggleCell(c) } }
+                }
+            }
             var lastHeading: String? = null
-            shown.forEach { t ->
-                val heading = vm.ipodGroupOf(t)
+            val listed = if (!libView) shown else if (sArtist != null && sAlbum != null) shown.filter { it.track.artist == sArtist && it.album.title == sAlbum } else emptyList()
+            listed.forEach { t ->
+                val heading = if (libView) null else vm.ipodGroupOf(t)
                 if (heading != null && heading != lastHeading) {
                     lastHeading = heading
                     val groupSongs = shown.filter { vm.ipodGroupOf(it) == heading }
