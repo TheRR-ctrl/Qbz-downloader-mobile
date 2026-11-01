@@ -1,5 +1,6 @@
 package com.qbdlx.mobile
 
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -50,7 +51,7 @@ private fun mmss(sec: Int) = "%d:%02d".format(sec / 60, sec % 60)
 
 @Composable
 private fun Title(text: String) =
-    Text(text, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(16.dp))
+    Text(text, fontSize = 32.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 12.dp))
 
 /** A page title with the search button at its right, where the search tab used to be. */
 @Composable
@@ -688,19 +689,28 @@ fun MiniPlayer(vm: MainViewModel) {
         while (true) { pos = vm.engine.position; delay(500) }
     }
     val dur = (vm.engine.duration.takeIf { it > 0 } ?: (track.durationSec * 1000L)).coerceAtLeast(1)
-    Column(Modifier.fillMaxWidth().swipeToSkip(vm::next, vm::previous).clickable { vm.playerOpen = true }) {
-        LinearProgressIndicator(progress = { (pos.toFloat() / dur).coerceIn(0f, 1f) }, Modifier.fillMaxWidth().height(2.dp))
-        Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Cover(album.coverUrl, 40)
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f)) {
-                Text(track.displayTitle, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(album.artist, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+    // A rounded dark card floating over the content, its gold progress line along the bottom edge (as in Qobuz).
+    androidx.compose.material3.Surface(
+        Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
+        shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceVariant,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(Modifier.swipeToSkip(vm::next, vm::previous).clickable { vm.playerOpen = true }) {
+            Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Cover(album.coverUrl, 44)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(track.displayTitle, fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(album.artist, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                IconButton({ vm.togglePlay() }) {
+                    Icon(if (vm.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, LocalStrings.current.playPause, Modifier.size(32.dp), tint = MaterialTheme.colorScheme.onSurface)
+                }
             }
-            Text("${mmss((pos / 1000).toInt())} / ${mmss((dur / 1000).toInt())}", fontSize = 11.sp)
-            IconButton({ vm.togglePlay() }) {
-                Icon(if (vm.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, LocalStrings.current.playPause, tint = MaterialTheme.colorScheme.primary)
-            }
+            LinearProgressIndicator(
+                progress = { (pos.toFloat() / dur).coerceIn(0f, 1f) }, Modifier.fillMaxWidth().height(2.dp),
+                color = MaterialTheme.colorScheme.primary, trackColor = androidx.compose.ui.graphics.Color.Transparent,
+            )
         }
     }
 }

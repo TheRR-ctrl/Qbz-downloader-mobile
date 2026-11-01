@@ -142,17 +142,17 @@ fun PlaylistCard(playlist: Playlist, onClick: () -> Unit, onDownload: () -> Unit
 @Composable
 fun QChip(selected: Boolean, onClick: () -> Unit, label: @Composable () -> Unit) {
     val c = MaterialTheme.colorScheme
+    // Qobuz's chips: dark grey pills, and the selected one turns white with dark text.
     FilterChip(
         selected = selected, onClick = onClick, label = label,
+        shape = RoundedCornerShape(50),
         colors = FilterChipDefaults.filterChipColors(
+            containerColor = c.surfaceVariant,
             labelColor = c.onSurface,
             selectedContainerColor = c.secondaryContainer,
             selectedLabelColor = c.onSecondaryContainer,
         ),
-        border = FilterChipDefaults.filterChipBorder(
-            enabled = true, selected = selected,
-            borderColor = c.outline, selectedBorderColor = c.primary,
-        ),
+        border = null,
     )
 }
 
@@ -161,9 +161,9 @@ fun QChip(selected: Boolean, onClick: () -> Unit, label: @Composable () -> Unit)
 fun qbdlxNavColors(): NavigationBarItemColors {
     val c = MaterialTheme.colorScheme
     return NavigationBarItemDefaults.colors(
-        selectedIconColor = c.onSecondaryContainer,
-        selectedTextColor = c.secondary,
-        indicatorColor = c.secondaryContainer,
+        selectedIconColor = c.onSurface,
+        selectedTextColor = c.onSurface,
+        indicatorColor = androidx.compose.ui.graphics.Color.Transparent, // no pill: the selected tab is simply brighter
         unselectedIconColor = c.onSurfaceVariant,
         unselectedTextColor = c.onSurfaceVariant,
     )
