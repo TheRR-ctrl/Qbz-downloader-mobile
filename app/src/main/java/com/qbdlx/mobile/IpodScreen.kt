@@ -149,6 +149,51 @@ private fun IpodScreenBody(vm: MainViewModel) {
             dismissButton = { TextButton({ vm.ipodPlaylistPicker = false }) { Text(s.cancel) } },
         )
     }
+    if (vm.aiMixDialog) {
+        var req by remember { mutableStateOf("") }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { vm.aiMixDialog = false },
+            title = { Text(s.aiMixTitle) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    androidx.compose.material3.OutlinedTextField(req, { req = it }, label = { Text(s.aiMixHint, fontSize = 12.sp) }, minLines = 2)
+                    Text(s.aiKeyPrivacy, fontSize = 12.sp, color = muted)
+                    TextButton({ vm.aiKeyDialog = true }) { Text(s.aiKeyChange) }
+                }
+            },
+            confirmButton = { TextButton({ vm.aiMakeMixes(req) }) { Text(s.aiMixCreate) } },
+            dismissButton = { TextButton({ vm.aiMixDialog = false }) { Text(s.cancel) } },
+        )
+    }
+    if (vm.aiKeyDialog) {
+        var key by remember { mutableStateOf("") }
+        var how by remember { mutableStateOf(false) }
+        val ctx = androidx.compose.ui.platform.LocalContext.current
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { if (!vm.aiKeyTesting) vm.aiKeyDialog = false },
+            title = { Text(s.aiKeyTitle) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton({ how = !how }) { Text(s.aiKeyHow) }
+                    if (how) Text(s.aiKeySteps, fontSize = 13.sp)
+                    androidx.compose.material3.OutlinedButton({
+                        ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://aistudio.google.com/apikey")))
+                    }, Modifier.fillMaxWidth()) { Text(s.aiKeyOpen) }
+                    androidx.compose.material3.OutlinedButton({
+                        val cm = ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        key = cm.primaryClip?.getItemAt(0)?.text?.toString().orEmpty().trim()
+                    }, Modifier.fillMaxWidth()) { Text(s.aiKeyPaste) }
+                    androidx.compose.material3.OutlinedTextField(key, { key = it }, singleLine = true, label = { Text("AIza…") },
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
+                    if (vm.aiKeyTesting) { LinearProgressIndicator(Modifier.fillMaxWidth()); Text(s.aiKeyTesting, fontSize = 12.sp, color = muted) }
+                    vm.aiKeyError?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }
+                    if (vm.aiKey.isNotBlank()) TextButton({ vm.aiForgetKey(); vm.aiKeyDialog = false }) { Text(s.aiKeyForget) }
+                }
+            },
+            confirmButton = { TextButton({ vm.aiSaveKey(key) }, enabled = key.isNotBlank() && !vm.aiKeyTesting) { Text(s.aiKeySave) } },
+            dismissButton = { TextButton({ vm.aiKeyDialog = false }, enabled = !vm.aiKeyTesting) { Text(s.cancel) } },
+        )
+    }
     if (vm.confirmIpodClear) {
         var typed by remember { mutableStateOf("") }
         androidx.compose.material3.AlertDialog(
@@ -431,6 +476,7 @@ private fun IpodScreenBody(vm: MainViewModel) {
                     Text(s.ipodLyricsLabel, fontSize = 13.sp, modifier = Modifier.padding(start = 10.dp))
                 }
                 IosTintButton({ vm.ipodPlaylistPicker = true }, Modifier.fillMaxWidth(), enabled = !busy) { Text(s.ipodPlaylistButton) }
+                IosTintButton({ if (vm.aiKey.isBlank()) vm.aiKeyDialog = true else vm.aiMixDialog = true }, Modifier.fillMaxWidth(), enabled = !busy && vm.ipodTracks.isNotEmpty()) { Text(s.aiMixButton) }
             }
             if (candidates.isEmpty()) item { Text(s.ipodNoMp3, color = muted) }
             else if (pending.isEmpty()) item { Text(s.ipodAlready(candidates.size), color = muted) }
