@@ -855,10 +855,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun updateIpodGuid(text: String) { ipodGuidText = text; prefs.edit().putString("ipod_guid", text).apply() }
 
     /** Looks at the chosen iPod (off the main thread): is it usable, and which songs does it already have? */
+    /** (free bytes, total bytes) of the iPod's storage, or null when Android won't say. */
+    var ipodSpace by mutableStateOf<Pair<Long, Long>?>(null); private set
+    private fun readIpodSpace(uri: android.net.Uri): Pair<Long, Long>? = runCatching {
+        val volId = android.provider.DocumentsContract.getTreeDocumentId(uri).substringBefore(':')
+        val sm = context.getSystemService(android.os.storage.StorageManager::class.java)
+        val vol = sm.storageVolumes.firstOrNull { it.uuid.equals(volId, ignoreCase = true) || (volId == "primary" && it.isPrimary) }
+        val path = (if (android.os.Build.VERSION.SDK_INT >= 30) vol?.directory?.path else null) ?: vol?.uuid?.let { "/storage/$it" }
+        val st = android.os.StatFs(path ?: return null)
+        st.availableBytes to st.totalBytes
+    }.getOrNull()
+
     fun ipodRefresh() {
         val uri = ipodUri ?: return
         viewModelScope.launch {
             ipodChecking = true
+            ipodSpace = withContext(Dispatchers.IO) { readIpodSpace(uri) }
             val device = com.qbdlx.mobile.ipod.IpodDevice(context, uri)
             val insp = withContext(Dispatchers.IO) { device.inspect() }
             ipodInspection = insp

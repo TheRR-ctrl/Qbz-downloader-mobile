@@ -382,6 +382,7 @@ interface Strings {
     val ipodDeleteSelectedTitle: String
     fun ipodDeleteSelectedWarning(n: Int): String
     fun ipodSummary(on: Int, pending: Int, already: Int): String
+    fun ipodSpace(free: String, total: String): String
     val ipodArtistAll: String
     val ipodDateLabels: List<String>
     val ipodTickAll: String
@@ -719,8 +720,8 @@ object English : Strings {
     override val ipodLookup = "Find these songs on Qobuz (download, favourites, playlist)"
     override val ipodLyricsLabel = "Put the lyrics inside each song (plain text, from LRCLIB). On the nano 6G/7G tap the cover and swipe right twice to see them (not yet tested by me)"
     override fun ipodLyricsDone(n: Int) = "Lyrics added: $n."
-    override val ipodFixAlbumsButton = "Fix album covers on the iPod"
-    override val ipodTaskFixing = "Fixing album covers… (backing up and rewriting the library)"
+    override val ipodFixAlbumsButton = "Repair albums, covers and artists on the iPod"
+    override val ipodTaskFixing = "Repairing albums, covers and artists… (backing up and rewriting the library)"
     override fun ipodTaskDeleting(n: Int) = "Deleting $n songs from the iPod… (backing up and rewriting the library)"
     override val ipodTaskIndeterminateHint = "This step has no exact percentage and cannot be stopped half way (it would damage the iPod's library); keep the iPod connected until it finishes."
     override val stopButton = "Stop"
@@ -728,7 +729,7 @@ object English : Strings {
     override fun ipodStoppedSend(sent: Int, left: Int) = "Stopped. $sent songs sent; $left are left and can be resumed."
     override fun ipodLyricsStopped(added: Int) = "Stopped. Lyrics saved in $added songs."
     override val importStopped = "Search stopped."
-    override fun ipodFixAlbumsDone(n: Int) = if (n == 0) "Nothing to fix: every album with covered songs already shows its cover." else "Fixed $n albums. Unplug and replug the iPod (or restart it) if the Albums view does not update."
+    override fun ipodFixAlbumsDone(n: Int) = if (n == 0) "Done. Covers were already right; albums are now linked to their artists. Restart the iPod to refresh the Artists view." else "Fixed $n albums. Unplug and replug the iPod (or restart it) if the Albums view does not update."
     override fun ipodFixAlbumsFailed(error: String) = "Could not fix the albums: $error"
     override val ipodPlaylistButton = "Send a Qobuz playlist to the iPod…"
     override val ipodPlaylistTitle = "Choose one or more playlists"
@@ -801,6 +802,7 @@ object English : Strings {
     override val ipodSelectAllVisible = "Select all shown"
     override val ipodDeleteSelectedTitle = "Delete selected songs?"
     override fun ipodDeleteSelectedWarning(n: Int) = "$n songs and their audio files will be removed from the iPod. A library backup is made first. This cannot restore the audio files."
+    override fun ipodSpace(free: String, total: String) = "$free free of $total"
     override fun ipodSummary(on: Int, pending: Int, already: Int) = "$on on the iPod · $pending to send" + if (already > 0) " · $already already there" else ""
     override val ipodArtistAll = "All artists"
     override val ipodDateLabels = listOf("Any time", "Today", "7 days", "30 days")
@@ -1138,8 +1140,8 @@ object Spanish : Strings {
     override val ipodLookup = "Buscar estas canciones en Qobuz (descargar, favoritas, playlist)"
     override val ipodLyricsLabel = "Incluir la letra dentro de cada canción (texto simple, de LRCLIB). En el nano 6G/7G, toca la carátula y desliza a la derecha dos veces para verlas (aún sin probar por mí)"
     override fun ipodLyricsDone(n: Int) = "Letras añadidas: $n."
-    override val ipodFixAlbumsButton = "Reparar carátulas de álbumes en el iPod"
-    override val ipodTaskFixing = "Reparando carátulas… (copia de seguridad y reescritura de la biblioteca)"
+    override val ipodFixAlbumsButton = "Reparar álbumes, carátulas y artistas en el iPod"
+    override val ipodTaskFixing = "Reparando álbumes, carátulas y artistas… (copia de seguridad y reescritura de la biblioteca)"
     override fun ipodTaskDeleting(n: Int) = "Borrando $n canciones del iPod… (copia de seguridad y reescritura de la biblioteca)"
     override val ipodTaskIndeterminateHint = "Este paso no tiene porcentaje exacto y no se puede detener a medias (dañaría la biblioteca del iPod); mantén el iPod conectado hasta que termine."
     override val stopButton = "Detener"
@@ -1147,7 +1149,7 @@ object Spanish : Strings {
     override fun ipodStoppedSend(sent: Int, left: Int) = "Detenido. $sent canciones enviadas; faltan $left y se pueden reanudar."
     override fun ipodLyricsStopped(added: Int) = "Detenido. Letras guardadas en $added canciones."
     override val importStopped = "Búsqueda detenida."
-    override fun ipodFixAlbumsDone(n: Int) = if (n == 0) "Nada que reparar: todos los álbumes con canciones con carátula ya la muestran." else "Reparados $n álbumes. Si la vista de Álbumes no cambia, desconecta y vuelve a conectar el iPod (o reinícialo)."
+    override fun ipodFixAlbumsDone(n: Int) = if (n == 0) "Listo. Las carátulas ya estaban bien; los álbumes quedaron enlazados a sus artistas. Reinicia el iPod para refrescar la vista de Artistas." else "Reparados $n álbumes. Si la vista de Álbumes no cambia, desconecta y vuelve a conectar el iPod (o reinícialo)."
     override fun ipodFixAlbumsFailed(error: String) = "No se pudieron reparar los álbumes: $error"
     override val ipodPlaylistButton = "Enviar una playlist de Qobuz al iPod…"
     override val ipodPlaylistTitle = "Elige una o varias playlists"
@@ -1220,6 +1222,7 @@ object Spanish : Strings {
     override val ipodSelectAllVisible = "Seleccionar todos los visibles"
     override val ipodDeleteSelectedTitle = "¿Borrar las canciones seleccionadas?"
     override fun ipodDeleteSelectedWarning(n: Int) = "Se eliminarán del iPod $n canciones y sus archivos de audio. Primero se guardará una copia de la biblioteca. Los archivos de audio no se pueden recuperar desde esa copia."
+    override fun ipodSpace(free: String, total: String) = "$free libres de $total"
     override fun ipodSummary(on: Int, pending: Int, already: Int) = "$on en el iPod · $pending por enviar" + if (already > 0) " · $already ya estaban" else ""
     override val ipodArtistAll = "Todos los artistas"
     override val ipodDateLabels = listOf("Siempre", "Hoy", "7 días", "30 días")
