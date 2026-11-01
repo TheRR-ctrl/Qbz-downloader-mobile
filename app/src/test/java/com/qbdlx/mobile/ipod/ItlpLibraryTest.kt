@@ -158,6 +158,33 @@ class ItlpLibraryTest {
         assertEquals(1, items.map { it["artist_pid"] }.toSet().size); assertEquals(1, items.map { it["album_pid"] }.toSet().size)
     }
 
+    @Test fun albumsPointAtTheirOwnArtistAndTheCountersFollow() {
+        val library = library(withExistingTrack = true)
+        library.addTrack(TrackMeta("F01/1.mp3", "One", "Artist A", "Album A1", genre = "Pop"), 1)
+        library.addTrack(TrackMeta("F01/2.mp3", "Two", "Artist A", "Album A1", genre = "Pop"), 1)
+        library.addTrack(TrackMeta("F01/3.mp3", "Three", "Artist A", "Album A2", genre = "Pop"), 1)
+        library.addTrack(TrackMeta("F01/4.mp3", "Four", "Artist B", "Album B1", genre = "Pop"), 1)
+        val artists = lib.query("SELECT pid, name, album_count FROM artist").associateBy { it["name"] }
+        for (album in lib.query("SELECT name, artist_pid, item_count FROM album")) {
+            val owner = when (album["name"]) { "Album A1", "Album A2" -> "Artist A"; "Album B1" -> "Artist B"; else -> "Old Artist" }
+            assertEquals("${album["name"]} belongs to $owner", artists[owner]!!["pid"], album["artist_pid"])
+        }
+        assertEquals(2L, (lib.query("SELECT item_count FROM album WHERE name='Album A1'").single()["item_count"] as Number).toLong())
+        assertEquals("two albums", 2L, (artists["Artist A"]!!["album_count"] as Number).toLong())
+        assertEquals(1L, (artists["Artist B"]!!["album_count"] as Number).toLong())
+        val a = lib.query("SELECT artist_order FROM item WHERE artist='Artist A'").map { it["artist_order"] }.toSet()
+        assertEquals("the same artist keeps one sort position", 1, a.size)
+    }
+
+    @Test fun repairArtistLinksFixesAlbumsPointingAtAnArtistThatDoesNotExist() {
+        val library = library(withExistingTrack = true)
+        lib.exec("UPDATE album SET artist_pid=12345, item_count=9")
+        library.repairArtistLinks()
+        val artistPid = lib.query("SELECT pid FROM artist WHERE name='Old Artist'").single()["pid"]
+        val album = lib.query("SELECT artist_pid, item_count FROM album").single()
+        assertEquals(artistPid, album["artist_pid"]); assertEquals(1L, (album["item_count"] as Number).toLong())
+    }
+
     @Test fun newTracksSortAfterTheExistingOnes() {
         val library = library(withExistingTrack = true)
         val p = library.addTrack(TrackMeta("F01/1.mp3", "New", "New Artist", "New Album"), 1)

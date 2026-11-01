@@ -88,6 +88,7 @@ class ItlpLibrary(
 
     /** Adds the track to all tables and returns its pid. The caller wraps this in a transaction. */
     fun addTrack(m: TrackMeta, dateMacEpoch: Long): Long {
+        if (!artistLinksRepaired) { artistLinksRepaired = true; repairArtistLinks() } // once per library session, not once per song
         val tmplItem = rowOrTemplate(lib, "SELECT * FROM item LIMIT 1", IpodTemplates.item)
         val itemPid = randPid()
 
@@ -105,8 +106,14 @@ class ItlpLibrary(
         }
         val nord = maxOrder(lib, "artist", "name_order") + 100
         val artistPid = lookup("artist", IpodTemplates.artist, m.artist, nord)
+        // an artist that already exists keeps its own sort position, so the Artists view groups its songs together
+        val artistOrd = (row(lib, "SELECT name_order AS o FROM artist WHERE pid=?", listOf(artistPid))?.get("o") as Number?)?.toLong() ?: nord
         val aord = maxOrder(lib, "album", "name_order") + 100
         val albumPid = lookup("album", IpodTemplates.album, m.album, aord)
+        // the album row is cloned from a template that carries another artist's pid: point it at this song's artist
+        val albumCols = columnsOf(lib, "album")
+        if ("artist_pid" in albumCols) lib.exec("UPDATE album SET artist_pid=? WHERE pid=?", listOf(artistPid, albumPid))
+        if ("artist_order" in albumCols) lib.exec("UPDATE album SET artist_order=? WHERE pid=?", listOf(artistOrd, albumPid))
 
         // track_artist uses small sequential pids
         val ta = row(lib, "SELECT pid FROM track_artist WHERE name=?", listOf(m.artist))
@@ -126,10 +133,11 @@ class ItlpLibrary(
             "track_artist_pid" to trackArtistPid, "date_modified" to dateMacEpoch,
             // A cloned template may come from a song with artwork. Never inherit another song's cover reference.
             "artwork_status" to 0L, "artwork_cache_id" to 0L, "has_lyrics" to 0L, // likewise: never inherit the template song's lyrics flag
-            "title_order" to end, "album_order" to end, "artist_order" to nord,
-            "album_artist_order" to nord, "album_by_artist_order" to nord,
+            "title_order" to end, "album_order" to end, "artist_order" to artistOrd,
+            "album_artist_order" to artistOrd, "album_by_artist_order" to artistOrd,
         ))
         insert(lib, "item", tmplItem)
+        refreshCounts(artistPid, albumPid)
 
         insert(lib, "avformat_info", linkedMapOf(
             "item_pid" to itemPid, "audio_format" to m.audioFormat.toLong(), "bit_rate" to m.bitRate.toLong(), "sample_rate" to m.sampleRate.toLong(),
@@ -152,6 +160,29 @@ class ItlpLibrary(
             insert(db, table, t)
         }
         return itemPid
+    }
+
+    private var artistLinksRepaired = false
+
+    /** Points every album at the artist of its songs and recomputes the counters, fixing albums added before this was done. */
+    fun repairArtistLinks() {
+        val albumCols = columnsOf(lib, "album")
+        if ("artist_pid" in albumCols) runCatching {
+            lib.exec("UPDATE album SET artist_pid=(SELECT i.artist_pid FROM item i WHERE i.album_pid=album.pid AND i.artist_pid IS NOT NULL LIMIT 1) " +
+                "WHERE EXISTS (SELECT 1 FROM item i WHERE i.album_pid=album.pid AND i.artist_pid IS NOT NULL) " +
+                "AND (artist_pid IS NULL OR artist_pid NOT IN (SELECT pid FROM artist))")
+        }
+        if ("item_count" in albumCols) runCatching { lib.exec("UPDATE album SET item_count=(SELECT COUNT(*) FROM item WHERE item.album_pid=album.pid)") }
+        if ("album_count" in columnsOf(lib, "artist")) runCatching {
+            lib.exec("UPDATE artist SET album_count=(SELECT COUNT(DISTINCT album_pid) FROM item WHERE item.artist_pid=artist.pid)")
+        }
+    }
+
+    private fun refreshCounts(artistPid: Long, albumPid: Long) {
+        if ("item_count" in columnsOf(lib, "album"))
+            lib.exec("UPDATE album SET item_count=(SELECT COUNT(*) FROM item WHERE album_pid=?) WHERE pid=?", listOf(albumPid, albumPid))
+        if ("album_count" in columnsOf(lib, "artist"))
+            lib.exec("UPDATE artist SET album_count=(SELECT COUNT(DISTINCT album_pid) FROM item WHERE artist_pid=?) WHERE pid=?", listOf(artistPid, artistPid))
     }
 
     /** Table layouts and sample rows, for diagnosing a device (no personal data beyond song titles). */
