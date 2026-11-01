@@ -1,6 +1,7 @@
 package com.qbdlx.mobile
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.background
@@ -136,8 +137,14 @@ fun IpodScreen(vm: MainViewModel) {
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
     androidx.compose.foundation.layout.Box(Modifier.weight(1f).fillMaxWidth()) {
+    // Tab switch: content fades in (ease-out, 180 ms) from a visible start, never from nothing.
+    val tabFade = remember { androidx.compose.animation.core.Animatable(1f) }
+    LaunchedEffect(vm.ipodTab) {
+        tabFade.snapTo(0.4f)
+        tabFade.animateTo(1f, androidx.compose.animation.core.tween(180, easing = androidx.compose.animation.core.CubicBezierEasing(0.23f, 1f, 0.32f, 1f)))
+    }
     LazyColumn(
-        Modifier.fillMaxSize(),
+        Modifier.fillMaxSize().graphicsLayer { alpha = tabFade.value },
         state = listState,
         contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 24.dp + LocalBottomInset.current),
         verticalArrangement = Arrangement.spacedBy(10.dp),
