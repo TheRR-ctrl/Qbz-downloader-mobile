@@ -982,10 +982,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             ipodProgress = null; ipodStopping = false
             val text = if (error != null) strings.ipodInterrupted(remaining.size, error) else if (stopped) strings.ipodStoppedSend(sent, remaining.size) else strings.ipodDone(sent, failed)
             ipodNotify(if (error != null || stopped) text else strings.ipodNotifDone(sent, failed), 0, 0, ongoing = false)
-            if (error != null || stopped) playlistAfterSend = null
+            if (stopped) playlistAfterSend = null // an error (e.g. the iPod is full) still builds the playlists from the songs that are there
             ipodMessage = (if (error == null && (covers > 0 || artworkNote != null)) text + " " + strings.ipodCovers(covers, artworkNote) else text) +
                 (if (ipodLyrics) " " + strings.ipodLyricsDone(lyricsAdded) else "")
-            if (error == null && !stopped) finishIpodPlaylist() else { playlistAfterSend = null; ipodRefresh() }
+            if (!stopped) finishIpodPlaylist() else { playlistAfterSend = null; ipodRefresh() }
         }
     }
 
