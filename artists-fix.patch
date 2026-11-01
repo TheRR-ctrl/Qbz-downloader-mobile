@@ -1,5 +1,5 @@
---- a/app/b/main/java/com/qbdlx/mobile/ipod/ItlpLibrary.kt	2026-11-01 06:48:05.000000000 +0000
-+++ b/app/src/main/java/com/qbdlx/mobile/ipod/ItlpLibrary.kt	2026-11-01 07:07:40.700165084 +0000
+--- a/app/src/main/java/com/qbdlx/mobile/ipod/ItlpLibrary.kt
++++ b/app/src/main/java/com/qbdlx/mobile/ipod/ItlpLibrary.kt
 @@ -88,6 +88,7 @@
  
      /** Adds the track to all tables and returns its pid. The caller wraps this in a transaction. */
