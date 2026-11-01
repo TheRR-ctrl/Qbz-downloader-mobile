@@ -40,11 +40,11 @@ object CarView {
     /** "Title - Artist(s)" on one row, so it takes less room than a title with a subtitle. */
     fun header(title: String, artist: String) = if (artist.isBlank()) title else "$title - $artist"
 
-    /** Three lyric rows under the song's own row: the previous, the one being sung (middle) and the next; missing ones show "♪". */
+    /** Two lyric rows under the song's own row: the one being sung and the next (the previous one was dropped so everything fits the car screen); missing ones show "♪". */
     private fun window(lines: List<LyricLine>, idx: Int): List<Row> {
         if (lines.isEmpty()) return listOf(Row("msg", "♪"))
         fun at(i: Int, id: String) = Row(id, lines.getOrNull(i)?.text?.ifBlank { "♪" } ?: "♪")
         val mid = if (idx < 0) "♪ …" else "▶ " + lines[idx].text.ifBlank { "♪" }
-        return listOf(at(idx - 1, "l-prev"), Row("l-now", mid, current = true), at(idx + 1, "l-next"))
+        return listOf(Row("l-now", mid, current = true), at(idx + 1, "l-next"))
     }
 }
