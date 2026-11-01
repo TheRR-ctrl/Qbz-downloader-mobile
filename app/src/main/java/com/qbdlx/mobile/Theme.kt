@@ -14,6 +14,10 @@ import androidx.compose.ui.unit.dp
 val Cyan = Color(0xFF7FD6E8)
 val Gold = Color(0xFFE5B800)
 val Panel = Color(0xFF0D1319)
+// The warm gold of the "downloaded" check and the controls, and the dark greys of the Qobuz app's cards.
+val QobuzGold = Color(0xFFFFC555)
+private val Card = Color(0xFF262626)
+private val OnQobuzGold = Color(0xFF2B1F00)
 
 /** Dark teal for text and icons on top of [Cyan]; Material's default there is a purple that clashes. */
 private val OnCyan = Color(0xFF00363F)
@@ -35,12 +39,16 @@ fun QbdlxTheme(amoled: Boolean, content: @Composable () -> Unit) {
     val dark = amoled || isSystemInDarkTheme()
     val scheme = when {
         dark -> darkColorScheme(
-            primary = Cyan, onPrimary = OnCyan,
-            primaryContainer = CyanContainer, onPrimaryContainer = Cyan,
+            primary = QobuzGold, onPrimary = OnQobuzGold,
+            primaryContainer = Color(0xFF3B2F12), onPrimaryContainer = QobuzGold,
             secondary = Gold, onSecondary = OnGold,
-            secondaryContainer = CyanContainer, onSecondaryContainer = Cyan,
+            secondaryContainer = Color.White, onSecondaryContainer = Color.Black, // the selected pill is white, like Qobuz's
             tertiary = Gold, onTertiary = OnGold,
-        ).let { if (amoled) it.copy(background = Color.Black, surface = Color.Black, surfaceVariant = Panel) else it }
+            background = Color(0xFF111111), surface = Color(0xFF111111),
+            surfaceVariant = Card, onSurfaceVariant = Color(0xFFB8B8B8),
+            surfaceContainer = Card, surfaceContainerHigh = Card, surfaceContainerHighest = Card,
+            outline = Color(0xFF8A8A8A), outlineVariant = Color(0xFF333333),
+        ).let { if (amoled) it.copy(background = Color.Black, surface = Color.Black) else it }
         else -> lightColorScheme(
             primary = CyanLight, onPrimary = Color.White,
             primaryContainer = CyanContainerLight, onPrimaryContainer = OnCyanContainerLight,

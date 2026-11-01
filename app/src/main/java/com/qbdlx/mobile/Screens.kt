@@ -1,5 +1,6 @@
 package com.qbdlx.mobile
 
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -24,6 +25,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
@@ -50,7 +52,7 @@ private fun mmss(sec: Int) = "%d:%02d".format(sec / 60, sec % 60)
 
 @Composable
 private fun Title(text: String) =
-    Text(text, fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(16.dp))
+    Text(text, fontSize = 32.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 12.dp))
 
 /** A page title with the search button at its right, where the search tab used to be. */
 @Composable
@@ -155,7 +157,7 @@ fun SearchScreen(vm: MainViewModel) {
         if (vm.busy) LinearProgressIndicator(Modifier.fillMaxWidth().padding(16.dp))
         if (vm.searchTab == 1) LazyColumn(contentPadding = PaddingValues(0.dp, 8.dp, 0.dp, 16.dp + LocalBottomInset.current)) {
             itemsIndexed(vm.trackResults) { i, (album, track) ->
-                TrackRow(vm, album, track, "${track.artist} · ${album.title}", showCover = true, onPlay = { vm.playList(vm.trackResults, i) })
+                TrackRow(vm, album, track, "${track.artist} • ${album.title}", showCover = true, onPlay = { vm.playList(vm.trackResults, i) })
             }
         } else LazyColumn(contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 16.dp + LocalBottomInset.current), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             items(vm.results, key = { it.id }) { album ->
@@ -182,20 +184,34 @@ fun SearchScreen(vm: MainViewModel) {
 private fun TrackRow(vm: MainViewModel, album: Album, track: Track, subtitle: String, showCover: Boolean = false, onPlay: () -> Unit = { vm.play(album, track) }) {
     val item = vm.downloads.latestFor(track.id)
     val s = LocalStrings.current
-    Row(Modifier.fillMaxWidth().clickable(enabled = track.streamable, onClick = onPlay).padding(start = 16.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+    var menu by remember { mutableStateOf(false) }
+    Row(Modifier.fillMaxWidth().clickable(enabled = track.streamable, onClick = onPlay).padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         // The Library's track list mixes albums, so each row shows its own cover instead of a list number.
-        if (showCover) { Cover(album.coverUrl, 48); Spacer(Modifier.width(12.dp)) }
+        if (showCover) { Cover(album.coverUrl, 56); Spacer(Modifier.width(14.dp)) }
         else Text("${track.number}", Modifier.width(28.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
         Column(Modifier.weight(1f)) {
-            Text(track.displayTitle, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
-            Text(subtitle, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(track.displayTitle, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, fontSize = 16.sp,
+                color = if (track.streamable) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (item?.status == TaskStatus.COMPLETED) {
+                    Icon(Icons.Default.Check, s.downloaded, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(4.dp))
+                }
+                Text(subtitle, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                if (track.quality.isNotBlank()) { Spacer(Modifier.width(6.dp)); QualityBadge(track.quality, track.hiRes) }
+            }
         }
-        Column(horizontalAlignment = Alignment.End) {
-            Text(mmss(track.durationSec), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (track.quality.isNotBlank()) QualityBadge(track.quality, track.hiRes)
-        }
-        IconButton({ vm.requestDownload(DownloadRequest.Tracks(listOf(album to track))) }, enabled = track.streamable && item?.status?.isOpen != true) {
-            if (item?.status == TaskStatus.COMPLETED) Icon(Icons.Default.Check, s.downloaded) else Icon(Icons.Default.Download, s.download)
+        if (!showCover) Text(mmss(track.durationSec), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Box {
+            IconButton({ menu = true }) { Icon(Icons.Default.MoreVert, null) }
+            androidx.compose.material3.DropdownMenu(menu, { menu = false }) {
+                androidx.compose.material3.DropdownMenuItem(
+                    { Text(s.download) },
+                    { menu = false; vm.requestDownload(DownloadRequest.Tracks(listOf(album to track))) },
+                    leadingIcon = { Icon(Icons.Default.Download, null) },
+                    enabled = track.streamable && item?.status?.isOpen != true,
+                )
+            }
         }
     }
 }
@@ -286,7 +302,7 @@ fun PlaylistScreen(vm: MainViewModel) {
             )
         }
         // A playlist can list the same track twice, so key by position.
-        itemsIndexed(d.tracks) { i, (album, track) -> TrackRow(vm, album, track, "${track.artist} · ${album.title}", onPlay = { vm.playList(d.tracks, i) }) }
+        itemsIndexed(d.tracks) { i, (album, track) -> TrackRow(vm, album, track, "${track.artist} • ${album.title}", onPlay = { vm.playList(d.tracks, i) }) }
     }
 }
 
@@ -333,7 +349,7 @@ fun LibraryScreen(vm: MainViewModel) {
                 items(list, key = { "p" + it.id }) { pl ->
                     // The list entry may carry only one cover: ask for the rest of the mosaic once the row is on screen.
                     LaunchedEffect(pl.id) { vm.ensurePlaylistCovers(pl) }
-                    LibraryRow(pl.coverUrl, pl.name, listOf(pl.owner, if (pl.tracksCount > 0) s.tracks(pl.tracksCount) else "").filter { it.isNotBlank() }.joinToString(" · "),
+                    LibraryRow(pl.coverUrl, pl.name, listOf(pl.owner, if (pl.tracksCount > 0) s.tracks(pl.tracksCount) else "").filter { it.isNotBlank() }.joinToString(" • "),
                         onClick = { vm.openPlaylist(pl.id) }, onDownload = { vm.requestDownload(DownloadRequest.WholePlaylist(pl)) },
                         covers = vm.playlistCovers[pl.id] ?: pl.covers)
                 }
@@ -343,15 +359,16 @@ fun LibraryScreen(vm: MainViewModel) {
                 if (list.isEmpty() && !vm.libraryLoading) item { EmptyText(s.nothingHere) }
                 if (list.isNotEmpty()) item { DownloadAllButton(vm) { vm.requestDownload(DownloadRequest.Albums(list)) } }
                 items(list, key = { "a" + it.id }) { al ->
-                    LibraryRow(al.coverUrl, al.title, listOf(al.artist, al.quality).filter { it.isNotBlank() }.joinToString(" · "),
-                        onClick = { vm.openAlbum(al.id) }, onDownload = { vm.requestDownload(DownloadRequest.WholeAlbum(al)) })
+                    LibraryRow(al.coverUrl, al.title, listOf("Álbum", al.artist).filter { it.isNotBlank() }.joinToString(" • "),
+                        onClick = { vm.openAlbum(al.id) }, onDownload = { vm.requestDownload(DownloadRequest.WholeAlbum(al)) },
+                        badge = al.quality, hiRes = al.hiRes)
                 }
             }
             LibraryView.Tracks -> {
                 val list = vm.favTracks.orEmpty().let { l -> when (vm.librarySort) { 1 -> l.sortedBy { it.second.displayTitle.lowercase() }; 2 -> l.sortedBy { it.second.artist.lowercase() }; 3 -> l.sortedByDescending { it.first.year }; 4 -> l.sortedBy { it.first.year.ifBlank { "9999" } }; else -> l } }
                 if (list.isEmpty() && !vm.libraryLoading) item { EmptyText(s.nothingHere) }
                 if (list.isNotEmpty()) item { DownloadAllButton(vm) { vm.requestDownload(DownloadRequest.Tracks(list.filter { it.second.streamable })) } }
-                itemsIndexed(list) { i, (album, track) -> TrackRow(vm, album, track.copy(number = i + 1), "${track.artist} · ${album.title}", showCover = true, onPlay = { vm.playList(list, i) }) }
+                itemsIndexed(list) { i, (album, track) -> TrackRow(vm, album, track.copy(number = i + 1), "${track.artist} • ${album.title}", showCover = true, onPlay = { vm.playList(list, i) }) }
             }
             LibraryView.Artists -> {
                 // Artists followed in the library first, then those behind favorite albums and tracks.
@@ -380,7 +397,7 @@ fun LibraryScreen(vm: MainViewModel) {
             LibraryView.History -> {
                 val list = vm.history
                 if (list.isEmpty()) item { EmptyText(s.nothingHere) }
-                itemsIndexed(list) { i, (album, track) -> TrackRow(vm, album, track.copy(number = i + 1), "${track.artist} · ${album.title}", showCover = true, onPlay = { vm.playList(list, i) }) }
+                itemsIndexed(list) { i, (album, track) -> TrackRow(vm, album, track.copy(number = i + 1), "${track.artist} • ${album.title}", showCover = true, onPlay = { vm.playList(list, i) }) }
             }
         }
     }
@@ -407,15 +424,24 @@ private fun EmptyText(text: String) =
     Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(16.dp))
 
 @Composable
-private fun LibraryRow(coverUrl: String?, title: String, subtitle: String, onClick: () -> Unit, onDownload: () -> Unit, covers: List<String> = emptyList()) {
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        if (covers.size >= 2) CoverMosaic(covers, 56) else Cover(coverUrl, 56)
-        Spacer(Modifier.width(12.dp))
+private fun LibraryRow(coverUrl: String?, title: String, subtitle: String, onClick: () -> Unit, onDownload: () -> Unit, covers: List<String> = emptyList(), badge: String? = null, hiRes: Boolean = false) {
+    var menu by remember { mutableStateOf(false) }
+    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (covers.size >= 2) CoverMosaic(covers, 64) else Cover(coverUrl, 64)
+        Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-            Text(title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(subtitle, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(title, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(subtitle, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                if (!badge.isNullOrBlank()) { Spacer(Modifier.width(6.dp)); QualityBadge(badge, hiRes) }
+            }
         }
-        IconButton(onDownload) { Icon(Icons.Default.Download, LocalStrings.current.download) }
+        Box {
+            IconButton({ menu = true }) { Icon(Icons.Default.MoreVert, null) }
+            androidx.compose.material3.DropdownMenu(menu, { menu = false }) {
+                androidx.compose.material3.DropdownMenuItem({ Text(LocalStrings.current.download) }, { menu = false; onDownload() }, leadingIcon = { Icon(Icons.Default.Download, null) })
+            }
+        }
     }
 }
 
@@ -688,19 +714,28 @@ fun MiniPlayer(vm: MainViewModel) {
         while (true) { pos = vm.engine.position; delay(500) }
     }
     val dur = (vm.engine.duration.takeIf { it > 0 } ?: (track.durationSec * 1000L)).coerceAtLeast(1)
-    Column(Modifier.fillMaxWidth().swipeToSkip(vm::next, vm::previous).clickable { vm.playerOpen = true }) {
-        LinearProgressIndicator(progress = { (pos.toFloat() / dur).coerceIn(0f, 1f) }, Modifier.fillMaxWidth().height(2.dp))
-        Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Cover(album.coverUrl, 40)
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f)) {
-                Text(track.displayTitle, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(album.artist, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+    // A rounded dark card floating over the content, its gold progress line along the bottom edge (as in Qobuz).
+    androidx.compose.material3.Surface(
+        Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
+        shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceVariant,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(Modifier.swipeToSkip(vm::next, vm::previous).clickable { vm.playerOpen = true }) {
+            Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Cover(album.coverUrl, 44)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(track.displayTitle, fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(album.artist, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                IconButton({ vm.togglePlay() }) {
+                    Icon(if (vm.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, LocalStrings.current.playPause, Modifier.size(32.dp), tint = MaterialTheme.colorScheme.onSurface)
+                }
             }
-            Text("${mmss((pos / 1000).toInt())} / ${mmss((dur / 1000).toInt())}", fontSize = 11.sp)
-            IconButton({ vm.togglePlay() }) {
-                Icon(if (vm.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, LocalStrings.current.playPause, tint = MaterialTheme.colorScheme.primary)
-            }
+            LinearProgressIndicator(
+                progress = { (pos.toFloat() / dur).coerceIn(0f, 1f) }, Modifier.fillMaxWidth().height(2.dp),
+                color = MaterialTheme.colorScheme.primary, trackColor = androidx.compose.ui.graphics.Color.Transparent,
+            )
         }
     }
 }
