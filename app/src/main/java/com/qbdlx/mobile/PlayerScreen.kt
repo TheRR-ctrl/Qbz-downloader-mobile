@@ -1,5 +1,6 @@
 package com.qbdlx.mobile
 
+import sh.calvin.reorderable.ReorderableItem
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
 import android.os.Build
@@ -72,6 +73,8 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.filled.DragHandle
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
@@ -660,7 +663,11 @@ private fun QueuePage(vm: MainViewModel) {
     var menu by remember { mutableStateOf(false) }
     val offset = q.history.size // index of the current track on the queue page
 
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 8.dp)) {
+    val lazyState = androidx.compose.foundation.lazy.rememberLazyListState()
+    // The first upcoming song sits after: title, [history], "current" heading, the current song and the "next" heading.
+    val firstUp = 1 + (if (showHistory && q.history.isNotEmpty()) 1 + q.history.size else 0) + 1 + (if (q.current != null) 1 else 0) + 1
+    val reorder = sh.calvin.reorderable.rememberReorderableLazyListState(lazyState) { from, to -> vm.moveUpcoming(from.index - firstUp, to.index - firstUp) }
+    LazyColumn(Modifier.fillMaxSize(), state = lazyState, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 8.dp)) {
         item {
             Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(s.queueTitle, fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
@@ -685,7 +692,16 @@ private fun QueuePage(vm: MainViewModel) {
         q.current?.let { (a, t) -> item { QueueRow(a, t, dim = false, onClick = { vm.jumpTo(offset) }, onRemove = null) } }
         item { QueueHeading(s.queueNext) }
         if (q.upcoming.isEmpty()) item { Text(s.queueEmpty, color = OnPlayerDim, modifier = Modifier.padding(vertical = 8.dp)) }
-        itemsIndexed(q.upcoming) { k, (a, t) -> QueueRow(a, t, dim = false, onClick = { vm.jumpTo(offset + 1 + k) }, onRemove = { vm.removeUpcoming(k) }) }
+        itemsIndexed(q.upcoming, key = { _, it -> System.identityHashCode(it) }) { k, it ->
+            val (a, t) = it
+            ReorderableItem(reorder, key = System.identityHashCode(it)) { dragging ->
+                val lift by androidx.compose.animation.core.animateFloatAsState(if (dragging) 1.03f else 1f, androidx.compose.animation.core.tween(160), label = "lift")
+                Row(Modifier.graphicsLayer { scaleX = lift; scaleY = lift }.background(if (dragging) Chip else Color.Transparent), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.weight(1f)) { QueueRow(a, t, dim = false, onClick = { vm.jumpTo(offset + 1 + k) }, onRemove = { vm.removeUpcoming(k) }) }
+                    Icon(Icons.Default.DragHandle, null, tint = OnPlayerDim, modifier = Modifier.padding(end = 4.dp).size(24.dp).draggableHandle())
+                }
+            }
+        }
     }
 }
 

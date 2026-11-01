@@ -196,7 +196,7 @@ private fun AppShell(vm: MainViewModel) {
             // Translucent: the screens scroll underneath and show through blurred, like the web player.
             Column(Modifier.hazeChild(haze, HazeMaterials.thin(MaterialTheme.colorScheme.background))) {
                 FolderBanner(vm.folderStatus) { vm.chooseFolder() }
-                AnimatedVisibility(vm.nowPlaying != null, enter = slideInVertically { it } + fadeIn(), exit = slideOutVertically { it } + fadeOut()) {
+                AnimatedVisibility(vm.nowPlaying != null, enter = slideInVertically(tween(280, easing = UiEaseOut)) { it } + fadeIn(tween(200, easing = UiEaseOut)), exit = slideOutVertically(tween(180, easing = UiEaseOut)) { it } + fadeOut(tween(140, easing = UiEaseOut))) {
                     MiniPlayer(vm)
                 }
                 NavigationBar(containerColor = Color.Transparent, tonalElevation = 0.dp) {
@@ -248,7 +248,8 @@ private fun AppShell(vm: MainViewModel) {
                     modifier = Modifier.fillMaxSize(),
                     transitionSpec = {
                         val detail = targetState == "album" || targetState == "playlist"
-                        (fadeIn(tween(240)) + (if (detail) slideInVertically(tween(280)) { it / 18 } else EnterTransition.None)) togetherWith fadeOut(tween(140))
+                        // Emil Kowalski: strong ease-out, enter ~220 ms, exit faster (120 ms) so the next screen never waits for the old one.
+                        (fadeIn(tween(220, delayMillis = 40, easing = UiEaseOut)) + (if (detail) slideInVertically(tween(260, easing = UiEaseOut)) { it / 18 } else EnterTransition.None)) togetherWith fadeOut(tween(120, easing = UiEaseOut))
                     },
                     label = "screen",
                 ) { key ->
@@ -283,3 +284,6 @@ private fun AppShell(vm: MainViewModel) {
     if (vm.playerOpen) PlayerHost(vm)
     }
 }
+
+/** The app's one strong ease-out curve for entrances and exits (no ease-in, no stock curves). */
+val UiEaseOut = androidx.compose.animation.core.CubicBezierEasing(0.23f, 1f, 0.32f, 1f)
