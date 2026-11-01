@@ -85,6 +85,7 @@ fun IpodScreen(vm: MainViewModel) {
     }
     if (vm.ipodPlaylistPicker) {
         androidx.compose.runtime.LaunchedEffect(Unit) { vm.loadLibrary() }
+        var picked by remember { mutableStateOf<Set<String>>(emptySet()) }
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { vm.ipodPlaylistPicker = false },
             title = { Text(s.ipodPlaylistTitle) },
@@ -95,11 +96,15 @@ fun IpodScreen(vm: MainViewModel) {
                     pls.isEmpty() -> Text(s.ipodPlaylistNone)
                     else -> LazyColumn { items(pls.size) { i ->
                         val p = pls[i]
-                        Text("${p.name} · ${p.tracksCount}", Modifier.fillMaxWidth().clickable { vm.ipodSendPlaylist(p) }.padding(vertical = 12.dp))
+                        val on = p.id in picked
+                        Row(Modifier.fillMaxWidth().clickable { picked = if (on) picked - p.id else picked + p.id }, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                            androidx.compose.material3.Checkbox(on, { picked = if (on) picked - p.id else picked + p.id })
+                            Text("${p.name} · ${p.tracksCount}", Modifier.padding(vertical = 8.dp))
+                        }
                     } }
                 }
             },
-            confirmButton = {},
+            confirmButton = { TextButton({ vm.ipodSendPlaylists((vm.myPlaylists ?: emptyList()).filter { it.id in picked }) }, enabled = picked.isNotEmpty()) { Text(s.ipodPlaylistSendN(picked.size)) } },
             dismissButton = { TextButton({ vm.ipodPlaylistPicker = false }) { Text(s.cancel) } },
         )
     }

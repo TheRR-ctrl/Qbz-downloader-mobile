@@ -577,7 +577,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var confirmIpodClear by mutableStateOf(false)
     var ipodPlaylistPicker by mutableStateOf(false)
     /** A Qobuz playlist waiting for its songs to finish arriving on the iPod: (name, track keys in order). */
-    private var playlistAfterSend: Pair<String, List<String>>? = null
+    private var playlistAfterSend: List<Pair<String, List<String>>>? = null
     var ipodClearing by mutableStateOf(false); private set
     /** What the iPod is doing right now when there is no exact percentage (clear, delete, fix covers): shown as a bar without a number. */
     var ipodTask by mutableStateOf<String?>(null); private set
@@ -988,19 +988,28 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Sends a Qobuz playlist to the iPod: its downloaded MP3s that are not there yet are sent, then the playlist is created with every one of its songs found on the iPod. */
-    fun ipodSendPlaylist(p: Playlist) {
+    fun ipodSendPlaylists(selected: List<Playlist>) {
+        if (selected.isEmpty()) return
         val uri = ipodUri ?: return
         if (ipodProgress != null || ipodLyricsStatus != null || ipodTask != null) { notice = strings.ipodBusy; return }
         if (ipodGuid() == null) { ipodReadUsbGuid(); return }
         ipodPlaylistPicker = false
         viewModelScope.launch {
             ipodMessage = null
-            val detail = withContext(Dispatchers.IO) { runCatching { api.getPlaylist(p.id) }.getOrNull() }
-            if (detail == null) { ipodMessage = strings.ipodPlaylistLoadFailed; return@launch }
-            val keys = detail.tracks.map { (al, t) -> com.qbdlx.mobile.ipod.trackKey(t.displayTitle, t.artist, al.title) }
+            val loaded = ArrayList<Pair<String, List<Pair<Album, Track>>>>()
+            for ((i, p) in selected.withIndex()) {
+                ipodLyricsStatus = strings.ipodPlaylistLoading(p.name, i, selected.size); ipodLyricsProgress = i to selected.size
+                val detail = withContext(Dispatchers.IO) { runCatching { api.getPlaylist(p.id) }.getOrNull() }
+                if (detail == null) { ipodLyricsStatus = null; ipodLyricsProgress = null; ipodMessage = strings.ipodPlaylistLoadFailed; return@launch }
+                loaded.add(p.name to detail.tracks)
+            }
+            ipodLyricsStatus = null; ipodLyricsProgress = null
+            val allTracks = loaded.flatMap { it.second }
+            val keyLists = loaded.map { (name, tr) -> name to tr.map { (al, t) -> com.qbdlx.mobile.ipod.trackKey(t.displayTitle, t.artist, al.title) } }
+            val keys = keyLists.flatMap { it.second }
             // Songs that are neither on the iPod nor downloaded as MP3 yet are downloaded first (with progress and a Stop button), then sent.
             val have = ipodCandidates.map { ipodKey(it) }.toSet()
-            val missing = detail.tracks.filter { (al, t) ->
+            val missing = allTracks.filter { (al, t) ->
                 val k = com.qbdlx.mobile.ipod.trackKey(t.displayTitle, t.artist, al.title); k !in ipodOnDevice && k !in have && t.streamable
             }.distinctBy { (al, t) -> com.qbdlx.mobile.ipod.trackKey(t.displayTitle, t.artist, al.title) }
             if (missing.isNotEmpty()) {
@@ -1026,7 +1035,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
             val candidates = ipodCandidates.associateBy { ipodKey(it) }
             val toSend = keys.distinct().filter { it !in ipodOnDevice }.mapNotNull { candidates[it] }
-            playlistAfterSend = p.name to keys
+            playlistAfterSend = keyLists
             if (toSend.isEmpty()) finishIpodPlaylist() else ipodSend(toSend)
         }
     }
@@ -1034,13 +1043,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private fun finishIpodPlaylist() {
         val pending = playlistAfterSend
         if (pending == null) { ipodRefresh(); return }
-        val (name, keys) = pending
         playlistAfterSend = null
         val uri = ipodUri; val guid = ipodGuid()
         if (uri == null || guid == null) { ipodRefresh(); return }
         viewModelScope.launch {
-            val r = withContext(Dispatchers.IO) { com.qbdlx.mobile.ipod.IpodDevice(context, uri).makePlaylist(name, keys, guid) }
-            ipodMessage = listOfNotNull(ipodMessage, strings.ipodPlaylistDone(name, r.added, r.missing, r.error)).joinToString(" ")
+            val msgs = ArrayList<String>()
+            ipodMessage?.let { msgs.add(it) }
+            for ((i, pl) in pending.withIndex()) {
+                val (name, keys) = pl
+                ipodLyricsStatus = strings.ipodPlaylistMaking(name, i, pending.size); ipodLyricsProgress = i to pending.size
+                val r = withContext(Dispatchers.IO) { com.qbdlx.mobile.ipod.IpodDevice(context, uri).makePlaylist(name, keys, guid) }
+                msgs.add(strings.ipodPlaylistDone(name, r.added, r.missing, r.error))
+            }
+            ipodLyricsStatus = null; ipodLyricsProgress = null
+            ipodMessage = msgs.joinToString(" ")
             ipodRefresh()
         }
     }
