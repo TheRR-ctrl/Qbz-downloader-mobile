@@ -1,5 +1,6 @@
 package com.qbdlx.mobile
 
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -572,59 +573,85 @@ fun SettingsScreen(vm: MainViewModel) {
     val s = LocalStrings.current
     Column(Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState()).padding(bottom = 8.dp + LocalBottomInset.current)) {
         Title(s.settings)
-        SectionHeading(s.defaultQuality, Modifier.padding(horizontal = 16.dp))
-        Text(s.defaultQualityHelp, Modifier.padding(horizontal = 16.dp, vertical = 2.dp), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Quality.entries.forEach { q ->
-            Row(Modifier.fillMaxWidth().clickable { vm.updateQuality(q) }.padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                RadioButton(q == vm.quality && !vm.askQuality, { vm.updateQuality(q) })
-                Text("${q.label} · ${s.qualityDescription(q)}")
+
+        // ── Descargas ──
+        SettingsGroup(s.defaultQuality, s.defaultQualityHelp) {
+            Quality.entries.forEach { q ->
+                Row(Modifier.fillMaxWidth().clickable { vm.updateQuality(q) }.padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(q == vm.quality && !vm.askQuality, { vm.updateQuality(q) })
+                    Text("${q.label} · ${s.qualityDescription(q)}")
+                }
+            }
+            Row(Modifier.fillMaxWidth().clickable { vm.chooseAskAlways() }.padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                RadioButton(vm.askQuality, { vm.chooseAskAlways() })
+                Column {
+                    Text(s.askAlways)
+                    Text(s.askAlwaysDesc, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
         }
-        Row(Modifier.fillMaxWidth().clickable { vm.chooseAskAlways() }.padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            RadioButton(vm.askQuality, { vm.chooseAskAlways() })
-            Column {
-                Text(s.askAlways)
-                Text(s.askAlwaysDesc, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        SettingsGroup(s.maxConcurrentTitle, s.maxConcurrentHelp) {
+            Row(Modifier.padding(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MAX_CONCURRENT_OPTIONS.forEach { n -> QChip(vm.maxConcurrent == n, { vm.updateMaxConcurrent(n) }, label = { Text("$n") }) }
+            }
+            ListItem(
+                headlineContent = { Text(s.wifiOnlyTitle) }, supportingContent = { Text(s.wifiOnlyDesc) },
+                trailingContent = { Switch(vm.wifiOnly, { vm.updateWifiOnly(it) }) }, colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            )
+            ListItem(
+                headlineContent = { Text(s.skipExistingTitle) }, supportingContent = { Text(s.skipExistingDesc) },
+                trailingContent = { Switch(vm.skipExisting, { vm.updateSkipExisting(it) }) }, colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            )
+            ListItem(
+                headlineContent = { Text(s.upgradeExistingTitle) }, supportingContent = { Text(s.upgradeExistingDesc) },
+                trailingContent = { Switch(vm.upgradeExisting && vm.skipExisting, { vm.updateUpgradeExisting(it) }, enabled = vm.skipExisting) },
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            )
+        }
+        SettingsGroup(s.folderTitle, s.folderHelp) {
+            val chosen = vm.customFolder
+            Text(
+                if (chosen == null) s.folderDefault else s.folderCurrent(chosen.isPrimary, chosen.volume, chosen.path),
+                Modifier.padding(horizontal = 16.dp, vertical = 4.dp), fontWeight = FontWeight.Medium,
+            )
+            Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button({ vm.chooseFolder() }) { Text(s.folderChoose) }
+                if (chosen != null) OutlinedButton({ vm.resetFolder() }) { Text(s.folderResetButton) }
+            }
+            Text(s.knownTitle, Modifier.padding(horizontal = 16.dp, vertical = 4.dp).padding(top = 8.dp), fontWeight = FontWeight.Medium)
+            Text(s.knownHelp, Modifier.padding(horizontal = 16.dp), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            vm.knownName?.let { Text(it, Modifier.padding(horizontal = 16.dp, vertical = 4.dp), fontSize = 13.sp) }
+            Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton({ vm.chooseKnownFolder() }) { Text(s.knownChoose) }
+                if (vm.knownName != null) OutlinedButton({ vm.clearKnownFolder() }) { Text(s.knownRemove) }
             }
         }
-        Spacer(Modifier.height(8.dp))
-        SectionHeading(s.playbackSection, Modifier.padding(horizontal = 16.dp))
-        Text(s.crossfadeTitle, Modifier.padding(horizontal = 16.dp, vertical = 2.dp), fontWeight = FontWeight.Medium)
-        Text(s.crossfadeDesc, Modifier.padding(horizontal = 16.dp, vertical = 2.dp), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            CROSSFADE_OPTIONS_MS.forEach { ms ->
-                QChip(vm.crossfadeMs == ms, { vm.updateCrossfade(ms) }, label = { Text(if (ms == 0) s.crossfadeOff else s.seconds(ms / 1000)) })
+
+        // ── Reproducción ──
+        SettingsGroup(s.playbackSection, s.crossfadeDesc) {
+            Text(s.crossfadeTitle, Modifier.padding(horizontal = 16.dp, vertical = 2.dp), fontWeight = FontWeight.Medium)
+            Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                CROSSFADE_OPTIONS_MS.forEach { ms ->
+                    QChip(vm.crossfadeMs == ms, { vm.updateCrossfade(ms) }, label = { Text(if (ms == 0) s.crossfadeOff else s.seconds(ms / 1000)) })
+                }
             }
         }
-        Spacer(Modifier.height(8.dp))
-        SectionHeading(s.maxConcurrentTitle, Modifier.padding(horizontal = 16.dp))
-        Text(s.maxConcurrentHelp, Modifier.padding(horizontal = 16.dp, vertical = 2.dp), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Row(Modifier.padding(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            MAX_CONCURRENT_OPTIONS.forEach { n ->
-                QChip(vm.maxConcurrent == n, { vm.updateMaxConcurrent(n) }, label = { Text("$n") })
-            }
+
+        // ── Biblioteca y herramientas ──
+        SettingsGroup(s.importEntry) {
+            ListItem(
+                headlineContent = { Text(s.importEntry) }, leadingContent = { Icon(Icons.Default.LibraryMusic, null) },
+                modifier = Modifier.clickable { vm.openImport() }, colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            )
+            ListItem(
+                headlineContent = { Text(s.lyricsListTitle) }, supportingContent = { Text(s.lyricsListDesc) },
+                modifier = Modifier.clickable { vm.sendLyricsList() }, colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            )
+            ListItem(
+                headlineContent = { Text(if (vm.duplicatesBusy) s.dupScanning else s.dupScan) },
+                modifier = Modifier.clickable(enabled = !vm.duplicatesBusy) { vm.scanDuplicates() }, colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            )
         }
-        Spacer(Modifier.height(8.dp))
-        SectionHeading(s.folderTitle, Modifier.padding(horizontal = 16.dp))
-        Text(s.folderHelp, Modifier.padding(horizontal = 16.dp, vertical = 2.dp), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        val chosen = vm.customFolder
-        Text(
-            if (chosen == null) s.folderDefault else s.folderCurrent(chosen.isPrimary, chosen.volume, chosen.path),
-            Modifier.padding(horizontal = 16.dp, vertical = 4.dp), fontWeight = FontWeight.Medium,
-        )
-        Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button({ vm.chooseFolder() }) { Text(s.folderChoose) }
-            if (chosen != null) OutlinedButton({ vm.resetFolder() }) { Text(s.folderResetButton) }
-        }
-        Text(s.knownTitle, Modifier.padding(horizontal = 16.dp, vertical = 4.dp), fontWeight = FontWeight.Medium)
-        Text(s.knownHelp, Modifier.padding(horizontal = 16.dp), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        vm.knownName?.let { Text(it, Modifier.padding(horizontal = 16.dp, vertical = 4.dp), fontSize = 13.sp) }
-        Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton({ vm.chooseKnownFolder() }) { Text(s.knownChoose) }
-            if (vm.knownName != null) OutlinedButton({ vm.clearKnownFolder() }) { Text(s.knownRemove) }
-        }
-        if (vm.hasCrashReport) OutlinedButton({ vm.shareCrashReport() }, Modifier.padding(horizontal = 16.dp)) { Text(s.crashShare) }
-        OutlinedButton({ vm.scanDuplicates() }, Modifier.padding(horizontal = 16.dp), enabled = !vm.duplicatesBusy) { Text(if (vm.duplicatesBusy) s.dupScanning else s.dupScan) }
         vm.duplicates?.let { groups ->
             androidx.compose.material3.AlertDialog(
                 onDismissRequest = { vm.duplicates = null },
@@ -652,62 +679,50 @@ fun SettingsScreen(vm: MainViewModel) {
                 },
             )
         }
-        ListItem(
-            headlineContent = { Text(s.wifiOnlyTitle) },
-            supportingContent = { Text(s.wifiOnlyDesc) },
-            trailingContent = { Switch(vm.wifiOnly, { vm.updateWifiOnly(it) }) },
-        )
-        ListItem(
-            headlineContent = { Text(s.lyricsListTitle) },
-            supportingContent = { Text(s.lyricsListDesc) },
-            modifier = Modifier.clickable { vm.sendLyricsList() },
-        )
-        ListItem(
-            headlineContent = { Text(s.skipExistingTitle) },
-            supportingContent = { Text(s.skipExistingDesc) },
-            trailingContent = { Switch(vm.skipExisting, { vm.updateSkipExisting(it) }) },
-        )
-        ListItem(
-            headlineContent = { Text(s.upgradeExistingTitle) },
-            supportingContent = { Text(s.upgradeExistingDesc) },
-            trailingContent = { Switch(vm.upgradeExisting && vm.skipExisting, { vm.updateUpgradeExisting(it) }, enabled = vm.skipExisting) },
-        )
-        Spacer(Modifier.height(8.dp))
-        SectionHeading(s.language, Modifier.padding(horizontal = 16.dp))
-        Language.entries.forEach { l ->
-            Row(Modifier.fillMaxWidth().clickable { vm.updateLanguage(l) }.padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                RadioButton(l == vm.language, { vm.updateLanguage(l) })
-                Text(s.languageName(l))
+
+        // ── Apariencia ──
+        SettingsGroup(s.language) {
+            Language.entries.forEach { l ->
+                Row(Modifier.fillMaxWidth().clickable { vm.updateLanguage(l) }.padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(l == vm.language, { vm.updateLanguage(l) })
+                    Text(s.languageName(l))
+                }
             }
+            ListItem(
+                headlineContent = { Text(s.amoledBlack) }, trailingContent = { Switch(vm.amoled, { vm.updateAmoled(it) }) },
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            )
         }
-        ListItem(
-            headlineContent = { Text(s.amoledBlack) },
-            trailingContent = { Switch(vm.amoled, { vm.updateAmoled(it) }) },
-        )
-        Text(s.updateCredsHelp, Modifier.padding(horizontal = 16.dp, vertical = 4.dp), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Button(
-            { vm.refreshQobuzCredentials() },
-            enabled = !vm.busy,
-            modifier = Modifier.padding(horizontal = 16.dp),
-        ) {
-            if (vm.busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text(s.updateCreds)
+
+        // ── Cuenta ──
+        SettingsGroup(s.signedInAs(vm.userName), s.updateCredsHelp) {
+            Button({ vm.refreshQobuzCredentials() }, enabled = !vm.busy, modifier = Modifier.padding(horizontal = 16.dp)) {
+                if (vm.busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text(s.updateCreds)
+            }
+            ListItem(
+                headlineContent = { Text(s.diagOpen) }, leadingContent = { Icon(Icons.Default.BugReport, null) },
+                modifier = Modifier.clickable { vm.openDiagnostics() }, colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            )
+            if (vm.hasCrashReport) ListItem(
+                headlineContent = { Text(s.crashShare) },
+                modifier = Modifier.clickable { vm.shareCrashReport() }, colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            )
+            TextButton({ vm.logout() }, Modifier.padding(horizontal = 8.dp)) { Text(s.logOut) }
         }
-        ListItem(
-            headlineContent = { Text(s.diagOpen) },
-            leadingContent = { Icon(Icons.Default.BugReport, null) },
-            modifier = Modifier.clickable { vm.openDiagnostics() },
-        )
-        ListItem(
-            headlineContent = { Text(s.importEntry) },
-            leadingContent = { Icon(Icons.Default.LibraryMusic, null) },
-            modifier = Modifier.clickable { vm.openImport() },
-        )
-        ListItem(headlineContent = { Text(s.signedInAs(vm.userName)) })
-        TextButton({ vm.logout() }, Modifier.padding(horizontal = 8.dp)) { Text(s.logOut) }
-        Text(
-            s.disclaimer,
-            fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(16.dp),
-        )
+        Text(s.disclaimer, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(16.dp))
+    }
+}
+
+/** One settings block: a small title (and help) above a rounded card that holds the controls. */
+@Composable
+private fun SettingsGroup(title: String, help: String? = null, content: @Composable ColumnScope.() -> Unit) {
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+        SectionHeading(title, Modifier.padding(horizontal = 4.dp))
+        if (help != null) Text(help, Modifier.padding(horizontal = 4.dp, vertical = 2.dp), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(6.dp))
+        androidx.compose.material3.Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+            Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), content = content)
+        }
     }
 }
 
