@@ -323,6 +323,8 @@ interface Strings {
     val ipodPlaylistTitle: String
     val ipodPlaylistNone: String
     val ipodPlaylistLoadFailed: String
+    fun ipodPlaylistDownloading(done: Int, total: Int): String
+    val ipodPlaylistDownloadStopped: String
     fun ipodPlaylistDone(name: String, added: Int, missing: Int, error: String?): String
     fun ipodLyricsSearching(done: Int, total: Int): String
     fun ipodLyricsNothing(n: Int): String
@@ -729,6 +731,8 @@ object English : Strings {
     override val ipodPlaylistTitle = "Choose a playlist"
     override val ipodPlaylistNone = "You have no playlists in Qobuz."
     override val ipodPlaylistLoadFailed = "Could not load the playlist from Qobuz."
+    override fun ipodPlaylistDownloading(done: Int, total: Int) = "Downloading the playlist's missing songs as MP3… $done of $total"
+    override val ipodPlaylistDownloadStopped = "Stopped. The songs already downloaded are kept; nothing was sent to the iPod."
     override fun ipodPlaylistDone(name: String, added: Int, missing: Int, error: String?) =
         if (error != null) "Playlist \"$name\" not created: $error" else if (added == 0) "Playlist \"$name\" not created: none of its songs is on the iPod (only downloaded MP3s can be sent)."
         else "Playlist \"$name\" on the iPod: $added songs" + (if (missing > 0) ", $missing left out (not downloaded as MP3)." else ".")
@@ -1143,6 +1147,8 @@ object Spanish : Strings {
     override val ipodPlaylistTitle = "Elige una playlist"
     override val ipodPlaylistNone = "No tienes playlists en Qobuz."
     override val ipodPlaylistLoadFailed = "No se pudo cargar la playlist de Qobuz."
+    override fun ipodPlaylistDownloading(done: Int, total: Int) = "Descargando en MP3 las canciones que faltan de la playlist… $done de $total"
+    override val ipodPlaylistDownloadStopped = "Detenido. Las canciones ya descargadas se conservan; no se envió nada al iPod."
     override fun ipodPlaylistDone(name: String, added: Int, missing: Int, error: String?) =
         if (error != null) "Playlist \"$name\" no creada: $error" else if (added == 0) "Playlist \"$name\" no creada: ninguna de sus canciones está en el iPod (solo se envían MP3 descargados)."
         else "Playlist \"$name\" en el iPod: $added canciones" + (if (missing > 0) ", $missing sin incluir (no descargadas como MP3)." else ".")
