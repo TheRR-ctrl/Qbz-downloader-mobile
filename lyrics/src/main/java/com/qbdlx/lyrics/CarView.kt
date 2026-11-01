@@ -45,6 +45,6 @@ object CarView {
         if (lines.isEmpty()) return listOf(Row("msg", "♪"))
         fun at(i: Int, id: String) = Row(id, lines.getOrNull(i)?.text?.ifBlank { "♪" } ?: "♪")
         val mid = if (idx < 0) "♪ …" else "▶ " + lines[idx].text.ifBlank { "♪" }
-        return listOf(at(idx - 1, "l-prev"), Row("l-now", mid, current = true), at(idx + 1, "l-next"))
+        return listOf(at(idx - 1, "l${idx - 1}"), Row("l$idx", mid, current = true), at(idx + 1, "l${idx + 1}"))
     }
 }
