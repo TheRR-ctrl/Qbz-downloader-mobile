@@ -8,7 +8,7 @@ class CarLyricsTest {
 
     @Test fun showsTheSongThenTheCurrentLineWithNeighbours() {
         val rows = CarLyrics.rows("T", "A", lyrics, 2500)
-        assertEquals(listOf("♫  T - A", "a", "▶ b", "c", "d"), rows.map { it.title })
+        assertEquals(listOf("T", "a", "▶ b", "c", "d"), rows.map { it.title })
         assertTrue(rows.all { it.id.startsWith("l") })
     }
 

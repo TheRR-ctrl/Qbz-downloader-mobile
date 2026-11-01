@@ -127,20 +127,35 @@ class PlaybackService : MediaBrowserService() {
 
     // ---- Android Auto: the browse tree is the list of recently played songs --------------------------------------------
 
-    override fun onGetRoot(clientPackageName: String, clientUid: Int, rootHints: Bundle?) = BrowserRoot(ROOT_ID, null)
+    /** Android Auto draws the list itself; these hints are the only styling it accepts: the top level as a grid of big icons, songs as lists. */
+    override fun onGetRoot(clientPackageName: String, clientUid: Int, rootHints: Bundle?) = BrowserRoot(
+        ROOT_ID,
+        Bundle().apply {
+            putBoolean("android.media.browse.CONTENT_STYLE_SUPPORTED", true)
+            putInt("android.media.browse.CONTENT_STYLE_BROWSABLE_HINT", 2) // grid
+            putInt("android.media.browse.CONTENT_STYLE_PLAYABLE_HINT", 1) // list
+        },
+    )
+
+    private fun iconBitmap(res: Int): Bitmap? = runCatching {
+        ContextCompat.getDrawable(this, res)?.let { d -> Bitmap.createBitmap(192, 192, Bitmap.Config.ARGB_8888).also { b -> val c = android.graphics.Canvas(b); d.setBounds(0, 0, 192, 192); d.draw(c) } }
+    }.getOrNull()
 
     override fun onLoadChildren(parentId: String, result: Result<MutableList<android.media.browse.MediaBrowser.MediaItem>>) {
         val c = QbdlxApp.playback
-        fun item(id: String, title: String, flag: Int, subtitle: String = "", cover: String? = null) = android.media.browse.MediaBrowser.MediaItem(
-            MediaDescription.Builder().setMediaId(id).setTitle(title).apply { if (subtitle.isNotBlank()) setSubtitle(subtitle); cover?.let { setIconUri(Uri.parse(it)) } }.build(), flag,
+        fun item(id: String, title: String, flag: Int, subtitle: String = "", cover: String? = null, icon: Int = 0) = android.media.browse.MediaBrowser.MediaItem(
+            MediaDescription.Builder().setMediaId(id).setTitle(title).apply {
+                if (subtitle.isNotBlank()) setSubtitle(subtitle)
+                if (cover != null) setIconUri(Uri.parse(cover)) else if (icon != 0) iconBitmap(icon)?.let { setIconBitmap(it) }
+            }.build(), flag,
         )
         val browsable = android.media.browse.MediaBrowser.MediaItem.FLAG_BROWSABLE
         val playable = android.media.browse.MediaBrowser.MediaItem.FLAG_PLAYABLE
         when (parentId) {
             ROOT_ID -> result.sendResult(mutableListOf(
-                item(LYRICS_ID, label("Letra", "Lyrics"), browsable, label("La canción que suena, en vivo", "The song playing, live")),
-                item(DOWNLOADED_ID, label("Descargadas", "Downloaded"), browsable, label("Sin gastar datos", "Uses no data")),
-                item(HISTORY_ID, label("Reproducidas recientemente", "Recently played"), browsable, label("Las que no están descargadas van en MP3", "Songs not downloaded stream as MP3")),
+                item(LYRICS_ID, label("Letra", "Lyrics"), browsable, icon = R.drawable.ic_car_lyrics),
+                item(DOWNLOADED_ID, label("Descargadas", "Downloaded"), browsable, icon = R.drawable.ic_car_downloaded),
+                item(HISTORY_ID, label("Recientes", "Recent"), browsable, icon = R.drawable.ic_car_recent),
             ))
             LYRICS_ID -> {
                 val np = c?.nowPlaying
@@ -151,11 +166,11 @@ class PlaybackService : MediaBrowserService() {
                 )
             }
             DOWNLOADED_ID -> result.sendResult(
-                (c?.downloadedSongs().orEmpty()).take(200).mapIndexed { i, (album, track) -> item("d$i", track.displayTitle, playable, album.artist, album.coverUrl) }.toMutableList(),
+                (c?.downloadedSongs().orEmpty()).take(200).mapIndexed { i, (album, track) -> item("d$i", track.displayTitle, playable, "${album.artist} • ${album.title}", album.coverUrl) }.toMutableList(),
             )
             HISTORY_ID -> {
                 val history = QueueStore.decodeList(getSharedPreferences("qbdlx", 0).getString("history", null))
-                result.sendResult(history.mapIndexed { i, (album, track) -> item(i.toString(), track.displayTitle, playable, album.artist, album.coverUrl) }.toMutableList())
+                result.sendResult(history.mapIndexed { i, (album, track) -> item(i.toString(), track.displayTitle, playable, "${album.artist} • ${album.title}", album.coverUrl) }.toMutableList())
             }
             else -> result.sendResult(mutableListOf())
         }

@@ -13,6 +13,6 @@ object CarLyrics {
         fun at(i: Int, id: String) = CarRow(id, lines.getOrNull(i)?.text?.ifBlank { "♪" } ?: "♪")
         // Always four rows (previous, current, two next): the line being sung is the second; missing neighbours show "♪".
         val body = listOf(at(idx - 1, "l-prev"), CarRow("l-now", if (idx < 0) "♪ …" else "▶ " + lines[idx].text.ifBlank { "♪" }), at(idx + 1, "l-next"), at(idx + 2, "l-next2"))
-        return listOf(CarRow("ltrack", "♫  " + if (artist.isBlank()) title else "$title - $artist")) + body
+        return listOf(CarRow("ltrack", title, artist)) + body
     }
 }
