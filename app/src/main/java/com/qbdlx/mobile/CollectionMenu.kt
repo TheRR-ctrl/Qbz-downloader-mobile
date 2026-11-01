@@ -55,7 +55,7 @@ fun CollectionMenu(vm: MainViewModel, album: Album?, playlist: Playlist?, expand
         Item(s.download, Icons.Default.Download) {
             vm.requestDownload(if (album != null) DownloadRequest.WholeAlbum(album) else DownloadRequest.WholePlaylist(playlist!!))
         }
-        if (album != null) Item(s.sendToIpod, Icons.Default.Smartphone) { vm.sendAlbumToIpod(album) }
+        if (album != null && (vm.ipodPlugged || vm.ipodProgress != null)) Item(s.sendToIpod, Icons.Default.Smartphone) { vm.sendAlbumToIpod(album) }
         Item(s.shareTrack, Icons.Default.Share) {
             context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, link), null))
         }

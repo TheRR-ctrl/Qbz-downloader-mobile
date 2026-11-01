@@ -52,7 +52,7 @@ import kotlinx.coroutines.delay
 private fun mmss(sec: Int) = "%d:%02d".format(sec / 60, sec % 60)
 
 @Composable
-private fun Title(text: String) =
+fun Title(text: String) =
     Text(text, fontSize = 32.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 12.dp))
 
 /** A page title with the search button at its right, where the search tab used to be. */
@@ -210,10 +210,11 @@ private fun TrackRow(vm: MainViewModel, album: Album, track: Track, subtitle: St
                     Spacer(Modifier.width(4.dp))
                 }
                 Text(subtitle, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                // Downloaded songs show the format of the file on the device; the rest show the quality Qobuz streams.
+                // Downloaded songs show the format of the file on the device, then the quality Qobuz streams.
                 val fmt = if (item?.status == TaskStatus.COMPLETED) item.fileFormat() else null
+                // Both: what is on the device, then the best Qobuz offers (so a song saved as MP3 still shows it could be 24/44).
                 if (fmt != null) { Spacer(Modifier.width(6.dp)); QualityBadge(fmt, item!!.quality == Quality.HI_RES) }
-                else if (track.quality.isNotBlank()) { Spacer(Modifier.width(6.dp)); QualityBadge(track.quality, track.hiRes) }
+                if (track.quality.isNotBlank()) { Spacer(Modifier.width(6.dp)); QualityBadge(track.quality, track.hiRes) }
             }
         }
         if (!showCover) Text(mmss(track.durationSec), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -311,6 +312,23 @@ fun PlaylistScreen(vm: MainViewModel) {
         }
         // A playlist can list the same track twice, so key by position.
         itemsIndexed(d.tracks) { i, (album, track) -> TrackRow(vm, album, track, "${track.artist} • ${album.title}", onPlay = { vm.playList(d.tracks, i) }) }
+    }
+}
+
+/** An artist's page: their picture, a button to download everything, and their albums (newest first). */
+@Composable
+fun ArtistScreen(vm: MainViewModel) {
+    val a = vm.artistPage ?: return
+    BackHandler { vm.closeArtist() }
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp + LocalBottomInset.current)) {
+        item {
+            DetailHeader(a.image, a.name, listOf(LocalStrings.current.artistsTab, "${a.albums.size} ${LocalStrings.current.albums.lowercase()}"), null,
+                onBack = { vm.closeArtist() }, onDownload = { vm.requestDownload(DownloadRequest.Albums(a.albums)) })
+        }
+        items(a.albums, key = { "aa" + it.id }) { al ->
+            LibraryRow(al.coverUrl, al.title, al.year,
+                onClick = { vm.openAlbum(al.id) }, badge = al.quality, hiRes = al.hiRes) { open, close -> CollectionMenu(vm, al, null, open, close) }
+        }
     }
 }
 

@@ -363,6 +363,9 @@ interface Strings {
     val ipodNothingLeft: String
     val nowButton: String
     val nowAccess: String
+    val nowIdentifying: String
+    val nowTapToDownload: String
+    val nowAllow: String
     val nowNothing: String
     fun nowSearching(title: String): String
     fun nowNotFound(title: String): String
@@ -613,9 +616,9 @@ object English : Strings {
     override val maxConcurrentHelp = "How many tracks download at the same time. Lowering it never interrupts a running download."
 
     override val folderTitle = "Download folder"
-    override val folderHelp = "Where new downloads are saved, with a folder per artist and album. Without a choice, Music/QobuzDownloaderX is used. " +
+    override val folderHelp = "Where new downloads are saved, with a folder per artist and album. Without a choice, Music/${DefaultFolder.name} is used. " +
         "Android doesn't allow choosing the storage root or the Download folder."
-    override val folderDefault = "Default: Music/QobuzDownloaderX"
+    override val folderDefault get() = "Default: Music/${DefaultFolder.name}"
     override fun folderCurrent(isInternal: Boolean, volume: String, path: String) =
         (if (isInternal) "Internal storage" else "SD card ($volume)") + if (path.isEmpty()) "" else "/$path"
     override val folderChoose = "Choose folder"
@@ -638,7 +641,7 @@ object English : Strings {
     override val folderSaved = "Download folder saved"
     override val folderResetDone = "Using the default folder"
     override fun folderNotWritable(reason: String?) = "Can't save files in that folder" + if (reason.isNullOrBlank()) "" else ": $reason"
-    override val folderBanner = "The chosen download folder isn't available. Downloads are going to Music/QobuzDownloaderX meanwhile."
+    override val folderBanner get() = "The chosen download folder isn't available. Downloads are going to Music/${DefaultFolder.name} meanwhile."
     override val folderBannerChoose = "Choose another"
     override val folderBannerDismiss = "Got it"
     override val wifiOnlyTitle = "Download only on Wi-Fi"
@@ -798,6 +801,9 @@ object English : Strings {
     override val ipodNotReadyYet = "The iPod is not ready yet: plug it in and try again"
     override val ipodNothingLeft = "Nothing left to send: it is all on the iPod"
     override val nowButton = "Playing"
+    override val nowIdentifying = "Identifying the song…"
+    override val nowTapToDownload = "Tap to download"
+    override val nowAllow = "Allow notification access"
     override val nowAccess = "Allow notification access for QBDLX Mobile in the screen that opens, then tap again"
     override val nowNothing = "Nothing is playing in the Qobuz app (start a song there first)"
     override fun nowSearching(title: String) = "Looking for \"$title\" in Qobuz…"
@@ -1054,9 +1060,9 @@ object Spanish : Strings {
     override val maxConcurrentHelp = "Cuántas pistas se descargan al mismo tiempo. Bajar el número nunca interrumpe una descarga en curso."
 
     override val folderTitle = "Carpeta de descargas"
-    override val folderHelp = "Dónde se guardan las descargas nuevas, con una carpeta por artista y álbum. Si no eliges ninguna, se usa Música/QobuzDownloaderX. " +
+    override val folderHelp = "Dónde se guardan las descargas nuevas, con una carpeta por artista y álbum. Si no eliges ninguna, se usa Música/${DefaultFolder.name}. " +
         "Android no permite elegir la raíz del almacenamiento ni la carpeta Descargas."
-    override val folderDefault = "Predeterminada: Música/QobuzDownloaderX"
+    override val folderDefault get() = "Predeterminada: Música/${DefaultFolder.name}"
     override fun folderCurrent(isInternal: Boolean, volume: String, path: String) =
         (if (isInternal) "Almacenamiento interno" else "Tarjeta SD ($volume)") + if (path.isEmpty()) "" else "/$path"
     override val folderChoose = "Elegir carpeta"
@@ -1079,7 +1085,7 @@ object Spanish : Strings {
     override val folderSaved = "Carpeta de descargas guardada"
     override val folderResetDone = "Usando la carpeta predeterminada"
     override fun folderNotWritable(reason: String?) = "No se puede guardar en esa carpeta" + if (reason.isNullOrBlank()) "" else ": $reason"
-    override val folderBanner = "La carpeta de descargas elegida no está disponible. Mientras tanto, las descargas se guardan en Música/QobuzDownloaderX."
+    override val folderBanner get() = "La carpeta de descargas elegida no está disponible. Mientras tanto, las descargas se guardan en Música/${DefaultFolder.name}."
     override val folderBannerChoose = "Elegir otra"
     override val folderBannerDismiss = "Entendido"
     override val wifiOnlyTitle = "Descargar solo con Wi-Fi"
@@ -1239,6 +1245,9 @@ object Spanish : Strings {
     override val ipodNotReadyYet = "El iPod aún no está listo: conéctalo e inténtalo de nuevo"
     override val ipodNothingLeft = "No queda nada por enviar: todo está en el iPod"
     override val nowButton = "Sonando"
+    override val nowIdentifying = "Identificando la canción…"
+    override val nowTapToDownload = "Pulsa para descargar"
+    override val nowAllow = "Dar acceso a las notificaciones"
     override val nowAccess = "Da acceso a las notificaciones a QBDLX Mobile en la pantalla que se abre y vuelve a pulsar"
     override val nowNothing = "No suena nada en la app de Qobuz (empieza una canción allí primero)"
     override fun nowSearching(title: String) = "Buscando \"$title\" en Qobuz…"

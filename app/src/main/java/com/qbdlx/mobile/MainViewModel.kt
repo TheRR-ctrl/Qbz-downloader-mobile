@@ -62,6 +62,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var selectedTag by mutableStateOf<PlaylistTag?>(null); private set
     var tagPlaylists by mutableStateOf<List<Playlist>>(emptyList()); private set
     var playlistDetail by mutableStateOf<PlaylistDetail?>(null); private set
+    var artistPage by mutableStateOf<ArtistPage?>(null); private set
 
     // Library; null until loaded.
     var myPlaylists by mutableStateOf<List<Playlist>?>(null); private set
@@ -343,7 +344,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun importStop() { importJob?.cancel(); importRetryJob?.cancel(); importProgress = null; notice = strings.importStopped }
 
     fun openImport() { closeAlbum(); closePlaylist(); closeDiagnostics(); closeIpod(); showImport = true }
-    fun closeImport() { showImport = false }
+    /** Closing the import screen also closes "Sonando": every navigation path already calls this, and both are full-screen extras. */
+    fun closeImport() { showImport = false; showListen = false }
 
     /** Reads the list the scanner shared (or the user picked) and looks every song up on Qobuz. */
     fun importList(uri: android.net.Uri) = importFrom {
@@ -1286,20 +1288,49 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** Set when the notification-access screen must open (the Activity does it and clears the flag). */
     var openListenerSettings by mutableStateOf(false)
 
-    /** Finds what the official Qobuz app is playing and downloads it. */
-    fun downloadNowPlaying() {
-        if (!QobuzNowPlaying.accessGranted(context)) { notice = strings.nowAccess; openListenerSettings = true; return }
+    var showListen by mutableStateOf(false); private set
+    /** The song the Qobuz app has on, and the Qobuz track it was matched to (null while looking or when none). */
+    var listenSong by mutableStateOf<PlayingNow?>(null); private set
+    var listenMatch by mutableStateOf<ImportItem?>(null); private set
+    var listenSearching by mutableStateOf(false); private set
+    var listenAccess by mutableStateOf(true); private set
+    private var listenKey: String? = null
+
+    /** "Sonando": shows the identified song; nothing is downloaded until the round button is pressed. */
+    fun openListening() {
+        closeAlbum(); closePlaylist(); closeDiagnostics(); closeIpod(); closeImport(); closeArtist()
+        showListen = true
+        refreshListening()
+    }
+
+    /** Reads what Qobuz is playing; looks the song up on Qobuz only when it changed. Called every couple of seconds while the screen is open. */
+    fun refreshListening() {
+        listenAccess = QobuzNowPlaying.accessGranted(context)
+        if (!listenAccess) { listenSong = null; listenMatch = null; listenKey = null; return }
         val playing = QobuzNowPlaying.read(context)
-        if (playing == null) { notice = strings.nowNothing; return }
-        notice = strings.nowSearching(playing.title)
+        listenSong = playing
+        val key = playing?.let { "${it.title}|${it.artist}|${it.album}" }
+        if (key == listenKey) return
+        listenKey = key; listenMatch = null
+        if (playing == null) return
         viewModelScope.launch {
-            val song = ImportedSong(playing.title, playing.artist, playing.album, playing.durationSec, "")
-            val item = withContext(Dispatchers.IO) { searchSong(applyAliases(song)) }
-            val pick = item.candidates.firstOrNull()
-            if (item.level == MatchLevel.Missing || pick == null) { notice = strings.nowNotFound(playing.title); return@launch }
-            requestDownload(DownloadRequest.Tracks(listOf(pick)))
-            notice = strings.nowDownloading(pick.second.displayTitle, pick.second.artist, item.level == MatchLevel.Sure)
+            listenSearching = true
+            try {
+                val item = withContext(Dispatchers.IO) { searchSong(applyAliases(ImportedSong(playing.title, playing.artist, playing.album, playing.durationSec, ""))) }
+                if (listenKey == key) listenMatch = item
+            } catch (e: Exception) { if (listenKey == key) listenKey = null } finally { listenSearching = false }
         }
+    }
+
+    fun askListenAccess() { notice = strings.nowAccess; openListenerSettings = true }
+
+    /** The round button of "Sonando": downloads the identified song. */
+    fun downloadListening() {
+        val song = listenSong ?: return
+        val item = listenMatch; val pick = item?.candidates?.firstOrNull()
+        if (item == null || item.level == MatchLevel.Missing || pick == null) { notice = strings.nowNotFound(song.title); return }
+        requestDownload(DownloadRequest.Tracks(listOf(pick)))
+        notice = strings.nowDownloading(pick.second.displayTitle, pick.second.artist, item.level == MatchLevel.Sure)
     }
 
     fun ipodRestore() {
@@ -1315,20 +1346,42 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun updateAmoled(v: Boolean) { amoled = v; prefs.edit().putBoolean("amoled", v).apply() }
 
+    private val libraryCache by lazy { LibraryCache(java.io.File(context.filesDir, "library.json")) }
+    private var libraryRefreshed = false
+
+    /**
+     * Opens at once with what was saved last time, then refreshes in the background: each list shows as soon as it arrives,
+     * and favorites only fetch the newest pages (the old ones are kept). [force] (the refresh button) re-reads everything.
+     */
     fun loadLibrary(force: Boolean = false) {
-        if (libraryLoading || (!force && myPlaylists != null)) return
+        if (libraryLoading || (!force && libraryRefreshed && myPlaylists != null)) return
         viewModelScope.launch {
             libraryLoading = true
             try {
-                // Each list on its own, so one failing doesn't hide the others.
+                if (myPlaylists == null) {
+                    withContext(Dispatchers.IO) { libraryCache.load() }?.let {
+                        myPlaylists = it.playlists; favAlbums = it.albums; favTracks = it.tracks; favArtists = it.artists
+                    }
+                }
+                val oldAlbums = if (force) null else favAlbums?.map { it.id }?.toSet()?.takeIf { it.isNotEmpty() }
+                val oldTracks = if (force) null else favTracks?.map { it.second.id }?.toSet()?.takeIf { it.isNotEmpty() }
+                // Each list on its own, so one failing doesn't hide the others; each shows when it is ready.
                 val pl = async(Dispatchers.IO) { runCatching { api.userPlaylists() } }
-                val al = async(Dispatchers.IO) { runCatching { api.favoriteAlbums() } }
-                val tr = async(Dispatchers.IO) { runCatching { api.favoriteTracks() } }
+                val al = async(Dispatchers.IO) { runCatching { api.favoriteAlbums(oldAlbums) } }
+                val tr = async(Dispatchers.IO) { runCatching { api.favoriteTracks(oldTracks) } }
                 val ar = async(Dispatchers.IO) { runCatching { api.favoriteArtists() } }
-                myPlaylists = pl.await().getOrElse { error = it.message; emptyList() }
-                favAlbums = al.await().getOrElse { error = it.message; emptyList() }
-                favTracks = tr.await().getOrElse { error = it.message; emptyList() }
-                favArtists = ar.await().getOrElse { emptyList() }
+                val old = favAlbums; val oldT = favTracks
+                pl.await().onSuccess { myPlaylists = it }.onFailure { if (myPlaylists == null) { error = it.message; myPlaylists = emptyList() } }
+                al.await().onSuccess { fresh ->
+                    favAlbums = if (oldAlbums == null || old == null) fresh else fresh + old.filter { o -> fresh.none { it.id == o.id } }
+                }.onFailure { if (favAlbums == null) { error = it.message; favAlbums = emptyList() } }
+                tr.await().onSuccess { fresh ->
+                    favTracks = if (oldTracks == null || oldT == null) fresh else fresh + oldT.filter { o -> fresh.none { it.second.id == o.second.id } }
+                }.onFailure { if (favTracks == null) { error = it.message; favTracks = emptyList() } }
+                ar.await().onSuccess { favArtists = it }.onFailure { if (favArtists == null) favArtists = emptyList() }
+                libraryRefreshed = true
+                val snap = LibrarySnapshot(myPlaylists.orEmpty(), favAlbums.orEmpty(), favTracks.orEmpty(), favArtists.orEmpty())
+                withContext(Dispatchers.IO) { libraryCache.save(snap) }
             } finally {
                 libraryLoading = false
             }
@@ -1458,8 +1511,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         prefs.edit().remove("user_id").remove("token").apply()
         WebStorage.getInstance().deleteAllData()
         CookieManager.getInstance().removeAllCookies(null)
-        loggedIn = false; results = emptyList(); discover = null; detail = null; playlistDetail = null
+        loggedIn = false; results = emptyList(); discover = null; detail = null; playlistDetail = null; artistPage = null
         myPlaylists = null; favAlbums = null; favTracks = null; favArtists = null
+        libraryRefreshed = false; libraryCache.clear()
     }
 
     fun search(query: String) {
@@ -1490,17 +1544,28 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** The search screen, opened from the search button in the page headers. */
     fun openSearch() {
-        closeAlbum(); closePlaylist(); closeDiagnostics(); closeIpod(); closeImport()
+        closeAlbum(); closePlaylist(); closeDiagnostics(); closeIpod(); closeImport(); closeArtist()
         tab = Tab.Search
     }
 
-    /** An artist's name opens the search for it (the app has no artist pages of its own). */
+    /** An artist's name opens their page (picture and albums). If Qobuz can't find them, it falls back to a search for the name. */
     fun openArtist(name: String) {
-        searchQuery = name
-        closeAlbum(); closePlaylist(); closeDiagnostics(); closeIpod(); closeImport()
-        tab = Tab.Search
-        search(name)
+        viewModelScope.launch {
+            busy = true; error = null
+            try {
+                val found = withContext(Dispatchers.IO) { api.findArtist(name)?.let { (id, n) -> api.artistPage(id, n) } }
+                if (found != null && found.albums.isNotEmpty()) {
+                    closeAlbum(); closePlaylist(); closeDiagnostics(); closeIpod(); closeImport()
+                    artistPage = found
+                } else {
+                    searchQuery = name
+                    closeAlbum(); closePlaylist(); closeDiagnostics(); closeIpod(); closeImport(); closeArtist()
+                    tab = Tab.Search; search(name)
+                }
+            } catch (e: Exception) { error = e.message ?: e.javaClass.simpleName } finally { busy = false }
+        }
     }
+    fun closeArtist() { artistPage = null }
     fun closeAlbum() { detail = null }
 
     /** Every download button ends up here: ask for the quality only when the user chose "Preguntar siempre". */
