@@ -1170,7 +1170,7 @@ object Spanish : Strings {
     override val ipodPlaylistDownloadStopped = "Detenido. Las canciones ya descargadas se conservan; no se envió nada al iPod."
     override fun ipodPlaylistDone(name: String, added: Int, missing: Int, error: String?) =
         if (error != null) "Playlist \"$name\" no creada: $error" else if (added == 0) "Playlist \"$name\" no creada: ninguna de sus canciones está en el iPod (solo se envían MP3 descargados)."
-        else "Playlist \"$name\" en el iPod: $added canciones" + (if (missing > 0) ", $missing sin incluir (no descargadas como MP3)." else ".")
+        else "Playlist \"$name\" en el iPod: $added canciones" + (if (missing > 0) ", $missing sin incluir (no están en el iPod: sin espacio o no enviadas)." else ".")
     override fun ipodLyricsNothing(n: Int) = "Nada que hacer: las $n canciones ya tienen letra."
     override fun ipodLyricsSearching(done: Int, total: Int) = "Buscando letras… $done/$total"
     override fun ipodLyricsWriting(done: Int, total: Int) = "Descargando y escribiendo letras, canción por canción… $done/$total"

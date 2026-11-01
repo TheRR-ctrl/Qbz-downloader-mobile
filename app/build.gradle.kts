@@ -12,8 +12,8 @@ android {
         applicationId = "com.qbdlx.mobile"
         minSdk = 29
         targetSdk = 35
-        versionCode = 122
-        versionName = "0.36.16"
+        versionCode = 123
+        versionName = "0.36.17"
     }
 
     buildTypes {
