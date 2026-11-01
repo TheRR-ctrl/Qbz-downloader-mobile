@@ -380,6 +380,9 @@ interface Strings {
     val ipodArtistAll: String
     val ipodDateLabels: List<String>
     val ipodTickAll: String
+    val ipodGroupTitle: String
+    val ipodGroupLabels: List<String>
+    val ipodUnknownGroup: String
     val ipodTickNone: String
     val ipodUsbNotFound: String
     val ipodUsbNoSerial: String
@@ -792,6 +795,9 @@ object English : Strings {
     override val ipodArtistAll = "All artists"
     override val ipodDateLabels = listOf("Any time", "Today", "7 days", "30 days")
     override val ipodTickAll = "Tick all"
+    override val ipodGroupTitle = "Group by"
+    override val ipodGroupLabels = listOf("None", "Album", "Artist", "Download date", "Release year")
+    override val ipodUnknownGroup = "Unknown"
     override val ipodTickNone = "Untick all"
     override val ipodUsbNotFound = "No iPod found on USB. Reconnect it with the OTG adapter."
     override val ipodUsbNoSerial = "The iPod did not give its serial number. Type the identifier by hand."
@@ -1203,6 +1209,9 @@ object Spanish : Strings {
     override val ipodArtistAll = "Todos los artistas"
     override val ipodDateLabels = listOf("Siempre", "Hoy", "7 días", "30 días")
     override val ipodTickAll = "Marcar todas"
+    override val ipodGroupTitle = "Agrupar por"
+    override val ipodGroupLabels = listOf("Sin agrupar", "Álbum", "Artista", "Fecha de descarga", "Año de lanzamiento")
+    override val ipodUnknownGroup = "Desconocido"
     override val ipodTickNone = "Quitar marcas"
     override val ipodUsbNotFound = "No encontré el iPod por USB. Vuelve a conectarlo con el adaptador OTG."
     override val ipodUsbNoSerial = "El iPod no entregó su número de serie. Escribe el identificador a mano."

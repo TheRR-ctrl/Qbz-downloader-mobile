@@ -776,10 +776,40 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun ipodFilterArtist(a: String?) { ipodArtist = a }
     fun ipodFilterDays(d: Int) { ipodDays = d }
 
-    /** The pending songs that pass the artist and date filters, newest download first. */
+    /** How the songs to send are ordered and grouped under headings. */
+    enum class IpodGroup { None, Album, Artist, Date, Year }
+    var ipodGroup by mutableStateOf(IpodGroup.None); private set
+    fun ipodSetGroup(g: IpodGroup) { ipodGroup = g }
+
+    private fun trackNo(t: DownloadTask) = t.track.albumTrackNumber.takeIf { it > 0 } ?: t.track.number
+    private fun dayOf(t: DownloadTask) = if (t.finishedAt <= 0L) "" else java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.ROOT).format(java.util.Date(t.finishedAt))
+
+    /** The heading a song sits under for the chosen grouping (null = no headings). Empty = unknown. */
+    fun ipodGroupOf(t: DownloadTask): String? = when (ipodGroup) {
+        IpodGroup.None -> null
+        IpodGroup.Album -> "${t.album.title} · ${t.album.artist}"
+        IpodGroup.Artist -> t.track.artist
+        IpodGroup.Date -> dayOf(t)
+        IpodGroup.Year -> t.album.year.take(4)
+    }
+
+    /** The pending songs that pass the artist and date filters, in the order of the chosen grouping (default: newest download first). */
     val ipodShown: List<DownloadTask> get() {
         val since = if (ipodDays > 0) System.currentTimeMillis() - ipodDays * 86_400_000L else 0L
-        return ipodPending.filter { (ipodArtist == null || it.track.artist == ipodArtist) && (ipodDays == 0 || it.finishedAt >= since) }.sortedByDescending { it.finishedAt }
+        val list = ipodPending.filter { (ipodArtist == null || it.track.artist == ipodArtist) && (ipodDays == 0 || it.finishedAt >= since) }
+        val inAlbum = compareBy<DownloadTask>({ it.album.title.lowercase() }, { it.album.id }, { trackNo(it) })
+        return when (ipodGroup) {
+            IpodGroup.None -> list.sortedByDescending { it.finishedAt }
+            IpodGroup.Album -> list.sortedWith(inAlbum)
+            IpodGroup.Artist -> list.sortedWith(compareBy<DownloadTask> { it.track.artist.lowercase() }.then(inAlbum))
+            IpodGroup.Date -> list.sortedWith(compareByDescending<DownloadTask> { dayOf(it) }.then(inAlbum))
+            IpodGroup.Year -> list.sortedWith(compareByDescending<DownloadTask> { it.album.year.take(4) }.then(inAlbum))
+        }
+    }
+    /** Ticks or unticks every shown song under one heading. */
+    fun ipodTickGroup(heading: String, on: Boolean) {
+        val keys = ipodShown.filter { ipodGroupOf(it) == heading }.map { ipodKey(it) }.toSet()
+        ipodUnticked = if (on) ipodUnticked - keys else ipodUnticked + keys
     }
     val ipodSelected: List<DownloadTask> get() = ipodShown.filter { ipodKey(it) !in ipodUnticked }
     fun ipodToggle(t: DownloadTask) { val k = ipodKey(t); ipodUnticked = if (k in ipodUnticked) ipodUnticked - k else ipodUnticked + k }
