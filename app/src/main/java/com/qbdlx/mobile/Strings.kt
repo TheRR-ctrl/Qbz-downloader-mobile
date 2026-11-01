@@ -325,6 +325,9 @@ interface Strings {
     val ipodPlaylistLoadFailed: String
     fun ipodPlaylistDownloading(done: Int, total: Int): String
     val ipodPlaylistDownloadStopped: String
+    fun ipodPlaylistLoading(name: String, i: Int, n: Int): String
+    fun ipodPlaylistMaking(name: String, i: Int, n: Int): String
+    fun ipodPlaylistSendN(n: Int): String
     fun ipodPlaylistDone(name: String, added: Int, missing: Int, error: String?): String
     fun ipodLyricsSearching(done: Int, total: Int): String
     fun ipodLyricsNothing(n: Int): String
@@ -728,10 +731,13 @@ object English : Strings {
     override fun ipodFixAlbumsDone(n: Int) = if (n == 0) "Nothing to fix: every album with covered songs already shows its cover." else "Fixed $n albums. Unplug and replug the iPod (or restart it) if the Albums view does not update."
     override fun ipodFixAlbumsFailed(error: String) = "Could not fix the albums: $error"
     override val ipodPlaylistButton = "Send a Qobuz playlist to the iPod…"
-    override val ipodPlaylistTitle = "Choose a playlist"
+    override val ipodPlaylistTitle = "Choose one or more playlists"
     override val ipodPlaylistNone = "You have no playlists in Qobuz."
     override val ipodPlaylistLoadFailed = "Could not load the playlist from Qobuz."
     override fun ipodPlaylistDownloading(done: Int, total: Int) = "Downloading the playlist's missing songs as MP3… $done of $total"
+    override fun ipodPlaylistLoading(name: String, i: Int, n: Int) = "Reading playlist \"$name\" (${i + 1} of $n)…"
+    override fun ipodPlaylistMaking(name: String, i: Int, n: Int) = "Creating playlist \"$name\" on the iPod (${i + 1} of $n)…"
+    override fun ipodPlaylistSendN(n: Int) = if (n == 0) "Choose at least one" else "Send $n playlist(s)"
     override val ipodPlaylistDownloadStopped = "Stopped. The songs already downloaded are kept; nothing was sent to the iPod."
     override fun ipodPlaylistDone(name: String, added: Int, missing: Int, error: String?) =
         if (error != null) "Playlist \"$name\" not created: $error" else if (added == 0) "Playlist \"$name\" not created: none of its songs is on the iPod (only downloaded MP3s can be sent)."
@@ -1144,10 +1150,13 @@ object Spanish : Strings {
     override fun ipodFixAlbumsDone(n: Int) = if (n == 0) "Nada que reparar: todos los álbumes con canciones con carátula ya la muestran." else "Reparados $n álbumes. Si la vista de Álbumes no cambia, desconecta y vuelve a conectar el iPod (o reinícialo)."
     override fun ipodFixAlbumsFailed(error: String) = "No se pudieron reparar los álbumes: $error"
     override val ipodPlaylistButton = "Enviar una playlist de Qobuz al iPod…"
-    override val ipodPlaylistTitle = "Elige una playlist"
+    override val ipodPlaylistTitle = "Elige una o varias playlists"
     override val ipodPlaylistNone = "No tienes playlists en Qobuz."
     override val ipodPlaylistLoadFailed = "No se pudo cargar la playlist de Qobuz."
     override fun ipodPlaylistDownloading(done: Int, total: Int) = "Descargando en MP3 las canciones que faltan de la playlist… $done de $total"
+    override fun ipodPlaylistLoading(name: String, i: Int, n: Int) = "Leyendo la playlist \"$name\" (${i + 1} de $n)…"
+    override fun ipodPlaylistMaking(name: String, i: Int, n: Int) = "Creando la playlist \"$name\" en el iPod (${i + 1} de $n)…"
+    override fun ipodPlaylistSendN(n: Int) = if (n == 0) "Elige al menos una" else "Enviar $n playlist(s)"
     override val ipodPlaylistDownloadStopped = "Detenido. Las canciones ya descargadas se conservan; no se envió nada al iPod."
     override fun ipodPlaylistDone(name: String, added: Int, missing: Int, error: String?) =
         if (error != null) "Playlist \"$name\" no creada: $error" else if (added == 0) "Playlist \"$name\" no creada: ninguna de sus canciones está en el iPod (solo se envían MP3 descargados)."
