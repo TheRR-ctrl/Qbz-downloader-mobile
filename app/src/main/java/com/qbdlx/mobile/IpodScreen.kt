@@ -78,7 +78,7 @@ fun IpodScreen(vm: MainViewModel) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { vm.confirmIpodDeleteSelected = false },
             title = { Text(s.ipodDeleteSelectedTitle) },
-            text = { Text(s.ipodDeleteSelectedWarning(vm.ipodSelectedPids.size)) },
+            text = { Text(s.ipodDeleteSelectedWarning(vm.ipodSelectedPids.size) + s.ipodDeleteListsNote(vm.ipodSelectedPlaylists.size)) },
             confirmButton = { TextButton({ vm.ipodDeleteSelected() }) { Text(s.importDeleteConfirm, color = MaterialTheme.colorScheme.error) } },
             dismissButton = { TextButton({ vm.confirmIpodDeleteSelected = false }) { Text(s.cancel) } },
         )
@@ -282,8 +282,8 @@ fun IpodScreen(vm: MainViewModel) {
         if (ready && vm.ipodTab == 2) {
             val byPid = vm.ipodTracks.associateBy { it.pid }
             item {
-                OutlinedButton({ vm.confirmIpodDeleteSelected = true }, Modifier.fillMaxWidth(), enabled = vm.ipodSelectedPids.isNotEmpty() && !busy && !vm.ipodClearing) {
-                    Text("${s.ipodDeleteSelected} (${vm.ipodSelectedPids.size})", color = MaterialTheme.colorScheme.error)
+                OutlinedButton({ vm.confirmIpodDeleteSelected = true }, Modifier.fillMaxWidth(), enabled = (vm.ipodSelectedPids.isNotEmpty() || vm.ipodSelectedPlaylists.isNotEmpty()) && !busy && !vm.ipodClearing) {
+                    Text("${s.ipodDeleteSelected} (${vm.ipodSelectedPids.size})" + if (vm.ipodSelectedPlaylists.isNotEmpty()) " + ${vm.ipodSelectedPlaylists.size} ✓" else "", color = MaterialTheme.colorScheme.error)
                 }
             }
             if (vm.ipodPlaylists.isEmpty()) item { Text(s.ipodPlaylistsEmpty, color = muted) }
@@ -291,9 +291,13 @@ fun IpodScreen(vm: MainViewModel) {
                 val songs = pl.trackPids.mapNotNull { byPid[it] }
                 val open = vm.ipodOpenPlaylist == pl.pid
                 item(key = "pl${pl.pid}") {
-                    Column(Modifier.fillMaxWidth().clickable { vm.ipodOpenPlaylist = if (open) null else pl.pid }.padding(vertical = 8.dp)) {
-                        Text(pl.name.ifBlank { "—" }, fontWeight = FontWeight.SemiBold)
-                        Text(s.ipodPlaylistSongs(songs.size, pl.trackPids.size - songs.size), fontSize = 12.sp, color = muted)
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f).clickable { vm.ipodOpenPlaylist = if (open) null else pl.pid }.padding(vertical = 8.dp)) {
+                            Text(pl.name.ifBlank { "—" }, fontWeight = FontWeight.SemiBold)
+                            Text(s.ipodPlaylistSongs(songs.size, pl.trackPids.size - songs.size), fontSize = 12.sp, color = muted)
+                            Text(s.ipodDeleteListCheck, fontSize = 11.sp, color = muted)
+                        }
+                        Checkbox(pl.pid in vm.ipodSelectedPlaylists, { vm.ipodTogglePlaylist(pl) })
                     }
                 }
                 if (open) {

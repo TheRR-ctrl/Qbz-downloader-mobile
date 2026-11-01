@@ -698,18 +698,25 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var confirmIpodDeleteSelected by mutableStateOf(false)
     fun ipodToggleTrack(pid: Long) { ipodSelectedPids = if (pid in ipodSelectedPids) ipodSelectedPids - pid else ipodSelectedPids + pid }
     fun ipodSelectVisible(pids: List<Long>, selected: Boolean) { ipodSelectedPids = if (selected) ipodSelectedPids + pids else ipodSelectedPids - pids.toSet() }
+    /** Playlists ticked to be removed together with their songs. */
+    var ipodSelectedPlaylists by mutableStateOf<Set<Long>>(emptySet()); private set
+    fun ipodTogglePlaylist(pl: com.qbdlx.mobile.ipod.IpodPlaylist) {
+        if (pl.pid in ipodSelectedPlaylists) { ipodSelectedPlaylists = ipodSelectedPlaylists - pl.pid; ipodSelectedPids = ipodSelectedPids - pl.trackPids.toSet() }
+        else { ipodSelectedPlaylists = ipodSelectedPlaylists + pl.pid; ipodSelectedPids = ipodSelectedPids + pl.trackPids }
+    }
     fun ipodDeleteSelected() {
         confirmIpodDeleteSelected = false
         val uri = ipodUri ?: return
         val pids = ipodSelectedPids.toList()
-        if (pids.isEmpty() || ipodClearing || ipodProgress != null) return
+        val lists = ipodSelectedPlaylists.toList()
+        if ((pids.isEmpty() && lists.isEmpty()) || ipodClearing || ipodProgress != null) return
         val guid = ipodGuid()
         if (guid == null) { ipodReadUsbGuid(); return }
         ipodClearing = true; ipodMessage = null; ipodTask = strings.ipodTaskDeleting(pids.size)
         viewModelScope.launch {
-            val (n, err) = withContext(Dispatchers.IO) { com.qbdlx.mobile.ipod.IpodDevice(context, uri).removeTracks(pids, guid) }
+            val (n, err) = withContext(Dispatchers.IO) { com.qbdlx.mobile.ipod.IpodDevice(context, uri).removeTracks(pids, guid, lists) }
             ipodClearing = false; ipodTask = null
-            ipodSelectedPids = emptySet()
+            ipodSelectedPids = emptySet(); ipodSelectedPlaylists = emptySet()
             ipodMessage = if (err != null) strings.importDeleteFailed(err) else strings.importDeleteDone(n)
             ipodRefresh()
         }

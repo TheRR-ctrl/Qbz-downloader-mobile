@@ -261,6 +261,13 @@ class ItlpLibrary(
             .map { (pid, name) -> IpodPlaylist(pid, name, items[pid].orEmpty()) }
     }
 
+    /** Removes a user playlist (the list only; its songs stay in the library). */
+    fun deletePlaylist(pid: Long) {
+        lib.exec("DELETE FROM item_to_container WHERE container_pid=?", listOf(pid))
+        lib.exec("DELETE FROM container WHERE pid=?", listOf(pid))
+        runCatching { dyn.exec("DELETE FROM container_ui WHERE container_pid=?", listOf(pid)) }
+    }
+
     fun userPlaylistPid(name: String): Long? =
         (row(lib, "SELECT pid FROM container WHERE name=? AND COALESCE(distinguished_kind,0)=0 AND COALESCE(smart_is_dynamic,0)=0 AND pid<>COALESCE((SELECT primary_container_pid FROM db_info),0) LIMIT 1", listOf(name))?.get("pid") as Number?)?.toLong()
 
