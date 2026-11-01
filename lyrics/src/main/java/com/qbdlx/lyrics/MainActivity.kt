@@ -19,6 +19,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -133,7 +134,16 @@ class MainActivity : ComponentActivity() {
                 BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                     // a third of the height as padding above, so the line being sung sits in the first third however many lines fit
                     val pad = if (state.status == Status.SYNCED) (maxHeight / 3 - 24.dp).coerceAtLeast(0.dp) else 12.dp
-                    LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(top = pad, bottom = pad)) {
+                    LazyColumn(Modifier.fillMaxSize()
+                        .graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }
+                        .drawWithContent {
+                            drawContent() // soft fade at the top and bottom edges
+                            val f = size.height * .12f / size.height
+                            drawRect(androidx.compose.ui.graphics.Brush.verticalGradient(
+                                0f to androidx.compose.ui.graphics.Color.Transparent, f to androidx.compose.ui.graphics.Color.Black,
+                                1f - f to androidx.compose.ui.graphics.Color.Black, 1f to androidx.compose.ui.graphics.Color.Transparent),
+                                blendMode = androidx.compose.ui.graphics.BlendMode.DstIn)
+                        }, state = listState, contentPadding = PaddingValues(top = pad, bottom = pad)) {
                         itemsIndexed(state.lines) { i, l ->
                             val on = i == idx
                             val dist = if (idx >= 0) kotlin.math.abs(i - idx) else 0

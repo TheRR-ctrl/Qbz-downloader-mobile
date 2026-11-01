@@ -30,6 +30,7 @@ object LrcLib {
     internal fun parseOne(o: JSONObject): Lyrics? {
         val synced = o.optString("syncedLyrics", "").takeIf { it.isNotBlank() && it != "null" }
         val plain = o.optString("plainLyrics", "").takeIf { it.isNotBlank() && it != "null" }
+        if (synced == null && plain == null && o.optBoolean("instrumental", false)) return Lyrics(null, "♪ Instrumental ♪")
         return if (synced == null && plain == null) null else Lyrics(synced, plain)
     }
 
@@ -59,12 +60,19 @@ object LrcLib {
         return titleOk && artistOk
     }
 
+    /** Time before which the service asked us not to call again (from a 429 Retry-After). */
+    @Volatile var retryAfterUntil = 0L
+
     private fun get(url: String): String? {
         val c = URL(url).openConnection() as HttpURLConnection
         try {
             c.connectTimeout = 10_000; c.readTimeout = 15_000
-            c.setRequestProperty("User-Agent", "Q-Lyrics/0.1")
+            c.setRequestProperty("User-Agent", "Q-Lyrics/0.8.0 (https://github.com/therr-ctrl/qbz-downloader-mobile)")
             if (c.responseCode == 404) return null
+            if (c.responseCode == 429) {
+                val wait = c.getHeaderField("Retry-After")?.trim()?.toLongOrNull() ?: 5L
+                retryAfterUntil = System.currentTimeMillis() + wait.coerceIn(1, 60) * 1000
+            }
             if (c.responseCode !in 200..299) throw java.io.IOException("LRCLIB ${c.responseCode}")
             return c.inputStream.bufferedReader().readText()
         } finally { c.disconnect() }

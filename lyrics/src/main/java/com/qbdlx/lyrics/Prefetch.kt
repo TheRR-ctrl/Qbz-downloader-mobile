@@ -13,7 +13,7 @@ class PrefetchTrack(val title: String, val artist: String, val album: String, va
 class PrefetchState(val running: Boolean = false, val total: Int = 0, val done: Int = 0, val found: Int = 0, val missing: Int = 0, val error: String? = null)
 
 /**
- * Downloads the lyrics of a list of songs ahead of time, one request at a time, so they are on the phone when the song plays.
+ * Downloads the lyrics of a list of songs ahead of time, at a steady pace, so they are on the phone when the song plays.
  * Sources of the list: the phone's own music ([fromMediaStore]) and the list QBDLX Mobile sends ([parse]).
  * Songs already saved, or searched without result in the last week, are skipped.
  */
@@ -75,6 +75,7 @@ object Prefetch {
             val failures = java.util.concurrent.atomic.AtomicInteger() // in a row, across all workers
             val pauseUntil = java.util.concurrent.atomic.AtomicLong(0)
             var error: String? = null
+            var lastStart = 0L
             val limit = java.util.concurrent.atomic.AtomicInteger(START)
             val active = java.util.concurrent.atomic.AtomicInteger(0)
             val streak = java.util.concurrent.atomic.AtomicInteger(0) // answers in a row without trouble
@@ -84,6 +85,10 @@ object Prefetch {
                     for (t in list) {
                         if (failures.get() >= 30) { error = "sin conexión con el servicio de letras"; break }
                         while (active.get() >= limit.get()) delay(50)
+                        // Steady pace (~1.5 requests/s) and honor Retry-After from the service.
+                        val gate = maxOf(LrcLib.retryAfterUntil - System.currentTimeMillis(), 650L - (System.currentTimeMillis() - lastStart))
+                        if (gate > 0) delay(gate)
+                        lastStart = System.currentTimeMillis()
                         active.incrementAndGet()
                         launch {
                             try {
