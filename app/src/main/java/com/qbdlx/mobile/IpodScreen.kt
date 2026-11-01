@@ -260,8 +260,7 @@ fun IpodScreen(vm: MainViewModel) {
                 )
             }
             val q = vm.ipodQuery.trim().lowercase()
-            val onIpod = vm.ipodTracks.filter { q.isEmpty() || "${it.title} ${it.artist} ${it.album}".lowercase().contains(q) }
-                .sortedWith(compareBy({ it.artist.lowercase() }, { it.album.lowercase() }, { it.trackNumber }, { it.title.lowercase() }))
+            val onIpod = if (q.isEmpty()) vm.ipodSortedTracks else vm.ipodSortedTracks.filter { "${it.title} ${it.artist} ${it.album}".lowercase().contains(q) }
             item {
                 Text("${s.ipodTabOn} · ${s.ipodSearch}", fontSize = 12.sp, color = muted)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -277,7 +276,7 @@ fun IpodScreen(vm: MainViewModel) {
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     androidx.compose.material3.FilterChip(!vm.ipodLibMode, { vm.ipodLibMode = false }, label = { Text(s.ipodViewList) })
-                    androidx.compose.material3.FilterChip(vm.ipodLibMode, { vm.ipodLibMode = true; vm.ipodLibArtist = null; vm.ipodLibAlbum = null }, label = { Text(s.ipodViewLibrary) })
+                    androidx.compose.material3.FilterChip(vm.ipodLibMode, { vm.ipodLibMode = true; vm.ipodRebuildLibrary(); vm.ipodLibArtist = null; vm.ipodLibAlbum = null }, label = { Text(s.ipodViewLibrary) })
                 }
             }
             if (libMode) {
@@ -291,13 +290,10 @@ fun IpodScreen(vm: MainViewModel) {
                 val selecting = vm.ipodSelectedPids.isNotEmpty()
                 data class Cell(val key: String, val title: String, val sub: String, val cover: String?, val pids: List<Long>, val open: () -> Unit)
                 val cells: List<Cell> = if (artist == null) {
-                    onIpod.groupBy { it.artist }.toList().sortedBy { it.first.lowercase() }.map { (name, ts) ->
-                        Cell("la$name", name.ifBlank { "—" }, s.ipodLibArtistCount(ts.map { it.album }.distinct().size, ts.size),
-                            ts.firstNotNullOfOrNull { vm.ipodCoverFor(it.artist, it.album) }, ts.map { it.pid }) { vm.ipodLibArtist = name }
-                    }
+                    vm.ipodLibrary.map { a -> Cell("la${a.name}", a.name.ifBlank { "—" }, s.ipodLibArtistCount(a.albums.size, a.songCount), a.cover, a.pids) { vm.ipodLibArtist = a.name } }
                 } else {
-                    onIpod.filter { it.artist == artist }.groupBy { it.album }.toList().sortedBy { it.first.lowercase() }.map { (name, ts) ->
-                        Cell("lb$artist$name", name.ifBlank { "—" }, s.ipodPlaylistSongs(ts.size, 0), vm.ipodCoverFor(artist, name), ts.map { it.pid }) { vm.ipodLibAlbum = name }
+                    (vm.ipodLibrary.firstOrNull { it.name == artist }?.albums ?: emptyList()).map { al ->
+                        Cell("lb$artist${al.name}", al.name.ifBlank { "—" }, s.ipodPlaylistSongs(al.tracks.size, 0), al.cover, al.pids) { vm.ipodLibAlbum = al.name }
                     }
                 }
                 if (album == null) {
@@ -509,7 +505,7 @@ private fun LibCell(title: String, sub: String, cover: String?, selected: Boolea
     val bg = if (selected) MaterialTheme.colorScheme.primaryContainer else androidx.compose.ui.graphics.Color.Transparent
     val art: @Composable (Modifier) -> Unit = { m ->
         Box(m.clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
-            if (cover != null) coil.compose.AsyncImage(cover, null, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+            if (cover != null) coil.compose.AsyncImage(cover, null, Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop, filterQuality = androidx.compose.ui.graphics.FilterQuality.Low)
             else Text("♪", fontSize = 22.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (selected) Text("✓", Modifier.align(Alignment.TopEnd).padding(4.dp), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
         }

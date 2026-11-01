@@ -886,11 +886,29 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var ipodGrid: Boolean
         get() = ipodGridState
         set(v) { ipodGridState = v; prefs.edit().putBoolean("ipod_grid", v).apply() }
-    /** A cover for an artist/album on the iPod: the iPod itself doesn't give one, so it comes from the same album in the app's downloads. */
-    fun ipodCoverFor(artist: String, album: String): String? {
-        val key = com.qbdlx.mobile.ipod.trackKey("", artist, album)
-        return downloads.tasks.firstOrNull { it.album.coverUrl != null && com.qbdlx.mobile.ipod.trackKey("", it.track.artist, it.album.title) == key }?.album?.coverUrl
+    class LibAlbum(val name: String, val tracks: List<com.qbdlx.mobile.ipod.IpodTrack>, val cover: String?) { val pids = tracks.map { it.pid } }
+    class LibArtist(val name: String, val albums: List<LibAlbum>) {
+        val songCount = albums.sumOf { it.tracks.size }
+        val cover = albums.firstNotNullOfOrNull { it.cover }
+        val pids = albums.flatMap { it.pids }
     }
+    /** The iPod's songs grouped artist → album with covers, built once (not on every frame) so the library view scrolls smoothly. */
+    var ipodLibrary by mutableStateOf<List<LibArtist>>(emptyList()); private set
+    var ipodSortedTracks by mutableStateOf<List<com.qbdlx.mobile.ipod.IpodTrack>>(emptyList()); private set
+
+    /** Covers come from the same album in the app's downloads (the iPod doesn't give them to the app); small versions, to keep scrolling light. */
+    private fun buildIpodLibrary(tracks: List<com.qbdlx.mobile.ipod.IpodTrack>) {
+        val covers = HashMap<String, String>()
+        downloads.tasks.toList().forEach { t -> t.album.coverUrl?.let { covers.putIfAbsent(com.qbdlx.mobile.ipod.trackKey("", t.track.artist, t.album.title), it) } }
+        val sorted = tracks.sortedWith(compareBy({ it.artist.lowercase() }, { it.album.lowercase() }, { it.trackNumber }, { it.title.lowercase() }))
+        ipodSortedTracks = sorted
+        ipodLibrary = sorted.groupBy { it.artist }.map { (artist, ts) ->
+            LibArtist(artist, ts.groupBy { it.album }.map { (album, at) ->
+                LibAlbum(album, at, covers[com.qbdlx.mobile.ipod.trackKey("", artist, album)]?.replace("_600", "_230"))
+            })
+        }
+    }
+    fun ipodRebuildLibrary() { val t = ipodTracks; viewModelScope.launch { withContext(Dispatchers.Default) { buildIpodLibrary(t) } } }
     var ipodLibArtist by mutableStateOf<String?>(null)
     var ipodLibAlbum by mutableStateOf<String?>(null)
 
@@ -907,6 +925,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 ipodOnDevice = tracks?.map { com.qbdlx.mobile.ipod.trackKey(it.title, it.artist, it.album) }?.toSet().orEmpty()
                 ipodSongCount = tracks?.size ?: -1
                 ipodTracks = tracks.orEmpty()
+                withContext(Dispatchers.Default) { buildIpodLibrary(tracks.orEmpty()) }
                 ipodPlaylists = withContext(Dispatchers.IO) { runCatching { device.listPlaylists() }.getOrNull() }.orEmpty()
                 if (insp.guid == null && !ipodGuidKnown) ipodReadUsbGuid() // the serial number is the identifier: no need to ask the person
             }
