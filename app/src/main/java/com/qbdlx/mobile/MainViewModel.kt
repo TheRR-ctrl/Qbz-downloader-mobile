@@ -1807,6 +1807,41 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun play(album: Album, track: Track) = playList(listOf(album to track), 0)
 
+    /** "Play next": right after the current track (starts playing when nothing is). */
+    fun playNext(album: Album, track: Track) {
+        if (!track.streamable) return
+        if (playQueue.current == null) { play(album, track); return }
+        playQueue.insertNext(album to track); refreshQueue(); resetNext(); notice = strings.addedNext
+    }
+
+    fun addToQueue(album: Album, track: Track) {
+        if (!track.streamable) return
+        if (playQueue.current == null) { play(album, track); return }
+        playQueue.append(album to track); refreshQueue(); resetNext(); notice = strings.addedToQueue
+    }
+
+    fun addTrackToPlaylist(pl: Playlist, track: Track) {
+        viewModelScope.launch {
+            try { withContext(Dispatchers.IO) { api.addTrackToPlaylist(pl.id, track.id) }; notice = strings.addedToPlaylist(pl.name) }
+            catch (e: Exception) { error = e.message }
+        }
+    }
+
+    /** Marks only this downloaded song as "to send" and opens the iPod screen on that tab. */
+    fun sendToIpod(task: DownloadTask) {
+        ipodTickShown(false); ipodTickTasks(listOf(task), true)
+        ipodTab = 0; openIpod()
+    }
+
+    /** Deletes the saved audio file and forgets the download entry. */
+    fun removeDownload(task: DownloadTask) {
+        val uri = task.savedUri
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { runCatching { if (uri != null) getApplication<Application>().contentResolver.delete(android.net.Uri.parse(uri), null, null) } }
+            downloads.delete(task)
+        }
+    }
+
     private fun playCurrent(resumeMs: Long = 0L) {
         val item = playQueue.current ?: return
         restoredPosMs = -1L

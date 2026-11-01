@@ -44,9 +44,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -138,7 +136,7 @@ private fun IpodScreenBody(vm: MainViewModel) {
                         val p = pls[i]
                         val on = p.id in picked
                         Row(Modifier.fillMaxWidth().clickable { picked = if (on) picked - p.id else picked + p.id }, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                            androidx.compose.material3.Checkbox(on, { picked = if (on) picked - p.id else picked + p.id })
+                            IosCheck(on, { picked = if (on) picked - p.id else picked + p.id })
                             val onDevice = vm.ipodPlaylists.any { it.name.trim().equals(p.name.trim(), ignoreCase = true) && it.trackPids.isNotEmpty() }
                             androidx.compose.foundation.layout.Box(Modifier.size(10.dp).clip(androidx.compose.foundation.shape.CircleShape).background(if (onDevice) androidx.compose.ui.graphics.Color(0xFF2E7D32) else androidx.compose.ui.graphics.Color(0xFFC62828)))
                             Text("${p.name} · ${p.tracksCount}", Modifier.padding(vertical = 8.dp, horizontal = 8.dp))
@@ -186,7 +184,7 @@ private fun IpodScreenBody(vm: MainViewModel) {
                 IconButton({ vm.closeIpod() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, s.back) }
                 Text(s.ipodTitle, fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                 if (vm.ipodChecking) CircularProgressIndicator(Modifier.padding(end = 8.dp), strokeWidth = 2.dp)
-                OutlinedButton({ vm.chooseIpod() }, enabled = !busy) { Text(if (vm.ipodUri == null) s.ipodChoose else s.ipodChange) }
+                IosTintButton({ vm.chooseIpod() }, enabled = !busy) { Text(if (vm.ipodUri == null) s.ipodChoose else s.ipodChange) }
             }
         }
         if (vm.ipodJobLeft > 0 && !busy) item {
@@ -195,7 +193,7 @@ private fun IpodScreenBody(vm: MainViewModel) {
                     Text(s.ipodResumeBanner(vm.ipodJobLeft), fontWeight = FontWeight.Medium)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button({ vm.ipodResume() }) { Text(s.ipodResumeButton) }
-                        OutlinedButton({ vm.ipodDiscardJob() }) { Text(s.ipodDiscard) }
+                        IosTintButton({ vm.ipodDiscardJob() }) { Text(s.ipodDiscard) }
                     }
                 }
             }
@@ -223,8 +221,8 @@ private fun IpodScreenBody(vm: MainViewModel) {
         }
         if (vm.ipodUri != null) item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton({ vm.ipodRestore() }, Modifier.weight(1f), enabled = !busy) { Text(s.ipodRestore, fontSize = 12.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
-                if (ready) OutlinedButton({ vm.ipodShareReport() }, Modifier.weight(1f)) { Text(s.ipodReport, fontSize = 12.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
+                IosTintButton({ vm.ipodRestore() }, Modifier.weight(1f), enabled = !busy) { Text(s.ipodRestore, fontSize = 12.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
+                if (ready) IosTintButton({ vm.ipodShareReport() }, Modifier.weight(1f)) { Text(s.ipodReport, fontSize = 12.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
             }
         }
         // the progress bar shows in both tabs
@@ -270,17 +268,17 @@ private fun IpodScreenBody(vm: MainViewModel) {
         }
         if (ready && vm.ipodTab == 1) {
             item {
-                OutlinedButton({ vm.confirmIpodClear = true }, Modifier.fillMaxWidth(), enabled = vm.ipodTracks.isNotEmpty() && !busy && !vm.ipodClearing) {
+                IosTintButton({ vm.confirmIpodClear = true }, Modifier.fillMaxWidth(), enabled = vm.ipodTracks.isNotEmpty() && !busy && !vm.ipodClearing) {
                     if (vm.ipodClearing) {
                         CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp); Spacer(Modifier.width(10.dp)); Text(s.importWorking)
                     } else Text(s.ipodClearButton(vm.ipodTracks.size), color = MaterialTheme.colorScheme.error)
                 }
             }
             item { Button({ vm.importFromIpod() }, Modifier.fillMaxWidth(), enabled = vm.ipodTracks.isNotEmpty()) { Text(s.ipodLookup) } }
-            item { OutlinedButton({ vm.ipodFixAlbumCovers() }, Modifier.fillMaxWidth(), enabled = vm.ipodTracks.isNotEmpty() && !busy && vm.ipodTask == null && vm.ipodLyricsStatus == null) { Text(s.ipodFixAlbumsButton) } }
+            item { IosTintButton({ vm.ipodFixAlbumCovers() }, Modifier.fillMaxWidth(), enabled = vm.ipodTracks.isNotEmpty() && !busy && vm.ipodTask == null && vm.ipodLyricsStatus == null) { Text(s.ipodFixAlbumsButton) } }
             item {
                 val shown = vm.ipodTracks.filter { vm.ipodQuery.trim().isEmpty() || "${it.title} ${it.artist} ${it.album}".lowercase().contains(vm.ipodQuery.trim().lowercase()) }
-                OutlinedButton({ vm.ipodAddLyricsToDevice(shown) }, Modifier.fillMaxWidth(), enabled = shown.any { !it.hasLyrics } && !busy && vm.ipodLyricsStatus == null && vm.ipodTask == null) {
+                IosTintButton({ vm.ipodAddLyricsToDevice(shown) }, Modifier.fillMaxWidth(), enabled = shown.any { !it.hasLyrics } && !busy && vm.ipodLyricsStatus == null && vm.ipodTask == null) {
                     Text(s.ipodAddLyricsButton(shown.count { !it.hasLyrics }))
                 }
             }
@@ -298,7 +296,7 @@ private fun IpodScreenBody(vm: MainViewModel) {
                     Text(s.ipodSelectedCount(vm.ipodSelectedPids.size), fontSize = 12.sp, color = muted)
                     TextButton({ vm.ipodSelectVisible(onIpod.map { it.pid }, vm.ipodSelectedPids.size < onIpod.size) }, enabled = onIpod.isNotEmpty()) { Text(s.ipodSelectAllVisible) }
                 }
-                OutlinedButton({ vm.confirmIpodDeleteSelected = true }, Modifier.fillMaxWidth(), enabled = vm.ipodSelectedPids.isNotEmpty() && !busy && !vm.ipodClearing) {
+                IosTintButton({ vm.confirmIpodDeleteSelected = true }, Modifier.fillMaxWidth(), enabled = vm.ipodSelectedPids.isNotEmpty() && !busy && !vm.ipodClearing) {
                     if (vm.ipodClearing) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                     else Text("${s.ipodDeleteSelected} (${vm.ipodSelectedPids.size})", color = MaterialTheme.colorScheme.error)
                 }
@@ -351,7 +349,7 @@ private fun IpodScreenBody(vm: MainViewModel) {
                     onIpod.filter { it.artist == artist && it.album == album }.forEach { t ->
                         item(key = "lt${t.pid}") {
                             Row(Modifier.fillMaxWidth().clickable { vm.ipodToggleTrack(t.pid) }, verticalAlignment = Alignment.CenterVertically) {
-                                Checkbox(vm.ipodSelectedPids.contains(t.pid), { vm.ipodToggleTrack(t.pid) })
+                                IosCheck(vm.ipodSelectedPids.contains(t.pid), { vm.ipodToggleTrack(t.pid) })
                                 Text((if (t.trackNumber > 0) "${t.trackNumber}.  " else "") + t.title, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(start = 8.dp))
                             }
                         }
@@ -372,7 +370,7 @@ private fun IpodScreenBody(vm: MainViewModel) {
                 }
                 item(key = "t${t.pid}") {
                     Row(Modifier.fillMaxWidth().clickable { vm.ipodToggleTrack(t.pid) }, verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(vm.ipodSelectedPids.contains(t.pid), { vm.ipodToggleTrack(t.pid) })
+                        IosCheck(vm.ipodSelectedPids.contains(t.pid), { vm.ipodToggleTrack(t.pid) })
                         Text(
                             (if (t.trackNumber > 0) "${t.trackNumber}.  " else "") + t.title,
                             fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -385,7 +383,7 @@ private fun IpodScreenBody(vm: MainViewModel) {
         if (ready && vm.ipodTab == 2) {
             val byPid = vm.ipodTracks.associateBy { it.pid }
             item {
-                OutlinedButton({ vm.confirmIpodDeleteSelected = true }, Modifier.fillMaxWidth(), enabled = (vm.ipodSelectedPids.isNotEmpty() || vm.ipodSelectedPlaylists.isNotEmpty()) && !busy && !vm.ipodClearing) {
+                IosTintButton({ vm.confirmIpodDeleteSelected = true }, Modifier.fillMaxWidth(), enabled = (vm.ipodSelectedPids.isNotEmpty() || vm.ipodSelectedPlaylists.isNotEmpty()) && !busy && !vm.ipodClearing) {
                     Text("${s.ipodDeleteSelected} (${vm.ipodSelectedPids.size})" + if (vm.ipodSelectedPlaylists.isNotEmpty()) " + ${vm.ipodSelectedPlaylists.size} ✓" else "", color = MaterialTheme.colorScheme.error)
                 }
             }
@@ -400,7 +398,7 @@ private fun IpodScreenBody(vm: MainViewModel) {
                             Text(s.ipodPlaylistSongs(songs.size, pl.trackPids.size - songs.size), fontSize = 12.sp, color = muted)
                             Text(s.ipodDeleteListCheck, fontSize = 11.sp, color = muted)
                         }
-                        Checkbox(pl.pid in vm.ipodSelectedPlaylists, { vm.ipodTogglePlaylist(pl) })
+                        IosCheck(pl.pid in vm.ipodSelectedPlaylists, { vm.ipodTogglePlaylist(pl) })
                     }
                 }
                 if (open) {
@@ -411,7 +409,7 @@ private fun IpodScreenBody(vm: MainViewModel) {
                     songs.forEach { t ->
                         item(key = "pl${pl.pid}t${t.pid}") {
                             Row(Modifier.fillMaxWidth().clickable { vm.ipodToggleTrack(t.pid) }, verticalAlignment = Alignment.CenterVertically) {
-                                Checkbox(vm.ipodSelectedPids.contains(t.pid), { vm.ipodToggleTrack(t.pid) })
+                                IosCheck(vm.ipodSelectedPids.contains(t.pid), { vm.ipodToggleTrack(t.pid) })
                                 Column(Modifier.weight(1f).padding(start = 8.dp)) {
                                     Text(t.title, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     Text(t.artist, fontSize = 12.sp, color = muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -425,14 +423,14 @@ private fun IpodScreenBody(vm: MainViewModel) {
         if (ready && vm.ipodTab == 0) {
             item {
                 Row(Modifier.fillMaxWidth().clickable { vm.ipodReplace = !vm.ipodReplace }, verticalAlignment = Alignment.CenterVertically) {
-                    Switch(vm.ipodReplace, { vm.ipodReplace = it })
+                    IosSwitch(vm.ipodReplace, { vm.ipodReplace = it })
                     Text(s.ipodReplaceLabel, fontSize = 13.sp, modifier = Modifier.padding(start = 10.dp))
                 }
                 Row(Modifier.fillMaxWidth().clickable { vm.ipodLyrics = !vm.ipodLyrics }, verticalAlignment = Alignment.CenterVertically) {
-                    Switch(vm.ipodLyrics, { vm.ipodLyrics = it })
+                    IosSwitch(vm.ipodLyrics, { vm.ipodLyrics = it })
                     Text(s.ipodLyricsLabel, fontSize = 13.sp, modifier = Modifier.padding(start = 10.dp))
                 }
-                OutlinedButton({ vm.ipodPlaylistPicker = true }, Modifier.fillMaxWidth(), enabled = !busy) { Text(s.ipodPlaylistButton) }
+                IosTintButton({ vm.ipodPlaylistPicker = true }, Modifier.fillMaxWidth(), enabled = !busy) { Text(s.ipodPlaylistButton) }
             }
             if (candidates.isEmpty()) item { Text(s.ipodNoMp3, color = muted) }
             else if (pending.isEmpty()) item { Text(s.ipodAlready(candidates.size), color = muted) }
@@ -525,7 +523,7 @@ private fun IpodScreenBody(vm: MainViewModel) {
                 }
                 item(key = t.key) {
                     Row(Modifier.fillMaxWidth().pressable { vm.ipodToggle(t) }, verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(vm.ipodIsTicked(t), { vm.ipodToggle(t) })
+                        IosCheck(vm.ipodIsTicked(t), { vm.ipodToggle(t) })
                         coil.compose.AsyncImage(
                             model = t.album.coverUrl, contentDescription = null, contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                             modifier = Modifier.padding(end = 10.dp).size(44.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
