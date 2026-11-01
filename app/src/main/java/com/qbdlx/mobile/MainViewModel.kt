@@ -724,7 +724,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var ipodChecking by mutableStateOf(false); private set
     var ipodGuidText by mutableStateOf(prefs.getString("ipod_guid", "").orEmpty())
     var ipodProgress by mutableStateOf<Pair<Int, Int>?>(null); private set
-    var ipodMessage by mutableStateOf<String?>(null)
+    private var ipodMessageState by mutableStateOf<String?>(null)
+    /** The result of the last iPod action: shown in a card under the tabs and also as a floating message. */
+    var ipodMessage: String?
+        get() = ipodMessageState
+        set(v) { ipodMessageState = v; if (v != null) notice = v }
 
     /** The GUID to sign with: the one read from the iPod, or the one typed by the user. */
     private fun ipodGuid(): ByteArray? = ipodInspection?.guid ?: com.qbdlx.mobile.ipod.IpodSysInfo.fromUserInput(ipodGuidText)
