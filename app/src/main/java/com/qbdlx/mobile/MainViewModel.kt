@@ -823,6 +823,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         ipodUnticked = if (on) ipodUnticked - keys else ipodUnticked + keys
     }
     val ipodSelected: List<DownloadTask> get() = ipodShown.filter { ipodKey(it) !in ipodUnticked }
+    /** The "to send" list as a library (artists → albums → songs) like the iPod's, or as the grouped list. */
+    var ipodSendLib by mutableStateOf(true)
+    var ipodSendArtist by mutableStateOf<String?>(null)
+    var ipodSendAlbum by mutableStateOf<String?>(null)
+    fun ipodTickTasks(list: List<DownloadTask>, on: Boolean) { val keys = list.map { ipodKey(it) }.toSet(); ipodUnticked = if (on) ipodUnticked - keys else ipodUnticked + keys }
     fun ipodToggle(t: DownloadTask) { val k = ipodKey(t); ipodUnticked = if (k in ipodUnticked) ipodUnticked - k else ipodUnticked + k }
     fun ipodTickShown(on: Boolean) { val keys = ipodShown.map { ipodKey(it) }.toSet(); ipodUnticked = if (on) ipodUnticked - keys else ipodUnticked + keys }
     fun ipodIsTicked(t: DownloadTask) = ipodKey(t) !in ipodUnticked
