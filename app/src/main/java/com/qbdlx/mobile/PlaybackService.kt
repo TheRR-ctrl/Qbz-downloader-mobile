@@ -139,8 +139,15 @@ class PlaybackService : MediaBrowserService() {
         if (key != qKey) {
             qKey = key; qLyrics = null; qLoading = true
             scope.launch {
-                val l = kotlinx.coroutines.withContext(Dispatchers.IO) { runCatching { LyricsClient.fetch(q.artist, q.title, q.album, q.durationSec) }.getOrNull() }
-                if (qKey == key) { qLyrics = l; qLoading = false }
+                // LRCLIB is often briefly overloaded: a few quick retries before giving up (and a new try later, as Q Lyrics does)
+                var l: Lyrics? = null
+                var ok = false
+                for (attempt in 0 until 5) {
+                    if (attempt > 0) delay(2000L * attempt)
+                    try { l = kotlinx.coroutines.withContext(Dispatchers.IO) { LyricsClient.fetch(q.artist, q.title, q.album, q.durationSec) }; ok = true; break }
+                    catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) { /* try again */ }
+                }
+                if (qKey == key) { qLyrics = l; qLoading = false; if (!ok) qKey = "" }
             }
         }
         return CarLyrics.rows(q.title, q.artist, qLyrics, q.positionMs + CAR_LEAD_MS).ifEmpty {
