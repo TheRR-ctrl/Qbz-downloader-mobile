@@ -227,16 +227,6 @@ fun IpodScreen(vm: MainViewModel) {
                 }
             }
         }
-        vm.ipodMessage?.let { msg ->
-            item(key = "ipodMessage") {
-                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
-                    Row(Modifier.padding(start = 14.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(msg, Modifier.weight(1f), fontWeight = FontWeight.Medium)
-                        TextButton({ vm.ipodMessage = null }) { Text("OK") }
-                    }
-                }
-            }
-        }
         if (ready && vm.ipodTab == 1) {
             item {
                 OutlinedButton({ vm.confirmIpodClear = true }, Modifier.fillMaxWidth(), enabled = vm.ipodTracks.isNotEmpty() && !busy && !vm.ipodClearing) {
