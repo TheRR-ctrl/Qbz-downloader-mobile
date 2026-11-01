@@ -377,6 +377,8 @@ interface Strings {
     val ipodTabSend: String
     val ipodTabOn: String
     val ipodViewList: String
+    val ipodViewRows: String
+    val ipodViewGrid: String
     val ipodViewLibrary: String
     val ipodViewArtists: String
     fun ipodLibArtistCount(albums: Int, songs: Int): String
@@ -809,6 +811,8 @@ object English : Strings {
     override val ipodTabSend = "To send"
     override val ipodTabOn = "On the iPod"
     override val ipodViewList = "List"
+    override val ipodViewRows = "Rows"
+    override val ipodViewGrid = "Grid"
     override val ipodViewLibrary = "Library"
     override val ipodViewArtists = "Artists"
     override fun ipodLibArtistCount(albums: Int, songs: Int) = "$albums album(s) · $songs songs"
@@ -1240,6 +1244,8 @@ object Spanish : Strings {
     override val ipodTabSend = "Para enviar"
     override val ipodTabOn = "En el iPod"
     override val ipodViewList = "Lista"
+    override val ipodViewRows = "Lista"
+    override val ipodViewGrid = "Cuadrícula"
     override val ipodViewLibrary = "Biblioteca"
     override val ipodViewArtists = "Artistas"
     override fun ipodLibArtistCount(albums: Int, songs: Int) = "$albums álbum(es) · $songs canciones"

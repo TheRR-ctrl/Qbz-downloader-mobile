@@ -881,6 +881,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var ipodOpenPlaylist by mutableStateOf<Long?>(null)
     /** Library view of the songs on the iPod: artists → albums → songs. */
     var ipodLibMode by mutableStateOf(false)
+    /** Library view as a cover grid (true) or as rows (false). */
+    private var ipodGridState by mutableStateOf(prefs.getBoolean("ipod_grid", true))
+    var ipodGrid: Boolean
+        get() = ipodGridState
+        set(v) { ipodGridState = v; prefs.edit().putBoolean("ipod_grid", v).apply() }
+    /** A cover for an artist/album on the iPod: the iPod itself doesn't give one, so it comes from the same album in the app's downloads. */
+    fun ipodCoverFor(artist: String, album: String): String? {
+        val key = com.qbdlx.mobile.ipod.trackKey("", artist, album)
+        return downloads.tasks.firstOrNull { it.album.coverUrl != null && com.qbdlx.mobile.ipod.trackKey("", it.track.artist, it.album.title) == key }?.album?.coverUrl
+    }
     var ipodLibArtist by mutableStateOf<String?>(null)
     var ipodLibAlbum by mutableStateOf<String?>(null)
 
