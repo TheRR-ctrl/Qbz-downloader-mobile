@@ -204,14 +204,7 @@ private fun TrackRow(vm: MainViewModel, album: Album, track: Track, subtitle: St
         if (!showCover) Text(mmss(track.durationSec), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Box {
             IconButton({ menu = true }) { Icon(Icons.Default.MoreVert, null) }
-            androidx.compose.material3.DropdownMenu(menu, { menu = false }) {
-                androidx.compose.material3.DropdownMenuItem(
-                    { Text(s.download) },
-                    { menu = false; vm.requestDownload(DownloadRequest.Tracks(listOf(album to track))) },
-                    leadingIcon = { Icon(Icons.Default.Download, null) },
-                    enabled = track.streamable && item?.status?.isOpen != true,
-                )
-            }
+            TrackMenu(vm, album, track, menu) { menu = false }
         }
     }
 }

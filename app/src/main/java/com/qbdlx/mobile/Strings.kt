@@ -58,6 +58,32 @@ interface Strings {
     val download: String
     val downloadAlbum: String
     val downloaded: String
+    fun addedToPlaylist(name: String): String
+    val playNext: String
+    val addToQueue: String
+    val goToAlbum: String
+    val goToArtist: String
+    val sendToIpod: String
+    val shareTrack: String
+    val copyLink: String
+    val linkCopied: String
+    val trackDetails: String
+    val addToPlaylist: String
+    val addedNext: String
+    val addedToQueue: String
+    val downloadAgain: String
+    val removeDownload: String
+    val removeDownloadAsk: String
+    val sentToIpod: String
+    val noPlaylists: String
+    val close: String
+    val detailQuality: String
+    val detailDuration: String
+    val detailAlbum: String
+    val detailArtist: String
+    val detailYear: String
+    val detailFile: String
+    val notDownloaded: String
     val play: String
     val playPause: String
 
@@ -451,6 +477,32 @@ object English : Strings {
     override val download = "Download"
     override val downloadAlbum = "Download album"
     override val downloaded = "Downloaded"
+    override fun addedToPlaylist(name: String) = "Added to $name"
+    override val playNext = "Play next"
+    override val addToQueue = "Add to queue"
+    override val goToAlbum = "Go to album"
+    override val goToArtist = "Go to artist"
+    override val sendToIpod = "Send to iPod"
+    override val shareTrack = "Share"
+    override val copyLink = "Copy link"
+    override val linkCopied = "Link copied"
+    override val trackDetails = "Track details"
+    override val addToPlaylist = "Add to playlist"
+    override val addedNext = "Plays next"
+    override val addedToQueue = "Added to the queue"
+    override val downloadAgain = "Download again"
+    override val removeDownload = "Remove download"
+    override val removeDownloadAsk = "Delete the downloaded file from the device?"
+    override val sentToIpod = "Marked to send to the iPod"
+    override val noPlaylists = "You have no playlists yet"
+    override val close = "Close"
+    override val detailQuality = "Quality"
+    override val detailDuration = "Duration"
+    override val detailAlbum = "Album"
+    override val detailArtist = "Artist"
+    override val detailYear = "Year"
+    override val detailFile = "File"
+    override val notDownloaded = "Not downloaded"
     override val play = "Play"
     override val playPause = "Play/pause"
 
@@ -860,6 +912,32 @@ object Spanish : Strings {
     override val download = "Descargar"
     override val downloadAlbum = "Descargar álbum"
     override val downloaded = "Descargado"
+    override fun addedToPlaylist(name: String) = "Agregada a $name"
+    override val playNext = "Reproducir a continuación"
+    override val addToQueue = "Añadir a la cola"
+    override val goToAlbum = "Ir al álbum"
+    override val goToArtist = "Ir al artista"
+    override val sendToIpod = "Enviar al iPod"
+    override val shareTrack = "Compartir"
+    override val copyLink = "Copiar enlace"
+    override val linkCopied = "Enlace copiado"
+    override val trackDetails = "Detalles de la pista"
+    override val addToPlaylist = "Agregar a playlist"
+    override val addedNext = "Suena a continuación"
+    override val addedToQueue = "Añadida a la cola"
+    override val downloadAgain = "Descargar de nuevo"
+    override val removeDownload = "Quitar descarga"
+    override val removeDownloadAsk = "¿Borrar del dispositivo el archivo descargado?"
+    override val sentToIpod = "Marcada para enviar al iPod"
+    override val noPlaylists = "Aún no tienes playlists"
+    override val close = "Cerrar"
+    override val detailQuality = "Calidad"
+    override val detailDuration = "Duración"
+    override val detailAlbum = "Álbum"
+    override val detailArtist = "Artista"
+    override val detailYear = "Año"
+    override val detailFile = "Archivo"
+    override val notDownloaded = "Sin descargar"
     override val play = "Reproducir"
     override val playPause = "Reproducir/pausar"
 

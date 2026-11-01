@@ -428,4 +428,18 @@ class CreditsTest {
         assertEquals("1h 01m", albumDuration(3660)); assertEquals("1h 00m", albumDuration(3600))
         assertEquals("45m", albumDuration(2700)); assertEquals("1m", albumDuration(20)); assertEquals("", albumDuration(0))
     }
+
+    @Test fun insertNextGoesRightAfterTheCurrentTrack() {
+        val q = PlayQueue<String>(); q.set(listOf("a", "b", "c"), 0)
+        q.insertNext("x")
+        assertEquals(listOf("x", "b", "c"), q.state().upcoming)
+        q.append("z")
+        assertEquals(listOf("x", "b", "c", "z"), q.state().upcoming)
+        assertEquals("a", q.current)
+    }
+
+    @Test fun insertNextOnAnEmptyQueueStartsIt() {
+        val q = PlayQueue<String>(); q.insertNext("x")
+        assertEquals("x", q.current)
+    }
 }

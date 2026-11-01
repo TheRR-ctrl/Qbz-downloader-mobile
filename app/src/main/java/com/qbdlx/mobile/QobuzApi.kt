@@ -71,6 +71,10 @@ class QobuzApi(val http: OkHttpClient = OkHttpClient()) {
         trackIds.distinct().chunked(50).forEach { post("favorite/create", mapOf("track_ids" to it.joinToString(","), "type" to "track")) }
     }
 
+    fun addTrackToPlaylist(playlistId: String, trackId: Long) {
+        post("playlist/addTracks", mapOf("playlist_id" to playlistId, "track_ids" to "$trackId", "no_duplicate" to "true"))
+    }
+
     /** Creates a private playlist in the user's Qobuz library holding [trackIds]; returns the playlist id. */
     fun createPlaylist(name: String, trackIds: List<Long>): Long {
         val id = post("playlist/create", mapOf("name" to name, "is_public" to "false", "is_collaborative" to "false")).getLong("id")
