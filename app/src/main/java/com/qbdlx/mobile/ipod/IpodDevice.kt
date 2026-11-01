@@ -251,7 +251,7 @@ class IpodDevice(private val context: Context, private val treeUri: Uri) {
         }
     }
 
-    /** Gives every album that has covered songs the pointer the iPod's Albums view needs (for songs sent by earlier versions). Returns (albums fixed, error). */
+    /** Gives every album that has covered songs the pointer the iPod's Albums view needs and links every album to its artist (for songs sent by earlier versions). Returns (albums fixed, error). */
     fun fixAlbumCovers(guid: ByteArray): Pair<Int, String?> {
         val itlp = itlpDir() ?: return 0 to "iPod library not found"
         backup(itlp)
@@ -259,7 +259,7 @@ class IpodDevice(private val context: Context, private val treeUri: Uri) {
             var n = 0
             val ok = withLibrary(readOnly = false, itlp = itlp) { lib, work ->
                 n = lib.fixAlbumArtwork()
-                if (n == 0) return@withLibrary false
+                lib.repairArtistLinks() // also point every album at its own artist, so the iPod's Artists view lists them right
                 work.finish(guid); true
             }
             if (ok) writeBack(itlp)
