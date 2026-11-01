@@ -60,6 +60,19 @@ object Prefetch {
         return out.distinctBy { storeKey(it.title, it.artist) }
     }
 
+    /** Which run owns the pending-list file: an older run that ends must not delete the file of the one that replaced it. */
+    @Volatile private var owner: Any? = null
+    private fun pendingFile(c: Context) = java.io.File(c.applicationContext.filesDir, "prefetch_pending.json")
+
+    /** Picks the download up again after Android closed the app (or the service restarted): what was already saved is skipped without any request. */
+    fun resume(context: Context): Boolean {
+        if (_state.value.running) return true
+        val list = runCatching { parse(pendingFile(context).readText()) }.getOrNull()
+        if (list.isNullOrEmpty()) return false
+        start(context, list)
+        return true
+    }
+
     fun cancel() { job?.cancel(); _state.value = PrefetchState(running = false, total = _state.value.total, done = _state.value.done, found = _state.value.found, missing = _state.value.missing) }
 
     /** Starts (or replaces) the download of [tracks] and the foreground service that keeps it alive. */
@@ -68,6 +81,9 @@ object Prefetch {
         LyricsStore.init(app)
         job?.cancel()
         val list = tracks.distinctBy { storeKey(it.title, it.artist) }
+        val mine = Any(); owner = mine
+        // The list goes to a file so a download that Android cuts short (app closed, process killed) can continue by itself.
+        runCatching { pendingFile(app).writeText(encode(list)) }
         _state.value = PrefetchState(running = true, total = list.size)
         PrefetchService.start(app)
         job = scope.launch {
@@ -122,7 +138,7 @@ object Prefetch {
                 withContext(NonCancellable) {
                     LyricsStore.flush(); LyricsStore.flushMissing()
                     _state.value = PrefetchState(false, list.size, done.get(), found.get(), missing.get(), error)
-                    PrefetchService.stop(app)
+                    if (owner === mine) { runCatching { pendingFile(app).delete() }; PrefetchService.stop(app) }
                 }
             }
         }
