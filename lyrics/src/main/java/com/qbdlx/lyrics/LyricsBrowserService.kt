@@ -18,6 +18,7 @@ class LyricsBrowserService : MediaBrowserService() {
     private lateinit var session: MediaSession
     private var shown: List<String> = emptyList()
     private var shownMeta = ""
+    private var coverUri: android.net.Uri? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -39,6 +40,7 @@ class LyricsBrowserService : MediaBrowserService() {
                 val meta = (state.track?.key ?: "") + (Tracker.cover?.hashCode() ?: 0)
                 if (meta != shownMeta) {
                     shownMeta = meta
+                    coverUri = CoverProvider.publish(this@LyricsBrowserService, Tracker.cover ?: accentBitmap(), meta.hashCode().toString())
                     session.setMetadata(
                         MediaMetadata.Builder().putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, Tracker.cover ?: accentBitmap())
                             .putString(MediaMetadata.METADATA_KEY_TITLE, state.track?.title ?: "")
@@ -64,7 +66,7 @@ class LyricsBrowserService : MediaBrowserService() {
         result.sendResult(rows.map { r ->
             MediaItem(
                 MediaDescription.Builder().setMediaId(r.id).setTitle(r.title)
-                    .apply { if (r.subtitle.isNotBlank()) setSubtitle(r.subtitle); if (r.cover) setIconBitmap(Tracker.cover ?: accentBitmap()) }.build(),
+                    .apply { if (r.subtitle.isNotBlank()) setSubtitle(r.subtitle); if (r.cover) { val u = coverUri; if (u != null) setIconUri(u) else setIconBitmap(Tracker.cover ?: accentBitmap()) } }.build(),
                 MediaItem.FLAG_PLAYABLE,
             )
         }.toMutableList())
