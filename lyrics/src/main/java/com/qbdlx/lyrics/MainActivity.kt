@@ -167,10 +167,11 @@ class MainActivity : ComponentActivity() {
                 if (state.status == Status.NOT_FOUND) Text("No hay letra para esta canción.")
                 if (state.status == Status.ERROR) Text("No se pudo cargar la letra (${Tracker.lastError}). Se reintenta sola.")
                 if (state.status == Status.PLAIN) Text("Solo hay letra sin sincronizar.", fontSize = 12.sp)
-                if (tools) Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Ajuste de sincronía: ${offset} ms", Modifier.weight(1f), fontSize = 12.sp)
-                    PillTonal({ setOffset(offset - 250) }) { Text("−") }
-                    PillTonal({ setOffset(offset + 250) }) { Text("+") }
+                // Same control as in QBDLX Mobile's lyrics page: "Sincronía: N ms" with − / + in steps of 250 ms, limited to ±10 s.
+                if (!tools && state.status == Status.SYNCED) Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    Text("Sincronía: ${offset} ms", Modifier.weight(1f), fontSize = 12.sp)
+                    TextButton({ setOffset((offset - 250).coerceIn(-10_000, 10_000)) }) { Text("−", fontSize = 20.sp) }
+                    TextButton({ setOffset((offset + 250).coerceIn(-10_000, 10_000)) }) { Text("+", fontSize = 20.sp) }
                 }
                 var floating by remember { mutableStateOf(FloatingService.running) }
                 if (tools) PillTonal({
