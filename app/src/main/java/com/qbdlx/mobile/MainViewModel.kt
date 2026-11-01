@@ -990,7 +990,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** Sends a Qobuz playlist to the iPod: its downloaded MP3s that are not there yet are sent, then the playlist is created with every one of its songs found on the iPod. */
     fun ipodSendPlaylist(p: Playlist) {
         val uri = ipodUri ?: return
-        if (ipodProgress != null || ipodLyricsStatus != null) { notice = strings.ipodBusy; return }
+        if (ipodProgress != null || ipodLyricsStatus != null || ipodTask != null) { notice = strings.ipodBusy; return }
         if (ipodGuid() == null) { ipodReadUsbGuid(); return }
         ipodPlaylistPicker = false
         viewModelScope.launch {
@@ -998,6 +998,32 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val detail = withContext(Dispatchers.IO) { runCatching { api.getPlaylist(p.id) }.getOrNull() }
             if (detail == null) { ipodMessage = strings.ipodPlaylistLoadFailed; return@launch }
             val keys = detail.tracks.map { (al, t) -> com.qbdlx.mobile.ipod.trackKey(t.displayTitle, t.artist, al.title) }
+            // Songs that are neither on the iPod nor downloaded as MP3 yet are downloaded first (with progress and a Stop button), then sent.
+            val have = ipodCandidates.map { ipodKey(it) }.toSet()
+            val missing = detail.tracks.filter { (al, t) ->
+                val k = com.qbdlx.mobile.ipod.trackKey(t.displayTitle, t.artist, al.title); k !in ipodOnDevice && k !in have && t.streamable
+            }.distinctBy { (al, t) -> com.qbdlx.mobile.ipod.trackKey(t.displayTitle, t.artist, al.title) }
+            if (missing.isNotEmpty()) {
+                ipodStopping = false
+                askNotifications = true
+                downloads.enqueue(missing, Quality.MP3)
+                val ids = missing.map { "${it.second.id}:${Quality.MP3.formatId}" }.toSet()
+                while (true) {
+                    val mine = downloads.tasks.filter { it.key in ids }
+                    val done = mine.count { !it.status.isOpen }
+                    ipodLyricsStatus = strings.ipodPlaylistDownloading(done, missing.size)
+                    ipodLyricsProgress = done to missing.size
+                    if (ipodStopping) break
+                    if (mine.none { it.status.isOpen }) break
+                    kotlinx.coroutines.delay(700)
+                }
+                val stopped = ipodStopping
+                ipodLyricsStatus = null; ipodLyricsProgress = null; ipodStopping = false
+                if (stopped) {
+                    downloads.tasks.filter { it.key in ids && it.status.isOpen }.forEach { downloads.cancel(it) }
+                    ipodMessage = strings.ipodPlaylistDownloadStopped; return@launch
+                }
+            }
             val candidates = ipodCandidates.associateBy { ipodKey(it) }
             val toSend = keys.distinct().filter { it !in ipodOnDevice }.mapNotNull { candidates[it] }
             playlistAfterSend = p.name to keys
