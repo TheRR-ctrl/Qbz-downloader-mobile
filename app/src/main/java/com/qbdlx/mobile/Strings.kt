@@ -382,6 +382,7 @@ interface Strings {
     val ipodDeleteSelectedTitle: String
     fun ipodDeleteSelectedWarning(n: Int): String
     fun ipodSummary(on: Int, pending: Int, already: Int): String
+    fun ipodSpace(free: String, total: String): String
     val ipodArtistAll: String
     val ipodDateLabels: List<String>
     val ipodTickAll: String
@@ -801,6 +802,7 @@ object English : Strings {
     override val ipodSelectAllVisible = "Select all shown"
     override val ipodDeleteSelectedTitle = "Delete selected songs?"
     override fun ipodDeleteSelectedWarning(n: Int) = "$n songs and their audio files will be removed from the iPod. A library backup is made first. This cannot restore the audio files."
+    override fun ipodSpace(free: String, total: String) = "$free free of $total"
     override fun ipodSummary(on: Int, pending: Int, already: Int) = "$on on the iPod · $pending to send" + if (already > 0) " · $already already there" else ""
     override val ipodArtistAll = "All artists"
     override val ipodDateLabels = listOf("Any time", "Today", "7 days", "30 days")
@@ -1220,6 +1222,7 @@ object Spanish : Strings {
     override val ipodSelectAllVisible = "Seleccionar todos los visibles"
     override val ipodDeleteSelectedTitle = "¿Borrar las canciones seleccionadas?"
     override fun ipodDeleteSelectedWarning(n: Int) = "Se eliminarán del iPod $n canciones y sus archivos de audio. Primero se guardará una copia de la biblioteca. Los archivos de audio no se pueden recuperar desde esa copia."
+    override fun ipodSpace(free: String, total: String) = "$free libres de $total"
     override fun ipodSummary(on: Int, pending: Int, already: Int) = "$on en el iPod · $pending por enviar" + if (already > 0) " · $already ya estaban" else ""
     override val ipodArtistAll = "Todos los artistas"
     override val ipodDateLabels = listOf("Siempre", "Hoy", "7 días", "30 días")

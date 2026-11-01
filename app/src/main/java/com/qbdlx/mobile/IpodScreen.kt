@@ -158,7 +158,17 @@ fun IpodScreen(vm: MainViewModel) {
                 insp == null -> Unit
                 !insp.ready -> Text(s.ipodProblem(insp.problem!!, insp.detail), color = MaterialTheme.colorScheme.error)
                 else -> Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))) {
-                    Text(s.ipodSummary(vm.ipodSongCount.coerceAtLeast(0), pending.size, candidates.size - pending.size), Modifier.padding(14.dp), fontWeight = FontWeight.Medium)
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(s.ipodSummary(vm.ipodSongCount.coerceAtLeast(0), pending.size, candidates.size - pending.size), fontWeight = FontWeight.Medium)
+                        vm.ipodSpace?.let { (free, total) ->
+                            val ctx = androidx.compose.ui.platform.LocalContext.current
+                            val fmt = { b: Long -> android.text.format.Formatter.formatFileSize(ctx, b) }
+                            if (total > 0) {
+                                androidx.compose.material3.LinearProgressIndicator(progress = { (1f - free.toFloat() / total).coerceIn(0f, 1f) }, Modifier.fillMaxWidth())
+                                Text(s.ipodSpace(fmt(free), fmt(total)), fontSize = 13.sp)
+                            }
+                        }
+                    }
                 }
             }
         }
