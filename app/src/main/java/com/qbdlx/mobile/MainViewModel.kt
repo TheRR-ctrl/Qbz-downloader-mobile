@@ -690,9 +690,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun aiSave(chosen: Set<Int>) {
         val uri = ipodUri ?: return
         val list = aiPreview ?: return
-        if (ipodProgress != null || ipodLyricsStatus != null || ipodTask != null) { notice = strings.ipodBusy; return }
+        if (ipodProgress != null || ipodLyricsStatus != null || ipodTask != null) { aiPreviewNote = strings.ipodBusy; return }
         val guid = ipodGuid()
-        if (guid == null) { ipodReadUsbGuid(); return }
+        if (guid == null) { aiPreviewNote = strings.aiSaveNeedId; ipodReadUsbGuid(); return }
         val picked = list.filterIndexed { i, _ -> i in chosen }
         if (picked.isEmpty()) return
         aiPreview = null; aiMixDialog = false; ipodMessage = null; ipodStopping = false

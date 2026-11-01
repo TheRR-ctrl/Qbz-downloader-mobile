@@ -361,6 +361,7 @@ interface Strings {
     fun aiPreviewSongs(n: Int): String
     val aiMixCreate: String
     val aiMixTooFew: String
+    val aiSaveNeedId: String
     val aiMixAsking: String
     val aiMixNoKey: String
     val aiMixBadAnswer: String
@@ -837,6 +838,7 @@ object English : Strings {
     override val aiMixHint = "What kind of mix? (optional) e.g. \"for running\", \"calm night\", \"similar to <song>\""
     override val aiMixCreate = "Create mixes"
     override val aiMixTooFew = "You need at least 5 songs on the iPod."
+    override val aiSaveNeedId = "The iPod ID is needed to write playlists. Allow USB access if Android asks, then press Create again."
     override val aiMixAsking = "Asking the AI…"
     override val aiMixNoKey = "No AI key yet, so these mixes were made on the phone."
     override val aiMixBadAnswer = "The AI did not give a usable answer, so these mixes were made on the phone."
@@ -1328,6 +1330,7 @@ object Spanish : Strings {
     override val aiMixHint = "¿Qué tipo de mix? (opcional) ej. \"para correr\", \"noche tranquila\", \"parecidas a <canción>\""
     override val aiMixCreate = "Crear mixes"
     override val aiMixTooFew = "Necesitas al menos 5 canciones en el iPod."
+    override val aiSaveNeedId = "Hace falta el ID del iPod para escribir las playlists. Acepta el permiso USB si Android lo pide y vuelve a pulsar Crear."
     override val aiMixAsking = "Preguntándole a la IA…"
     override val aiMixNoKey = "Aún no hay clave de IA, así que los mixes se hicieron en el teléfono."
     override val aiMixBadAnswer = "La IA no dio una respuesta útil, así que los mixes se hicieron en el teléfono."
