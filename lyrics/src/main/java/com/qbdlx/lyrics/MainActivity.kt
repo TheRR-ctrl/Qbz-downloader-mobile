@@ -133,7 +133,7 @@ class MainActivity : ComponentActivity() {
             val pre by Prefetch.state.collectAsState()
             if (pre.running || pre.total > 0) {
                 Text(
-                    (if (pre.running) "Descargando letras: " else "Descarga terminada: ") + "${pre.done} de ${pre.total} · ${pre.found} guardadas · ${pre.missing} sin letra" + (pre.error?.let { " · $it" } ?: ""),
+                    (if (pre.running) "Descargando letras: " else "Descarga terminada: ") + "${pre.done} de ${pre.total} · ${pre.found} nuevas · ${pre.skipped} que ya estaban · ${pre.missing} sin letra" + (pre.error?.let { " · $it" } ?: ""),
                     fontSize = 12.sp,
                 )
                 if (pre.running) {

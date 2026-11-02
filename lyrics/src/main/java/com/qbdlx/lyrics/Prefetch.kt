@@ -10,7 +10,7 @@ import org.json.JSONObject
 
 class PrefetchTrack(val title: String, val artist: String, val album: String, val durationSec: Int)
 
-class PrefetchState(val running: Boolean = false, val total: Int = 0, val done: Int = 0, val found: Int = 0, val missing: Int = 0, val error: String? = null)
+class PrefetchState(val running: Boolean = false, val total: Int = 0, val done: Int = 0, val found: Int = 0, val missing: Int = 0, val error: String? = null, val skipped: Int = 0)
 
 /**
  * Downloads the lyrics of a list of songs ahead of time, at a steady pace, so they are on the phone when the song plays.
@@ -76,7 +76,7 @@ object Prefetch {
         return true
     }
 
-    fun cancel() { job?.cancel(); _state.value = PrefetchState(running = false, total = _state.value.total, done = _state.value.done, found = _state.value.found, missing = _state.value.missing) }
+    fun cancel() { job?.cancel(); _state.value = PrefetchState(running = false, total = _state.value.total, done = _state.value.done, found = _state.value.found, missing = _state.value.missing, skipped = _state.value.skipped) }
 
     /** Starts (or replaces) the download of [tracks] and the foreground service that keeps it alive. */
     fun start(context: Context, tracks: List<PrefetchTrack>) {
@@ -90,7 +90,7 @@ object Prefetch {
         _state.value = PrefetchState(running = true, total = list.size)
         PrefetchService.start(app)
         job = scope.launch {
-            val done = java.util.concurrent.atomic.AtomicInteger(); val found = java.util.concurrent.atomic.AtomicInteger(); val missing = java.util.concurrent.atomic.AtomicInteger()
+            val done = java.util.concurrent.atomic.AtomicInteger(); val found = java.util.concurrent.atomic.AtomicInteger(); val missing = java.util.concurrent.atomic.AtomicInteger(); val skipped = java.util.concurrent.atomic.AtomicInteger()
             val failures = java.util.concurrent.atomic.AtomicInteger() // in a row, across all workers
             val pauseUntil = java.util.concurrent.atomic.AtomicLong(0)
             var error: String? = null
@@ -98,7 +98,7 @@ object Prefetch {
             val limit = java.util.concurrent.atomic.AtomicInteger(START)
             val active = java.util.concurrent.atomic.AtomicInteger(0)
             val streak = java.util.concurrent.atomic.AtomicInteger(0) // answers in a row without trouble
-            fun publish() { _state.value = PrefetchState(true, list.size, done.get(), found.get(), missing.get()); PrefetchService.update(app, done.get(), list.size) }
+            fun publish() { _state.value = PrefetchState(true, list.size, done.get(), found.get(), missing.get(), skipped = skipped.get()); PrefetchService.update(app, done.get(), list.size) }
             try {
                 // In blocks of BLOCK songs: each block runs in parallel and is fully saved to disk before the next one starts.
                 for (block in list.chunked(BLOCK)) {
@@ -106,6 +106,13 @@ object Prefetch {
                   coroutineScope {
                     for (t in block) {
                         if (failures.get() >= 30) { error = "sin conexión con el servicio de letras"; break }
+                        // Already saved (or searched without result lately): counted at once, no waiting and no request.
+                        val key0 = storeKey(t.title, t.artist)
+                        if (LyricsStore.has(key0) || LyricsStore.missedRecently(key0)) {
+                            skipped.incrementAndGet(); val n0 = done.incrementAndGet()
+                            if (n0 % 50 == 0) publish()
+                            continue
+                        }
                         while (active.get() >= limit.get()) delay(50)
                         // Steady pace (~5 requests/s) and honor Retry-After from the service.
                         val gate = maxOf(LrcLib.retryAfterUntil - System.currentTimeMillis(), GAP_MS - (System.currentTimeMillis() - lastStart))
@@ -145,7 +152,7 @@ object Prefetch {
             } finally {
                 withContext(NonCancellable) {
                     LyricsStore.flush(); LyricsStore.flushMissing()
-                    _state.value = PrefetchState(false, list.size, done.get(), found.get(), missing.get(), error)
+                    _state.value = PrefetchState(false, list.size, done.get(), found.get(), missing.get(), error, skipped.get())
                     if (owner === mine) { runCatching { pendingFile(app).delete() }; PrefetchService.stop(app) }
                 }
             }
