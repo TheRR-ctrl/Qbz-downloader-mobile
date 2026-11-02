@@ -17,6 +17,8 @@ class LyricsBrowserService : MediaBrowserService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private lateinit var session: MediaSession
     private var shown: List<String> = emptyList()
+    private var shownMeta = ""
+    private var coverUri: android.net.Uri? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -35,13 +37,18 @@ class LyricsBrowserService : MediaBrowserService() {
                 val state = Tracker.state.value
                 val rows = CarView.rows(state, Tracker.positionMs() + LEAD_MS)
                 val signature = rows.map { it.id + it.title } + (Tracker.cover?.hashCode() ?: 0).toString()
-                if (signature != shown) {
-                    shown = signature
+                val meta = (state.track?.key ?: "") + (Tracker.cover?.hashCode() ?: 0)
+                if (meta != shownMeta) {
+                    shownMeta = meta
+                    coverUri = CoverProvider.publish(this@LyricsBrowserService, Tracker.cover ?: accentBitmap(), meta.hashCode().toString())
                     session.setMetadata(
                         MediaMetadata.Builder().putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, Tracker.cover ?: accentBitmap())
-                            .putString(MediaMetadata.METADATA_KEY_TITLE, rows.firstOrNull { it.current }?.title ?: state.track?.title ?: "")
+                            .putString(MediaMetadata.METADATA_KEY_TITLE, state.track?.title ?: "")
                             .putString(MediaMetadata.METADATA_KEY_ARTIST, state.track?.artist ?: "").build(),
                     )
+                }
+                if (signature != shown) {
+                    shown = signature
                     notifyChildrenChanged(ROOT_ID)
                 }
                 delay(250)
@@ -59,7 +66,7 @@ class LyricsBrowserService : MediaBrowserService() {
         result.sendResult(rows.map { r ->
             MediaItem(
                 MediaDescription.Builder().setMediaId(r.id).setTitle(r.title)
-                    .apply { if (r.subtitle.isNotBlank()) setSubtitle(r.subtitle); if (r.cover) setIconBitmap(Tracker.cover ?: accentBitmap()) }.build(),
+                    .apply { if (r.subtitle.isNotBlank()) setSubtitle(r.subtitle); if (r.cover) { val u = coverUri; if (u != null) setIconUri(u) else setIconBitmap(Tracker.cover ?: accentBitmap()) } }.build(),
                 MediaItem.FLAG_PLAYABLE,
             )
         }.toMutableList())
@@ -81,6 +88,6 @@ class LyricsBrowserService : MediaBrowserService() {
     private companion object {
         const val ROOT_ID = "root"
         /** The car redraws a moment after the list changes, so the line is switched slightly early to look in time. */
-        const val LEAD_MS = 350L
+        const val LEAD_MS = 1000L
     }
 }

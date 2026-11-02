@@ -156,16 +156,16 @@ fun QChip(selected: Boolean, onClick: () -> Unit, label: @Composable () -> Unit)
     )
 }
 
-/** Bottom tabs: the selected icon is cyan on a dark-cyan pill and its label gold; the rest stay muted. */
+/** Bottom tabs: the selected one is clearly marked (accent icon and label on a soft accent pill); the rest stay muted. */
 @Composable
 fun qbdlxNavColors(): NavigationBarItemColors {
     val c = MaterialTheme.colorScheme
     return NavigationBarItemDefaults.colors(
-        selectedIconColor = c.onSurface,
-        selectedTextColor = c.onSurface,
-        indicatorColor = androidx.compose.ui.graphics.Color.Transparent, // no pill: the selected tab is simply brighter
-        unselectedIconColor = c.onSurfaceVariant,
-        unselectedTextColor = c.onSurfaceVariant,
+        selectedIconColor = c.primary,
+        selectedTextColor = c.primary,
+        indicatorColor = c.primary.copy(alpha = 0.18f),
+        unselectedIconColor = c.onSurfaceVariant.copy(alpha = 0.75f),
+        unselectedTextColor = c.onSurfaceVariant.copy(alpha = 0.75f),
     )
 }
 

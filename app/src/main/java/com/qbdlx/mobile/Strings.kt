@@ -341,8 +341,27 @@ interface Strings {
     val aiMixButton: String
     val aiMixTitle: String
     val aiMixHint: String
+    val aiIdeasButton: String
+    val aiIdeasAsking: String
+    val aiIdeasStop: String
+    val aiIdeasStopped: String
+    val aiIdeasLocal: String
+    val aiMixIntro: String
+    val aiSeedPick: String
+    fun aiSeedChosen(t: String): String
+    val aiSeedTitle: String
+    val aiSeedSearch: String
+    val aiSeedClear: String
+    fun aiSizeLabel(n: Int): String
+    val aiGenerate: String
+    val aiPreviewTitle: String
+    val aiPreviewHint: String
+    fun aiPreviewSave(n: Int): String
+    val aiPreviewRegen: String
+    fun aiPreviewSongs(n: Int): String
     val aiMixCreate: String
     val aiMixTooFew: String
+    val aiSaveNeedId: String
     val aiMixAsking: String
     val aiMixNoKey: String
     val aiMixBadAnswer: String
@@ -430,6 +449,7 @@ interface Strings {
     val ipodDeleteListCheck: String
     fun ipodSummary(on: Int, pending: Int, already: Int): String
     fun ipodSpace(free: String, total: String): String
+    val ipodSpaceUnknown: String
     val ipodArtistAll: String
     val ipodDateLabels: List<String>
     val ipodTickAll: String
@@ -795,11 +815,30 @@ object English : Strings {
     override val ipodPlaylistButton = "Send a Qobuz playlist to the iPod…"
     override val ipodPlaylistTitle = "Choose one or more playlists"
     override val ipodPlaylistLegend = "🟢 already on the iPod · 🔴 not on the iPod (or empty)"
-    override val aiMixButton = "AI mix for the iPod…"
-    override val aiMixTitle = "Mix with AI"
+    override val aiMixButton = "AI mixes for the iPod…"
+    override val aiMixTitle = "AI mixes"
+    override val aiMixIntro = "AI mixes for your iPod: pick a song to start from, or an idea, and the AI builds mixes from the music you already have on it."
+    override val aiSeedPick = "🎵 Start from a song (optional)"
+    override fun aiSeedChosen(t: String) = "🎵 Starting from: $t"
+    override val aiSeedTitle = "Song to start from"
+    override val aiSeedSearch = "Search your iPod…"
+    override val aiSeedClear = "Clear"
+    override fun aiSizeLabel(n: Int) = "$n songs"
+    override val aiGenerate = "Make mixes"
+    override val aiPreviewTitle = "Your AI mixes"
+    override val aiPreviewHint = "Check the ones you want. Nothing is saved to the iPod until you press Save."
+    override fun aiPreviewSave(n: Int) = "Save to iPod ($n)"
+    override val aiPreviewRegen = "↻ Make new ones"
+    override fun aiPreviewSongs(n: Int) = "$n songs"
+    override val aiIdeasButton = "💡 Suggest mixes"
+    override val aiIdeasAsking = "Thinking of ideas…"
+    override val aiIdeasStop = "Stop"
+    override val aiIdeasStopped = "Stopped."
+    override val aiIdeasLocal = "Ideas taken from your library."
     override val aiMixHint = "What kind of mix? (optional) e.g. \"for running\", \"calm night\", \"similar to <song>\""
     override val aiMixCreate = "Create mixes"
     override val aiMixTooFew = "You need at least 5 songs on the iPod."
+    override val aiSaveNeedId = "The iPod ID is needed to write playlists. Allow USB access if Android asks, then press Create again."
     override val aiMixAsking = "Asking the AI…"
     override val aiMixNoKey = "No AI key yet, so these mixes were made on the phone."
     override val aiMixBadAnswer = "The AI did not give a usable answer, so these mixes were made on the phone."
@@ -807,7 +846,7 @@ object English : Strings {
     override val aiMixLocal = "Made by artist and at random."
     override val aiKeyTitle = "Gemini key (free)"
     override val aiKeyHow = "How do I get it?"
-    override val aiKeySteps = "1. Open Google AI Studio and sign in with your Google account.\n2. Tap \"Create API key\".\n3. Copy the key (starts with AIza…) and paste it here."
+    override val aiKeySteps = "1. Open Google AI Studio and sign in with your Google account.\n2. Tap \"Create API key\".\n3. Copy the key (starts with AIza… or AQ.) and paste it here."
     override val aiKeyOpen = "Open Google AI Studio"
     override val aiKeyPaste = "Paste from clipboard"
     override val aiKeySave = "Test and save"
@@ -902,6 +941,7 @@ object English : Strings {
     override val ipodDeleteListCheck = "Delete the list and its songs"
     override fun ipodDeleteSelectedWarning(n: Int) = "$n songs and their audio files will be removed from the iPod. A library backup is made first. This cannot restore the audio files."
     override fun ipodSpace(free: String, total: String) = "$free free of $total"
+    override val ipodSpaceUnknown = "Storage: Android doesn't report free/total space for this iPod."
     override fun ipodSummary(on: Int, pending: Int, already: Int) = "$on on the iPod · $pending to send" + if (already > 0) " · $already already there" else ""
     override val ipodArtistAll = "All artists"
     override val ipodDateLabels = listOf("Any time", "Today", "7 days", "30 days")
@@ -1267,11 +1307,30 @@ object Spanish : Strings {
     override val ipodPlaylistButton = "Enviar una playlist de Qobuz al iPod…"
     override val ipodPlaylistTitle = "Elige una o varias playlists"
     override val ipodPlaylistLegend = "🟢 ya está en el iPod · 🔴 no está en el iPod (o está vacía)"
-    override val aiMixButton = "Mix con IA para el iPod…"
-    override val aiMixTitle = "Mix con IA"
+    override val aiMixButton = "Mixes con IA para el iPod…"
+    override val aiMixTitle = "Mixes con IA"
+    override val aiMixIntro = "Mixes para tu iPod: elige una canción de partida o una idea, y la IA arma mixes con la música que ya tienes en él."
+    override val aiSeedPick = "🎵 Partir de una canción (opcional)"
+    override fun aiSeedChosen(t: String) = "🎵 Partiendo de: $t"
+    override val aiSeedTitle = "Canción de partida"
+    override val aiSeedSearch = "Buscar en tu iPod…"
+    override val aiSeedClear = "Quitar"
+    override fun aiSizeLabel(n: Int) = "$n canciones"
+    override val aiGenerate = "Armar mixes"
+    override val aiPreviewTitle = "Tus mixes con IA"
+    override val aiPreviewHint = "Marca los que quieras. No se guarda nada en el iPod hasta que pulses Guardar."
+    override fun aiPreviewSave(n: Int) = "Guardar en el iPod ($n)"
+    override val aiPreviewRegen = "↻ Armar otros"
+    override fun aiPreviewSongs(n: Int) = "$n canciones"
+    override val aiIdeasButton = "💡 Sugerirme mixes"
+    override val aiIdeasAsking = "Pensando ideas…"
+    override val aiIdeasStop = "Parar"
+    override val aiIdeasStopped = "Detenido."
+    override val aiIdeasLocal = "Ideas sacadas de tu biblioteca."
     override val aiMixHint = "¿Qué tipo de mix? (opcional) ej. \"para correr\", \"noche tranquila\", \"parecidas a <canción>\""
     override val aiMixCreate = "Crear mixes"
     override val aiMixTooFew = "Necesitas al menos 5 canciones en el iPod."
+    override val aiSaveNeedId = "Hace falta el ID del iPod para escribir las playlists. Acepta el permiso USB si Android lo pide y vuelve a pulsar Crear."
     override val aiMixAsking = "Preguntándole a la IA…"
     override val aiMixNoKey = "Aún no hay clave de IA, así que los mixes se hicieron en el teléfono."
     override val aiMixBadAnswer = "La IA no dio una respuesta útil, así que los mixes se hicieron en el teléfono."
@@ -1279,7 +1338,7 @@ object Spanish : Strings {
     override val aiMixLocal = "Hechos por artista y al azar."
     override val aiKeyTitle = "Clave de Gemini (gratis)"
     override val aiKeyHow = "¿Cómo la consigo?"
-    override val aiKeySteps = "1. Abre Google AI Studio e inicia sesión con tu cuenta de Google.\n2. Pulsa \"Create API key\" (Crear clave).\n3. Copia la clave (empieza con AIza…) y pégala aquí."
+    override val aiKeySteps = "1. Abre Google AI Studio e inicia sesión con tu cuenta de Google.\n2. Pulsa \"Create API key\" (Crear clave).\n3. Copia la clave (empieza con AIza… o AQ.) y pégala aquí."
     override val aiKeyOpen = "Abrir Google AI Studio"
     override val aiKeyPaste = "Pegar del portapapeles"
     override val aiKeySave = "Probar y guardar"
@@ -1374,6 +1433,7 @@ object Spanish : Strings {
     override val ipodDeleteListCheck = "Borrar la lista y sus canciones"
     override fun ipodDeleteSelectedWarning(n: Int) = "Se eliminarán del iPod $n canciones y sus archivos de audio. Primero se guardará una copia de la biblioteca. Los archivos de audio no se pueden recuperar desde esa copia."
     override fun ipodSpace(free: String, total: String) = "$free libres de $total"
+    override val ipodSpaceUnknown = "Almacenamiento: Android no informa el espacio libre/total de este iPod."
     override fun ipodSummary(on: Int, pending: Int, already: Int) = "$on en el iPod · $pending por enviar" + if (already > 0) " · $already ya estaban" else ""
     override val ipodArtistAll = "Todos los artistas"
     override val ipodDateLabels = listOf("Siempre", "Hoy", "7 días", "30 días")

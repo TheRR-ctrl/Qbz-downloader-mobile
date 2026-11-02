@@ -47,6 +47,8 @@
         <service android:name=".FloatingService" android:exported="false" />
         <service android:name=".PrefetchService" android:exported="false" android:foregroundServiceType="dataSync" />
 
+        <provider android:name=".CoverProvider" android:authorities="com.qbdlx.lyrics.cover" android:exported="true" />
+
         <!-- The list Android Auto shows: the song and its lyrics. -->
         <service
             android:name=".LyricsBrowserService"

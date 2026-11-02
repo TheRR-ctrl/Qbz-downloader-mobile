@@ -381,6 +381,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** True when the song is in the user's Qobuz favourite tracks (as far as the library already loaded says). */
+    fun isFavorite(trackId: Long): Boolean = favTracks?.any { it.second.id == trackId } == true
+
+    /** The heart of the player: adds or removes the song in Qobuz, showing the change at once and undoing it if Qobuz refuses. */
+    fun toggleFavorite(album: Album, track: Track) {
+        val before = favTracks.orEmpty()
+        val adding = before.none { it.second.id == track.id }
+        favTracks = if (adding) listOf(album to track) + before else before.filter { it.second.id != track.id }
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) { if (adding) api.addFavoriteTracks(listOf(track.id)) else api.removeFavoriteTracks(listOf(track.id)) }
+            } catch (e: Exception) {
+                favTracks = before
+                error = e.message
+            }
+        }
+    }
+
     private fun importFrom(read: () -> String?) {
         openImport()
         importJob?.cancel()
@@ -608,43 +626,107 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
     fun aiForgetKey() { aiKey = ""; prefs.edit().remove("ai_key").apply() }
 
-    /** Builds mixes from the songs on the iPod and writes them as playlists. [request] is free text ("para correr", "parecidas a …"). */
-    fun aiMakeMixes(request: String) {
-        val uri = ipodUri ?: return
-        if (ipodProgress != null || ipodLyricsStatus != null || ipodTask != null) { notice = strings.ipodBusy; return }
-        val guid = ipodGuid()
-        if (guid == null) { ipodReadUsbGuid(); return }
+    var aiIdeas by mutableStateOf<List<String>>(emptyList()); private set
+    var aiIdeasBusy by mutableStateOf(false); private set
+    var aiIdeasNote by mutableStateOf<String?>(null); private set
+    private var aiIdeasJob: kotlinx.coroutines.Job? = null
+    fun aiIdeasStop() { aiIdeasJob?.cancel() }
+    /** Asks the AI for a few mix ideas from a sample of the library. Only proposes: nothing is written until "Crear" is pressed. Falls back to ideas from the library itself. */
+    fun aiSuggest() {
+        if (aiIdeasBusy) return
         val tracks = ipodTracks.filter { it.title.isNotBlank() }
-        if (tracks.size < AiMix.MIN_MIX) { ipodMessage = strings.aiMixTooFew; return }
-        aiMixDialog = false; ipodMessage = null; ipodStopping = false
-        aiJob = viewModelScope.launch {
-            val sent = tracks.shuffled().take(AiMix.MAX_SONGS_SENT)
-            val songs = sent.mapIndexed { i, t -> MixSong(i + 1, t.title, t.artist, t.album) }
-            var usedAi = true; var note: String? = null
+        if (tracks.size < AiMix.MIN_MIX) { aiIdeasNote = strings.aiMixTooFew; return }
+        aiIdeasBusy = true; aiIdeasNote = null
+        aiIdeasJob = viewModelScope.launch {
+            val songs = tracks.shuffled().take(AiMix.MAX_SONGS_SENT / 2).mapIndexed { i, t -> MixSong(i + 1, t.title, t.artist, t.album) }
             try {
-                ipodLyricsStatus = strings.aiMixAsking; ipodLyricsProgress = 0 to 3
+                var ideas: List<String> = emptyList()
+                if (aiKey.isBlank()) aiIdeasNote = strings.aiMixNoKey
+                else {
+                    ideas = try { AiMix.validateIdeas(withContext(Dispatchers.IO) { AiMix.askIdeas(api.http, aiKey, AiMix.catalog(songs)) }) }
+                    catch (e: AiMix.AiError) { aiIdeasNote = aiProblem(e); emptyList() }
+                    if (ideas.isEmpty() && aiIdeasNote == null) aiIdeasNote = strings.aiMixBadAnswer
+                }
+                if (ideas.isEmpty()) ideas = AiMix.localIdeas(songs).also { aiIdeasNote = (aiIdeasNote?.plus(" ") ?: "") + strings.aiIdeasLocal }
+                aiIdeas = ideas
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                aiIdeasNote = strings.aiIdeasStopped
+            } finally { aiIdeasBusy = false; aiIdeasJob = null }
+        }
+    }
+    class AiPreviewMix(val name: String, val songs: List<MixSong>)
+    var aiPreview by mutableStateOf<List<AiPreviewMix>?>(null); private set
+    var aiPreviewNote by mutableStateOf<String?>(null); private set
+    var aiGenerating by mutableStateOf(false); private set
+    private var aiLast: Triple<List<String>, Int, com.qbdlx.mobile.ipod.IpodTrack?>? = null
+    fun aiPreviewClose() { aiPreview = null; aiPreviewNote = null; aiMixDialog = false }
+    fun aiGenerateStop() { aiJob?.cancel() }
+    fun aiRegenerate() { aiLast?.let { aiGenerate(it.first, it.second, it.third) } }
+    private fun aiProblem(e: AiMix.AiError) = strings.aiKeyProblem(e.kind.name) + if (e.kind == AiMix.AiError.Kind.Bad) " (${e.message})" else ""
+
+    /**
+     * AI mix step 1: the AI (or, failing that, the phone) proposes mixes from the iPod's songs, one per request, optionally
+     * starting from a seed song. Nothing is written to the iPod: the result is a preview the user can keep, drop or regenerate.
+     */
+    fun aiGenerate(requests: List<String>, size: Int, seed: com.qbdlx.mobile.ipod.IpodTrack?) {
+        if (aiGenerating) return
+        val tracks = ipodTracks.filter { it.title.isNotBlank() }
+        if (tracks.size < AiMix.MIN_MIX) { aiPreviewNote = strings.aiMixTooFew; return }
+        aiLast = Triple(requests, size, seed)
+        aiGenerating = true; aiPreviewNote = null
+        aiJob = viewModelScope.launch {
+            try {
+                val seedSong = seed?.takeIf { s -> tracks.any { it.pid == s.pid } }
+                val rest = tracks.filter { it.pid != seedSong?.pid }.shuffled().take(AiMix.MAX_SONGS_SENT - (if (seedSong != null) 1 else 0))
+                val ordered = listOfNotNull(seedSong) + rest
+                val songs = ordered.mapIndexed { i, t -> MixSong(i + 1, t.title, t.artist, t.album) }
+                val first = if (seedSong != null) songs.first() else null
+                val wanted = if (requests.isEmpty()) 3 else requests.size.coerceIn(1, AiMix.MAX_MIXES)
+                var usedAi = true; var note: String? = null
                 var mixes: List<Mix> = emptyList()
                 if (aiKey.isBlank()) { usedAi = false; note = strings.aiMixNoKey }
                 else {
+                    val seedLine = first?.let { "${it.n}|${it.title}|${it.artist}|${it.album}" }
+                    val reqs = if (requests.isEmpty() && first != null) listOf("Música parecida a la canción de partida") else requests
                     mixes = try {
-                        val json = withContext(Dispatchers.IO) { AiMix.ask(api.http, aiKey, request, AiMix.catalog(songs)) }
-                        AiMix.validate(json, songs.map { it.n }.toSet())
-                    } catch (e: AiMix.AiError) { note = strings.aiKeyProblem(e.kind.name); emptyList() }
+                        val json = withContext(Dispatchers.IO) { AiMix.ask(api.http, aiKey, reqs, AiMix.catalog(songs), size, seedLine) }
+                        AiMix.validate(json, songs.map { it.n }.toSet(), wanted, first?.n, size)
+                    } catch (e: AiMix.AiError) { note = aiProblem(e); emptyList() }
                     if (mixes.isEmpty()) { usedAi = false; if (note == null) note = strings.aiMixBadAnswer }
                 }
-                if (mixes.isEmpty()) mixes = AiMix.localMixes(songs, seed = System.nanoTime())
-                ipodLyricsProgress = 1 to 3
+                if (mixes.isEmpty()) mixes = AiMix.localMixes(songs, wanted, System.nanoTime(), size, first)
                 val byN = songs.associateBy { it.n }
+                aiPreview = mixes.map { m -> AiPreviewMix(m.name, m.ns.mapNotNull { byN[it] }) }
+                aiPreviewNote = listOfNotNull(note, if (usedAi) strings.aiMixByAi else strings.aiMixLocal).joinToString(" ")
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                aiPreviewNote = strings.aiIdeasStopped
+            } finally { aiGenerating = false; aiJob = null }
+        }
+    }
+
+    /** AI mix step 2: writes the chosen previews to the iPod as playlists (progress and Stop like every iPod task). */
+    fun aiSave(chosen: Set<Int>) {
+        val uri = ipodUri ?: return
+        val list = aiPreview ?: return
+        if (ipodProgress != null || ipodLyricsStatus != null || ipodTask != null) { aiPreviewNote = strings.ipodBusy; return }
+        val guid = ipodGuid()
+        if (guid == null) { aiPreviewNote = strings.aiSaveNeedId; ipodReadUsbGuid(); return }
+        val picked = list.filterIndexed { i, _ -> i in chosen }
+        if (picked.isEmpty()) return
+        aiPreview = null; aiMixDialog = false; ipodMessage = null; ipodStopping = false
+        aiJob = viewModelScope.launch {
+            try {
+                ipodLyricsStatus = strings.aiMixAsking; ipodLyricsProgress = 0 to picked.size
                 val msgs = ArrayList<String>()
-                for ((i, m) in mixes.withIndex()) {
+                for ((i, m) in picked.withIndex()) {
                     if (ipodStopping) break
-                    ipodLyricsStatus = strings.ipodPlaylistMaking(m.name, i, mixes.size)
-                    ipodLyricsProgress = 1 + (i * 2) / mixes.size to 3
-                    val keys = m.ns.mapNotNull { byN[it] }.map { com.qbdlx.mobile.ipod.trackKey(it.title, it.artist, it.album) }
+                    ipodLyricsStatus = strings.ipodPlaylistMaking(m.name, i, picked.size)
+                    ipodLyricsProgress = i to picked.size
+                    val keys = m.songs.map { com.qbdlx.mobile.ipod.trackKey(it.title, it.artist, it.album) }
                     val r = withContext(Dispatchers.IO) { com.qbdlx.mobile.ipod.IpodDevice(context, uri).makePlaylist(m.name, keys, guid) }
                     msgs.add(strings.ipodPlaylistDone(m.name, r.added, r.missing, r.error))
                 }
-                ipodMessage = listOfNotNull(note, (if (usedAi) strings.aiMixByAi else strings.aiMixLocal), msgs.joinToString(" ")).joinToString(" ")
+                ipodMessage = msgs.joinToString(" ")
                 if (msgs.isNotEmpty()) ipodDone++
             } catch (e: kotlinx.coroutines.CancellationException) {
                 ipodMessage = strings.ipodPlaylistDownloadStopped
@@ -940,17 +1022,36 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun updateIpodGuid(text: String) { ipodGuidText = text; prefs.edit().putString("ipod_guid", text).apply() }
 
-    /** Looks at the chosen iPod (off the main thread): is it usable, and which songs does it already have? */
     /** (free bytes, total bytes) of the iPod's storage, or null when Android won't say. */
     var ipodSpace by mutableStateOf<Pair<Long, Long>?>(null); private set
-    private fun readIpodSpace(uri: android.net.Uri): Pair<Long, Long>? = runCatching {
-        val volId = android.provider.DocumentsContract.getTreeDocumentId(uri).substringBefore(':')
-        val sm = context.getSystemService(android.os.storage.StorageManager::class.java)
-        val vol = sm.storageVolumes.firstOrNull { it.uuid.equals(volId, ignoreCase = true) || (volId == "primary" && it.isPrimary) }
-        val path = (if (android.os.Build.VERSION.SDK_INT >= 30) vol?.directory?.path else null) ?: vol?.uuid?.let { "/storage/$it" }
-        val st = android.os.StatFs(path ?: return null)
-        st.availableBytes to st.totalBytes
-    }.getOrNull()
+    private fun statOf(path: String?): Pair<Long, Long>? = path?.let {
+        runCatching { android.os.StatFs(it).let { st -> st.availableBytes to st.totalBytes } }.getOrNull()?.takeIf { p -> p.second > 0 }
+    }
+    /** Space through the folder permission the app already holds (what file managers use): fstatvfs on the root document's descriptor, no paths needed. */
+    private fun statViaSaf(uri: android.net.Uri): Pair<Long, Long>? = runCatching {
+        val root = android.provider.DocumentsContract.buildDocumentUriUsingTree(uri, android.provider.DocumentsContract.getTreeDocumentId(uri))
+        context.contentResolver.openFileDescriptor(root, "r")?.use { pfd ->
+            val st = android.system.Os.fstatvfs(pfd.fileDescriptor)
+            (st.f_bavail * st.f_frsize) to (st.f_blocks * st.f_frsize)
+        }
+    }.getOrNull()?.takeIf { it.second > 0 }
+
+    private fun readIpodSpace(uri: android.net.Uri): Pair<Long, Long>? {
+        statViaSaf(uri)?.let { return it }
+        val volId = runCatching { android.provider.DocumentsContract.getTreeDocumentId(uri).substringBefore(':') }.getOrNull() ?: return null
+        val paths = mutableListOf<String?>()
+        runCatching {
+            val sm = context.getSystemService(android.os.storage.StorageManager::class.java)
+            val vol = sm.storageVolumes.firstOrNull { it.uuid.equals(volId, ignoreCase = true) || (volId == "primary" && it.isPrimary) }
+            if (android.os.Build.VERSION.SDK_INT >= 30) paths += vol?.directory?.path
+            paths += vol?.uuid?.let { "/storage/$it" }
+        }
+        paths += "/storage/$volId"
+        paths += "/mnt/media_rw/$volId"
+        runCatching { context.getExternalFilesDirs(null).forEach { d -> if (d != null && (volId == "primary" || d.path.contains(volId, true))) paths += d.path } }
+        if (volId == "primary") paths += android.os.Environment.getExternalStorageDirectory().path
+        return paths.firstNotNullOfOrNull { statOf(it) }
+    }
 
     var ipodPlaylists by mutableStateOf<List<com.qbdlx.mobile.ipod.IpodPlaylist>>(emptyList()); private set
     var ipodOpenPlaylist by mutableStateOf<Long?>(null)
@@ -991,7 +1092,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val uri = ipodUri ?: return
         viewModelScope.launch {
             ipodChecking = true
-            ipodSpace = withContext(Dispatchers.IO) { readIpodSpace(uri) }
+            // Space is read on its own: a slow USB answer must never hold up the song list.
+            launch { ipodSpace = withContext(Dispatchers.IO) { readIpodSpace(uri) } }
             val device = com.qbdlx.mobile.ipod.IpodDevice(context, uri)
             val insp = withContext(Dispatchers.IO) { device.inspect() }
             ipodInspection = insp

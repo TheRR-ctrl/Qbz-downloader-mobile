@@ -24,14 +24,13 @@ class LyricsTest {
     @Test fun carRowsShowNeighboursAndMarkTheCurrentLine() {
         val st = LyricsState(Status.SYNCED, TrackInfo("T", "A", "B", 200_000, "p"), Lrc.parse(lrc), true)
         val rows = CarView.rows(st, 21_000)
-        assertEquals(listOf("First", "▶ Chorus", "Second", "Chorus"), rows.map { it.title })
-        assertEquals("T - A", rows.first { it.current }.subtitle)
+        assertEquals(listOf("T", "▶ Chorus", "Second"), rows.map { it.title })
         assertEquals(1, rows.count { it.current })
     }
 
     @Test fun beforeTheFirstLineShowsAMusicNote() {
         val st = LyricsState(Status.SYNCED, null, Lrc.parse(lrc), true)
-        assertEquals(listOf("♪", "♪ …"), CarView.rows(st, 0).take(2).map { it.title })
+        assertEquals(listOf("♪ …", "First"), CarView.rows(st, 0).take(2).map { it.title })
     }
 
     @Test fun messagesWhenThereIsNoLyric() {

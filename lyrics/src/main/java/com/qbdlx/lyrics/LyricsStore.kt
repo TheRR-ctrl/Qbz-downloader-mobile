@@ -29,14 +29,17 @@ object LyricsStore {
 
     @Synchronized fun flush() { runCatching { file?.writeText(data.toString()) } }
 
-    // Songs searched without result, with the time: not searched again for a week.
+    // Songs searched without result, with the time: not searched again for two days (a new SEARCH_VERSION clears them all).
+    private const val SEARCH_VERSION = 2
     private var missFile: File? = null
     private var miss = JSONObject()
     @Synchronized private fun missing(): JSONObject {
-        if (missFile == null) { missFile = File(file?.parentFile, "lyrics-missing.json"); miss = runCatching { JSONObject(missFile!!.readText()) }.getOrDefault(JSONObject()) }
+        if (missFile == null) { missFile = File(file?.parentFile, "lyrics-missing.json"); miss = runCatching { JSONObject(missFile!!.readText()) }.getOrDefault(JSONObject())
+            // Songs marked "without lyrics" by an older, weaker search get another chance once.
+            if (miss.optInt("__v", 0) < SEARCH_VERSION) miss = JSONObject().put("__v", SEARCH_VERSION) }
         return miss
     }
-    @Synchronized fun missedRecently(key: String) = System.currentTimeMillis() - missing().optLong(key, 0L) < 7L * 24 * 3600 * 1000
+    @Synchronized fun missedRecently(key: String) = System.currentTimeMillis() - missing().optLong(key, 0L) < 2L * 24 * 3600 * 1000
     @Synchronized fun markMissing(key: String) { missing().put(key, System.currentTimeMillis()) }
     @Synchronized fun flushMissing() { runCatching { missFile?.writeText(miss.toString()) } }
 
