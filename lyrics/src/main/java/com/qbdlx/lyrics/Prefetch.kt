@@ -23,6 +23,9 @@ object Prefetch {
     /** Most requests in flight at once. The real number adapts: it starts at [START], halves when the service complains and creeps back up while it answers. */
     const val PARALLEL = 50
     private const val START = 15
+    /** Songs per block, and the minimum time between two requests (the service slows everything down by itself when it complains). */
+    const val BLOCK = 200
+    private const val GAP_MS = 200L
     private const val MIN_PARALLEL = 2
     private var job: Job? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -97,12 +100,15 @@ object Prefetch {
             val streak = java.util.concurrent.atomic.AtomicInteger(0) // answers in a row without trouble
             fun publish() { _state.value = PrefetchState(true, list.size, done.get(), found.get(), missing.get()); PrefetchService.update(app, done.get(), list.size) }
             try {
-                coroutineScope {
-                    for (t in list) {
+                // In blocks of BLOCK songs: each block runs in parallel and is fully saved to disk before the next one starts.
+                for (block in list.chunked(BLOCK)) {
+                  if (error != null) break
+                  coroutineScope {
+                    for (t in block) {
                         if (failures.get() >= 30) { error = "sin conexión con el servicio de letras"; break }
                         while (active.get() >= limit.get()) delay(50)
-                        // Steady pace (~1.5 requests/s) and honor Retry-After from the service.
-                        val gate = maxOf(LrcLib.retryAfterUntil - System.currentTimeMillis(), 650L - (System.currentTimeMillis() - lastStart))
+                        // Steady pace (~5 requests/s) and honor Retry-After from the service.
+                        val gate = maxOf(LrcLib.retryAfterUntil - System.currentTimeMillis(), GAP_MS - (System.currentTimeMillis() - lastStart))
                         if (gate > 0) delay(gate)
                         lastStart = System.currentTimeMillis()
                         active.incrementAndGet()
@@ -133,6 +139,8 @@ object Prefetch {
                             } finally { active.decrementAndGet() }
                         }
                     }
+                  }
+                  LyricsStore.flush(); LyricsStore.flushMissing()
                 }
             } finally {
                 withContext(NonCancellable) {
