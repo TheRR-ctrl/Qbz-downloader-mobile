@@ -14,6 +14,9 @@ import java.util.Locale
 
 /** Keeps the process alive, with a notification, while a scan runs. Stops itself when the scan ends. */
 class ScanService : Service() {
+    /** Android 15 cuts dataSync services after ~6 h a day; without this callback the app crashes instead of stopping. */
+    override fun onTimeout(startId: Int, fgsType: Int) { stopSelf() }
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     override fun onBind(intent: Intent?): IBinder? = null

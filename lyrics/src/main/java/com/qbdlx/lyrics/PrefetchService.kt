@@ -8,6 +8,9 @@ import android.os.IBinder
 
 /** Keeps the lyrics download running with the screen off, with a progress notification. */
 class PrefetchService : Service() {
+    /** Android 15 cuts dataSync services after ~6 h a day; without this callback the app crashes instead of stopping. */
+    override fun onTimeout(startId: Int, fgsType: Int) { stopSelf() }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

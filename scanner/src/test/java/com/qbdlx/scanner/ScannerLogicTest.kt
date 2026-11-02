@@ -56,4 +56,12 @@ class OmittedFoldersTest {
         assertEquals(Verdict.Valid, AcoustId.judgeKey("""{"status":"ok","results":[]}""").verdict)
         assertEquals(Verdict.NoConnection, AcoustId.judgeKey("<html>").verdict)
     }
+
+    @org.junit.Test fun recordingFoldersAreMatchedByWholeWords() {
+        org.junit.Assert.assertTrue(OmittedFolders.isRecording("Recordings/Call"))
+        org.junit.Assert.assertTrue(OmittedFolders.isRecording("Voice Recorder/2024"))
+        org.junit.Assert.assertTrue(OmittedFolders.isRecording("Llamadas"))
+        org.junit.Assert.assertFalse(OmittedFolders.isRecording("Music/Blue Note Records"))
+        org.junit.Assert.assertFalse(OmittedFolders.isRecording("Music/Call Me Maybe Collection"))
+    }
 }

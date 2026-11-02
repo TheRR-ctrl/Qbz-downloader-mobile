@@ -27,7 +27,7 @@ object LyricsStore {
         if (flush) flush()
     }
 
-    @Synchronized fun flush() { runCatching { file?.writeText(data.toString()) } }
+    @Synchronized fun flush() { runCatching { file?.let { f -> val tmp = File(f.parentFile, f.name + ".tmp"); tmp.writeText(data.toString()); if (!tmp.renameTo(f)) { f.writeText(data.toString()); tmp.delete() } } } }
 
     // Songs searched without result, with the time: not searched again for two days (a new SEARCH_VERSION clears them all).
     private const val SEARCH_VERSION = 2
