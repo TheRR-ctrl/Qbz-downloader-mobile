@@ -15,7 +15,7 @@ class PrefetchState(val running: Boolean = false, val total: Int = 0, val done: 
 /**
  * Downloads the lyrics of a list of songs ahead of time, at a steady pace, so they are on the phone when the song plays.
  * Sources of the list: the phone's own music ([fromMediaStore]) and the list QBDLX Mobile sends ([parse]).
- * Songs already saved, or searched without result in the last week, are skipped.
+ * Songs already saved, or searched without result in the last two days, are skipped.
  */
 object Prefetch {
     private val _state = MutableStateFlow(PrefetchState())
@@ -111,13 +111,13 @@ object Prefetch {
                                 val key = storeKey(t.title, t.artist)
                                 if (!LyricsStore.has(key) && !LyricsStore.missedRecently(key)) {
                                     var result: Lyrics? = null; var ok = false
-                                    for (attempt in 1..3) {
+                                    for (attempt in 1..5) {
                                         val wait = pauseUntil.get() - System.currentTimeMillis(); if (wait > 0) delay(wait)
                                         try { result = LrcLib.find(t.title, t.artist, t.album, t.durationSec); ok = true; break }
                                         catch (e: CancellationException) { throw e }
                                         catch (e: Exception) {
                                             streak.set(0); limit.updateAndGet { (it / 2).coerceAtLeast(MIN_PARALLEL) } // fewer at once
-                                            pauseUntil.set(System.currentTimeMillis() + 2000L * attempt); delay(1000L * attempt) // everyone slows down
+                                            pauseUntil.set(System.currentTimeMillis() + 3000L * attempt); delay(2000L * attempt) // everyone slows down
                                         }
                                     }
                                     if (!ok) failures.incrementAndGet()
