@@ -88,6 +88,7 @@ class FloatingService : Service() {
         wm.addView(root, params)
         view = root
 
+        var litNow = 0; var litShown = -1
         scope.launch {
             while (isActive) {
                 val state = Tracker.state.value
@@ -101,7 +102,9 @@ class FloatingService : Service() {
                 }
                 val (a, b) = when (state.status) {
                     Status.SYNCED -> {
-                        val i = Lrc.indexAt(state.lines, Tracker.positionMs())
+                        val posNow = Tracker.positionMs()
+                        val i = Lrc.indexAt(state.lines, posNow)
+                        litNow = if (i >= 0 && Tracker.karaoke) Lrc.litChars(state.lines[i].text, state.lines[i].timeMs, state.lines.getOrNull(i + 1)?.timeMs, posNow) else 0
                         (if (i < 0) "♪ …" else state.lines[i].text.ifBlank { "♪" }) to (state.lines.getOrNull(i + 1)?.text.orEmpty())
                     }
                     Status.PLAIN -> "Letra sin sincronizar" to (state.track?.title.orEmpty())
@@ -111,7 +114,13 @@ class FloatingService : Service() {
                     Status.NO_ACCESS -> "Falta el acceso a notificaciones" to ""
                     Status.NO_MEDIA -> "♪" to "Pon una canción"
                 }
-                if (now.text.toString() != a) now.text = a
+                if (now.text.toString() != a || litNow != litShown) {
+                    litShown = litNow
+                    now.text = if (litNow > 0 && litNow <= a.length) android.text.SpannableString(a).apply {
+                        // the unsung rest is dimmer: the lit words keep the normal colour
+                        setSpan(android.text.style.ForegroundColorSpan(Color.argb(150, Color.red(fg), Color.green(fg), Color.blue(fg))), litNow, a.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                    } else a
+                }
                 if (next.text.toString() != b) next.text = b
                 next.visibility = if (b.isBlank()) View.GONE else View.VISIBLE
                 delay(250)

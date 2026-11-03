@@ -67,7 +67,6 @@ class MainActivity : ComponentActivity() {
         if (android.os.Build.VERSION.SDK_INT >= 33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED)
             requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1) // so the lyric notification can show
         val prefs = getSharedPreferences("lyrics", MODE_PRIVATE)
-        Tracker.offsetMs = prefs.getLong("offset", 0)
         setContent {
             val accent by Tracker.accent.collectAsState()
             MaterialTheme(colorScheme = schemeFor(accent, isSystemInDarkTheme())) {
@@ -173,6 +172,21 @@ class MainActivity : ComponentActivity() {
                     TextButton({ setOffset((offset - 250).coerceIn(-10_000, 10_000)) }) { Text("−", fontSize = 20.sp) }
                     TextButton({ setOffset((offset + 250).coerceIn(-10_000, 10_000)) }) { Text("+", fontSize = 20.sp) }
                 }
+                if (tools) {
+                    val sp = getSharedPreferences("lyrics", MODE_PRIVATE)
+                    var karaoke by remember { mutableStateOf(Tracker.karaoke) }
+                    var lead by remember { mutableLongStateOf(Tracker.carLeadMs) }
+                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        Text("Relleno tipo karaoke (palabra por palabra, aproximado)", Modifier.weight(1f), fontSize = 13.sp)
+                        androidx.compose.material3.Switch(karaoke, { karaoke = it; Tracker.karaoke = it; sp.edit().putBoolean("karaoke", it).apply() })
+                    }
+                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        Text("Adelanto en Android Auto: $lead ms", Modifier.weight(1f), fontSize = 13.sp)
+                        TextButton({ lead = (lead - 250).coerceIn(0, 4000); Tracker.carLeadMs = lead; sp.edit().putLong("car_lead", lead).apply() }) { Text("−", fontSize = 20.sp) }
+                        TextButton({ lead = (lead + 250).coerceIn(0, 4000); Tracker.carLeadMs = lead; sp.edit().putLong("car_lead", lead).apply() }) { Text("+", fontSize = 20.sp) }
+                    }
+                    Text("Si en el coche la letra llega tarde, sube el adelanto; si llega antes de tiempo, bájalo. La sincronía de arriba también cuenta en el coche.", fontSize = 11.sp)
+                }
                 var floating by remember { mutableStateOf(FloatingService.running) }
                 if (tools) PillTonal({
                     if (!Settings.canDrawOverlays(this@MainActivity))
@@ -213,7 +227,13 @@ class MainActivity : ComponentActivity() {
                                 else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = when (dist) { 1 -> .8f; 2 -> .6f; else -> .45f }),
                                 tween(ms, easing = UiEaseOut), label = "color",
                             )
-                            Text(l.text.ifBlank { "♪" }, fontSize = 22.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal, color = color,
+                            val lit = if (on && Tracker.karaoke && state.status == Status.SYNCED) Lrc.litChars(l.text, l.timeMs, state.lines.getOrNull(i + 1)?.timeMs, pos) else 0
+                            val shown = if (lit > 0) androidx.compose.ui.text.buildAnnotatedString {
+                                append(l.text)
+                                addStyle(androidx.compose.ui.text.SpanStyle(color = MaterialTheme.colorScheme.primary), 0, lit)
+                                addStyle(androidx.compose.ui.text.SpanStyle(color = MaterialTheme.colorScheme.onSurface), lit, l.text.length)
+                            } else androidx.compose.ui.text.AnnotatedString(l.text.ifBlank { "♪" })
+                            Text(shown, fontSize = 22.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal, color = color,
                                 modifier = Modifier.fillMaxWidth(.83f)
                                     .graphicsLayer { scaleX = scale; scaleY = scale; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, .5f) }
                                     .clickable(enabled = state.status == Status.SYNCED) {

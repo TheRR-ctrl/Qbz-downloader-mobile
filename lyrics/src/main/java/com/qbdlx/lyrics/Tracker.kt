@@ -32,6 +32,10 @@ object Tracker {
     }
 
     @Volatile var offsetMs = 0L
+    /** How early the car's list switches line (the car redraws a moment after the list changes), in ms. Adjustable in Ajustes. */
+    @Volatile var carLeadMs = 1000L
+    /** Fill the line word by word while it is sung. */
+    @Volatile var karaoke = true
     @Volatile var lastError = ""
 
     /** The playing app's colour (ARGB, 0 when unknown): its notification's colour, else the cover's main colour. */
@@ -53,6 +57,10 @@ object Tracker {
         started = true
         val app = context.applicationContext
         LyricsStore.init(app)
+        // The sync settings must be read here and not only when the screen opens: the car can start the service without the app ever being opened.
+        app.getSharedPreferences("lyrics", Context.MODE_PRIVATE).let { p ->
+            offsetMs = p.getLong("offset", 0); carLeadMs = p.getLong("car_lead", 1000); karaoke = p.getBoolean("karaoke", true)
+        }
         scope.launch { while (isActive) { runCatching { refresh(app) }; delay(400) } }
     }
 

@@ -80,4 +80,13 @@ class PrefetchTest {
         assertEquals(listOf("Título ñ", "B"), back.map { it.title }); assertEquals(200, back[0].durationSec); assertEquals("Álbum", back[0].album)
         assertNull(Prefetch.parse("not json")); assertNull(Prefetch.parse("{\"other\":1}"))
     }
+
+    @Test fun karaokeLightsWordsAsTheLineIsSung() {
+        val t = "hello big world"
+        assertEquals(0, Lrc.litChars(t, 1000, 5000, 900))
+        assertEquals(t.length, Lrc.litChars(t, 1000, 5000, 5000))
+        val mid = Lrc.litChars(t, 1000, 5000, 1000 + 900)
+        assertTrue(mid in 5..t.length)
+        assertEquals(0, Lrc.litChars("", 0, 1000, 500))
+    }
 }

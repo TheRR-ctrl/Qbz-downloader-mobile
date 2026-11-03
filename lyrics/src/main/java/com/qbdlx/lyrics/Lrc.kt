@@ -32,6 +32,21 @@ object Lrc {
         return ans
     }
 
+    /**
+     * Karaoke approximation: how many characters of [text] are "lit" at [posMs]. LRCLIB only times whole lines, so the line's
+     * singing time is spread over its characters; it is capped (about 100 ms a character) so a long instrumental gap after the line does not slow the fill.
+     * Lit means up to the end of the last word that has started.
+     */
+    fun litChars(text: String, startMs: Long, nextMs: Long?, posMs: Long): Int {
+        if (text.isBlank() || posMs < startMs) return 0
+        val span = (nextMs ?: (startMs + 4000)) - startMs
+        val vocal = minOf(span.toDouble(), text.length * 100.0 + 500.0).coerceAtLeast(600.0)
+        val target = ((posMs - startMs) / vocal).coerceIn(0.0, 1.0) * text.length
+        var lit = 0
+        for (w in Regex("""\S+""").findAll(text)) { if (w.range.first <= target) lit = w.range.last + 1 else break }
+        return lit
+    }
+
     /** Plain (unsynced) text as lines; blank lines are dropped. */
     fun plain(text: String): List<LyricLine> = text.lines().map { it.trim() }.filter { it.isNotEmpty() }.map { LyricLine(0, it) }
 }
