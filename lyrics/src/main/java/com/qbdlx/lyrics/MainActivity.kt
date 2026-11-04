@@ -15,6 +15,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
@@ -115,6 +116,7 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
+    @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
     private fun Screen(offset: Long, setOffset: (Long) -> Unit) {
         val state by Tracker.state.collectAsState()
         var pos by remember { mutableLongStateOf(0L) }
@@ -193,7 +195,11 @@ class MainActivity : ComponentActivity() {
                         startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:$packageName"))) // then tap the button again
                     else { FloatingService.toggle(this@MainActivity); floating = !floating }
                 }) { Text(if (floating) "Cerrar ventana flotante" else "Ventana flotante con la letra") }
-                if (browsing && state.status == Status.SYNCED) PillButton({ browsing = false }) { Text("Resincronizar") }
+                if (!tools && state.status == Status.SYNCED) Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // Follow the audio again after browsing; while following it shows the state instead.
+                    if (browsing) PillButton({ browsing = false }) { Text("Seguir audio") } else PillTonal({ browsing = true }) { Text("Siguiendo el audio ✓") }
+                    Text("Mantén pulsada la línea que suena para sincronizar.", Modifier.weight(1f), fontSize = 11.sp)
+                }
                 if (!tools) BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                     // a third of the height as padding above, so the line being sung sits in the first third however many lines fit
                     val pad = if (state.status == Status.SYNCED) (maxHeight / 3 - 24.dp).coerceAtLeast(0.dp) else 12.dp
@@ -236,11 +242,15 @@ class MainActivity : ComponentActivity() {
                             Text(shown, fontSize = 22.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal, color = color,
                                 modifier = Modifier.fillMaxWidth(.83f)
                                     .graphicsLayer { scaleX = scale; scaleY = scale; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, .5f) }
-                                    .clickable(enabled = state.status == Status.SYNCED) {
-                                    // jump the playing app to this line (undo the manual sync offset first)
-                                    browsing = false
-                                    Tracker.controls()?.seekTo((l.timeMs - Tracker.offsetMs).coerceAtLeast(0))
-                                }.padding(vertical = 6.dp))
+                                    .combinedClickable(enabled = state.status == Status.SYNCED, onClick = {
+                                        // jump the playing app to this line (undo the manual sync offset first)
+                                        browsing = false
+                                        Tracker.controls()?.seekTo((l.timeMs - Tracker.offsetMs).coerceAtLeast(0))
+                                    }, onLongClick = {
+                                        // "this is the line being sung right now": the offset that makes the clock agree with it
+                                        setOffset((l.timeMs - (Tracker.positionMs() - Tracker.offsetMs)).coerceIn(-10_000, 10_000))
+                                        browsing = false
+                                    }).padding(vertical = 6.dp))
                         }
                     }
                 }
