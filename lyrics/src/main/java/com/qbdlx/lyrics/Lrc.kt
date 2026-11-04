@@ -48,5 +48,23 @@ object Lrc {
     }
 
     /** Plain (unsynced) text as lines; blank lines are dropped. */
+    /**
+     * Rough automatic timing for unsynced lyrics: the singing is assumed to run from a short intro to a short outro,
+     * and each line gets time in proportion to its length. Only an estimate; the user fixes it with the sync offset or by tapping.
+     */
+    fun estimate(lines: List<LyricLine>, durationMs: Long): List<LyricLine> {
+        if (lines.isEmpty() || durationMs <= 0) return lines
+        val start = minOf(15_000L, durationMs / 12); val end = durationMs - minOf(8_000L, durationMs / 20)
+        val weights = lines.map { it.text.length.coerceAtLeast(8).toDouble() }
+        val total = weights.sum(); var acc = 0.0
+        return lines.mapIndexed { i, l -> LyricLine(start + ((end - start) * acc / total).toLong(), l.text).also { acc += weights[i] } }
+    }
+
+    /** LRC text ("[mm:ss.xx]line") for lines that already carry their time. */
+    fun toLrc(lines: List<LyricLine>): String = lines.joinToString("\n") { l ->
+        val cs = l.timeMs / 10
+        "[%02d:%02d.%02d]%s".format(cs / 6000, cs / 100 % 60, cs % 100, l.text)
+    }
+
     fun plain(text: String): List<LyricLine> = text.lines().map { it.trim() }.filter { it.isNotEmpty() }.map { LyricLine(0, it) }
 }

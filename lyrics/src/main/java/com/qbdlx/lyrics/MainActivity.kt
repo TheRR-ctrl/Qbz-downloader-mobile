@@ -121,7 +121,12 @@ class MainActivity : ComponentActivity() {
         val state by Tracker.state.collectAsState()
         var pos by remember { mutableLongStateOf(0L) }
         LaunchedEffect(Unit) { while (true) { pos = Tracker.positionMs(); delay(200) } }
-        val idx = if (state.status == Status.SYNCED) Lrc.indexAt(state.lines, pos) else -1
+        // Tap-timing of a lyric that has no times: one tap per line as it starts to be sung.
+        var tagging by remember { mutableStateOf(false) }
+        val marks = remember { androidx.compose.runtime.mutableStateListOf<Long>() }
+        LaunchedEffect(state.track?.key, state.status) { tagging = false; marks.clear() }
+        val idx = if (state.status == Status.SYNCED) Lrc.indexAt(state.lines, pos)
+            else if (tagging && state.lines.isNotEmpty()) marks.size.coerceAtMost(state.lines.size - 1) else -1
         val listState = androidx.compose.foundation.lazy.rememberLazyListState()
         // Dragging the list lets the reader browse without being pulled back; "Resincronizar" returns to the line being sung.
         var browsing by remember { mutableStateOf(false) }
@@ -167,7 +172,29 @@ class MainActivity : ComponentActivity() {
                 if (state.status == Status.LOADING) Text("Buscando la letra…")
                 if (state.status == Status.NOT_FOUND) Text("No hay letra para esta canción.")
                 if (state.status == Status.ERROR) Text("No se pudo cargar la letra (${Tracker.lastError}). Se reintenta sola.")
-                if (state.status == Status.PLAIN) Text("Solo hay letra sin sincronizar.", fontSize = 12.sp)
+                if (state.status == Status.PLAIN) Text(
+                    if (tagging) "Pulsa el botón justo cuando empiece a cantarse la línea resaltada." else "Solo hay letra sin sincronizar.", fontSize = 12.sp)
+                if (!tools && state.status == Status.PLAIN) {
+                    fun finish() {
+                        // lines left unmarked follow the last mark, three seconds apart
+                        val last = marks.lastOrNull() ?: 0L
+                        val timed = state.lines.mapIndexed { i, l -> LyricLine(marks.getOrNull(i) ?: (last + 3000L * (i - marks.size + 1)), l.text) }
+                        Tracker.saveTimed(timed); tagging = false; marks.clear()
+                    }
+                    if (!tagging) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        PillTonal({ Tracker.saveTimed(Lrc.estimate(state.lines, state.track?.durationMs ?: 0L)) }) { Text("Estimar tiempos solo") }
+                        PillButton({ marks.clear(); tagging = true }) { Text("Marcar mientras suena") }
+                    }
+                    else Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        PillButton({
+                            // a person taps a moment after hearing the line: 250 ms earlier
+                            marks.add((Tracker.rawPositionMs() - 250).coerceAtLeast(marks.lastOrNull() ?: 0L))
+                            if (marks.size >= state.lines.size) finish()
+                        }, Modifier.weight(1f)) { Text("Empieza esta línea (${marks.size + 1}/${state.lines.size})") }
+                        TextButton({ if (marks.isNotEmpty()) marks.removeAt(marks.size - 1) }) { Text("Deshacer") }
+                        TextButton({ if (marks.isNotEmpty()) finish() else tagging = false }) { Text(if (marks.isNotEmpty()) "Guardar" else "Cancelar") }
+                    }
+                }
                 // Same control as in QBDLX Mobile's lyrics page: "Sincronía: N ms" with − / + in steps of 250 ms, limited to ±10 s.
                 if (!tools && state.status == Status.SYNCED) Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                     Text("Sincronía: ${offset} ms", Modifier.weight(1f), fontSize = 12.sp)
@@ -202,7 +229,7 @@ class MainActivity : ComponentActivity() {
                 }
                 if (!tools) BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                     // a third of the height as padding above, so the line being sung sits in the first third however many lines fit
-                    val pad = if (state.status == Status.SYNCED) (maxHeight / 3 - 24.dp).coerceAtLeast(0.dp) else 12.dp
+                    val pad = if (state.status == Status.SYNCED || tagging) (maxHeight / 3 - 24.dp).coerceAtLeast(0.dp) else 12.dp
                     LazyColumn(Modifier.fillMaxSize()
                         .graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }
                         .drawWithContent {

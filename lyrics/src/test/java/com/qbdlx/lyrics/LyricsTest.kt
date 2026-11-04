@@ -89,4 +89,10 @@ class PrefetchTest {
         assertTrue(mid in 5..t.length)
         assertEquals(0, Lrc.litChars("", 0, 1000, 500))
     }
+
+    @Test fun estimatedTimesGrowAndStayInsideTheSong() {
+        val ls = Lrc.estimate(listOf("a long first line here", "short", "another fairly long line").map { LyricLine(0, it) }, 180_000)
+        assertTrue(ls[0].timeMs < ls[1].timeMs && ls[1].timeMs < ls[2].timeMs && ls[2].timeMs < 180_000)
+        assertEquals(ls.size, Lrc.parse(Lrc.toLrc(ls)).size)
+    }
 }

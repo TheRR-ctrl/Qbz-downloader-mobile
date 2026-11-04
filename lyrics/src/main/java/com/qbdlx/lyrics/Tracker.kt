@@ -159,6 +159,17 @@ object Tracker {
         }
     }
 
+    /** The song's own clock, without the user's sync offset: what a tap-made timing is saved against. */
+    fun rawPositionMs() = (positionMs() - offsetMs).coerceAtLeast(0)
+
+    /** Saves lines timed by the user as this song's synced lyrics (kept on the phone like any found lyrics) and shows them at once. */
+    fun saveTimed(lines: List<LyricLine>) {
+        val t = _state.value.track ?: return
+        val l = Lyrics(Lrc.toLrc(lines), lines.joinToString("\n") { it.text })
+        LyricsStore.put(t.storeKey, l); cache[t.key] = l; _saved.value = LyricsStore.count()
+        publish(t, l, _state.value.playing)
+    }
+
     /** Car buttons (play/pause, next, previous) are passed on to the music app that is playing. */
     fun controls() = controller?.transportControls
 }
