@@ -1,9 +1,10 @@
 package com.qbdlx.lyrics
 
 /** One lyric line and the moment it starts. */
-class LyricLine(val timeMs: Long, val text: String)
+class LyricLine(val timeMs: Long, val text: String, val endMs: Long? = null)
 
 object Lrc {
+    private val endTag = Regex("""\s*<(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?>\s*$""")
     private val stamp = Regex("""\[(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?]""")
 
     /** Parses LRC text ("[mm:ss.xx] words", several stamps per line allowed) into lines sorted by time. Tags like [ar:..] are ignored. */
@@ -12,11 +13,19 @@ object Lrc {
         for (raw in text.lines()) {
             val stamps = stamp.findAll(raw).toList()
             if (stamps.isEmpty()) continue
-            val words = raw.substring(stamps.last().range.last + 1).trim()
+            var words = raw.substring(stamps.last().range.last + 1).trim()
+            // an end-of-line tag "<mm:ss.xx>" (written by this app from Whisper's word times): when the line stops being sung
+            var endMs: Long? = null
+            endTag.find(words)?.let { e ->
+                val f = e.groupValues[3]
+                val ms = when (f.length) { 0 -> 0L; 1 -> f.toLong() * 100; 2 -> f.toLong() * 10; else -> f.take(3).toLong() }
+                endMs = e.groupValues[1].toLong() * 60_000 + e.groupValues[2].toLong() * 1000 + ms
+                words = words.substring(0, e.range.first).trim()
+            }
             for (m in stamps) {
                 val frac = m.groupValues[3]
                 val ms = when (frac.length) { 0 -> 0L; 1 -> frac.toLong() * 100; 2 -> frac.toLong() * 10; else -> frac.take(3).toLong() }
-                out += LyricLine(m.groupValues[1].toLong() * 60_000 + m.groupValues[2].toLong() * 1000 + ms, words)
+                out += LyricLine(m.groupValues[1].toLong() * 60_000 + m.groupValues[2].toLong() * 1000 + ms, words, endMs)
             }
         }
         return out.sortedBy { it.timeMs }
@@ -37,10 +46,12 @@ object Lrc {
      * singing time is spread over its characters; it is capped (about 100 ms a character) so a long instrumental gap after the line does not slow the fill.
      * Lit means up to the end of the last word that has started.
      */
-    fun litChars(text: String, startMs: Long, nextMs: Long?, posMs: Long): Int {
+    fun litChars(text: String, startMs: Long, nextMs: Long?, posMs: Long, endMs: Long? = null): Int {
         if (text.isBlank() || posMs < startMs) return 0
         val span = (nextMs ?: (startMs + 4000)) - startMs
-        val vocal = minOf(span.toDouble(), text.length * 100.0 + 500.0).coerceAtLeast(600.0)
+        // with the end of the line known (Whisper heard its last word), the fill follows the real singing time
+        val vocal = if (endMs != null && endMs > startMs) minOf(span.toDouble(), (endMs - startMs).toDouble()).coerceAtLeast(600.0)
+            else minOf(span.toDouble(), text.length * 100.0 + 500.0).coerceAtLeast(600.0)
         val target = ((posMs - startMs) / vocal).coerceIn(0.0, 1.0) * text.length
         var lit = 0
         for (w in Regex("""\S+""").findAll(text)) { if (w.range.first <= target) lit = w.range.last + 1 else break }
@@ -63,7 +74,8 @@ object Lrc {
     /** LRC text ("[mm:ss.xx]line") for lines that already carry their time. */
     fun toLrc(lines: List<LyricLine>): String = lines.joinToString("\n") { l ->
         val cs = l.timeMs / 10
-        "[%02d:%02d.%02d]%s".format(cs / 6000, cs / 100 % 60, cs % 100, l.text)
+        val end = l.endMs?.let { val e = it / 10; "<%02d:%02d.%02d>".format(e / 6000, e / 100 % 60, e % 100) } ?: ""
+        "[%02d:%02d.%02d]%s%s".format(cs / 6000, cs / 100 % 60, cs % 100, l.text, end)
     }
 
     fun plain(text: String): List<LyricLine> = text.lines().map { it.trim() }.filter { it.isNotEmpty() }.map { LyricLine(0, it) }

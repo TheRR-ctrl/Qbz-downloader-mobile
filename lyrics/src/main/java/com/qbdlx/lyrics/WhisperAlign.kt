@@ -88,8 +88,10 @@ object WhisperAlign {
         // a line starts at its first recognised word (minus the words of the line before it)
         val start = LongArray(lines.size) { -1L }
         val seen = IntArray(lines.size)
+        val end = LongArray(lines.size) { -1L } // when the last recognised word of the line stops
         for (k in 0 until n) {
             val line = lw[k].first
+            if (match[k] >= 0) end[line] = max(end[line], hw[match[k]].first.endMs)
             if (match[k] >= 0 && start[line] < 0) start[line] = max(0L, hw[match[k]].first.startMs - seen[line] * avgWord)
             seen[line]++
         }
@@ -106,6 +108,6 @@ object WhisperAlign {
             }
         }
         for (l in 1 until lines.size) if (start[l] < start[l - 1] + 400) start[l] = start[l - 1] + 400
-        return lines.mapIndexed { idx, t -> LyricLine(start[idx], t) }
+        return lines.mapIndexed { idx, t -> LyricLine(start[idx], t, end[idx].takeIf { it > start[idx] + 300 && (idx + 1 >= lines.size || it <= start[idx + 1] + 600) }) }
     }
 }

@@ -107,7 +107,7 @@ object Tracker {
                             return@withContext "Listo: se usó la letra de YouTube Music" + (if (other.synced != null) " con sus propios tiempos." else if (approx) ", repartida por cantidad de palabras (aproximado)." else ", sincronizada con la voz.")
                         }
                     }
-                    if (better != null && lines.isNotEmpty()) timed = lines.mapIndexed { i, text -> LyricLine(better[(i.toLong() * (better.size - 1) / (lines.size - 1).coerceAtLeast(1)).toInt()].timeMs, text) }
+                    if (better != null && lines.isNotEmpty()) timed = lines.mapIndexed { i, text -> better[(i.toLong() * (better.size - 1) / (lines.size - 1).coerceAtLeast(1)).toInt()].let { LyricLine(it.timeMs, text, it.endMs) } }
                     else if (timed != null) WhisperAlign.markApproximate()
                 }
                 // Nothing matches and no other lyric helps: what Whisper heard becomes the lyric, with its real times.

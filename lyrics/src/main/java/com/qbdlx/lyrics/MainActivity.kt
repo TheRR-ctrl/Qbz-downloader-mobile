@@ -355,7 +355,7 @@ class MainActivity : ComponentActivity() {
                                 else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = when (dist) { 1 -> .8f; 2 -> .6f; else -> .45f }),
                                 tween(ms, easing = UiEaseOut), label = "color",
                             )
-                            val lit = if (on && Tracker.karaoke && state.status == Status.SYNCED) Lrc.litChars(l.text, l.timeMs, state.lines.getOrNull(i + 1)?.timeMs, pos) else 0
+                            val lit = if (on && Tracker.karaoke && state.status == Status.SYNCED) Lrc.litChars(l.text, l.timeMs, state.lines.getOrNull(i + 1)?.timeMs, pos, l.endMs) else 0
                             val shown = if (lit > 0) androidx.compose.ui.text.buildAnnotatedString {
                                 append(l.text)
                                 addStyle(androidx.compose.ui.text.SpanStyle(color = MaterialTheme.colorScheme.primary), 0, lit)

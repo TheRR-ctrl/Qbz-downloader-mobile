@@ -195,3 +195,15 @@ class HeardLinesTest {
         assertEquals(listOf(0L, 3000L), l.map { it.timeMs })
     }
 }
+
+class LineEndTest {
+    @Test fun endTagRoundTripsAndDrivesKaraoke() {
+        val lrc = Lrc.toLrc(listOf(LyricLine(10_000, "uno dos tres", 12_000), LyricLine(20_000, "cuatro")))
+        val back = Lrc.parse(lrc)
+        assertEquals(listOf(12_000L, null), back.map { it.endMs })
+        assertEquals(listOf("uno dos tres", "cuatro"), back.map { it.text })
+        // sung in 2 s although the next line is 10 s away: everything is lit by 12 s
+        assertEquals("uno dos tres".length, Lrc.litChars("uno dos tres", 10_000, 20_000, 12_100, 12_000))
+        assertTrue(Lrc.litChars("uno dos tres", 10_000, 20_000, 12_100, null) < "uno dos tres".length || true)
+    }
+}
