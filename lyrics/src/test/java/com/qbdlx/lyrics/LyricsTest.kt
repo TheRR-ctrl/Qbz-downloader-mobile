@@ -277,3 +277,15 @@ class WhisperFitTest {
         assertTrue(t, t.contains("coincidieron 5 de 20") && t.contains("primera voz a los 10s") && t.contains("180s de 200s"))
     }
 }
+
+class LrcTagsTest {
+    @Test fun offsetTagShiftsTheLines() {
+        val l = Lrc.parse("[ar:x]\n[offset:+500]\n[00:10.00]hola\n[00:20.00]adios")
+        assertEquals(9_500L, l[0].timeMs); assertEquals(19_500L, l[1].timeMs)
+    }
+    @Test fun negativeOffsetDelays() { assertEquals(10_500L, Lrc.parse("[offset:-500]\n[00:10.00]hola")[0].timeMs) }
+    @Test fun wordTagsAreRemovedFromTheText() {
+        assertEquals("hola mundo cruel", Lrc.parse("[00:10.00]<00:10.00>hola <00:10.50>mundo <00:11.00>cruel")[0].text)
+    }
+    @Test fun noOffsetLeavesTimesAlone() { assertEquals(10_000L, Lrc.parse("[00:10.00]hola")[0].timeMs) }
+}

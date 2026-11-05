@@ -42,7 +42,7 @@ class FloatingService : Service() {
             PixelFormat.TRANSLUCENT,
         ).apply { gravity = Gravity.TOP or Gravity.START; x = prefs.getInt("float_x", (resources.displayMetrics.widthPixels * 0.07f).toInt()); y = prefs.getInt("float_y", (120 * dp).toInt()) }
 
-        val now = TextView(this).apply { setTextColor(Color.WHITE); textSize = 18f; setTypeface(typeface, android.graphics.Typeface.BOLD); maxLines = 2 }
+        val now = TextView(this).apply { setTextColor(Color.WHITE); textSize = 18f; setTypeface(typeface, android.graphics.Typeface.BOLD); maxLines = 3 }
         val next = TextView(this).apply { setTextColor(Color.argb(180, 255, 255, 255)); textSize = 14f; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
         val close = TextView(this).apply { text = "✕"; setTextColor(Color.argb(200, 255, 255, 255)); textSize = 16f; setPadding((10 * dp).toInt(), (6 * dp).toInt(), (10 * dp).toInt(), (6 * dp).toInt()); }
         var scale = prefs.getFloat("float_scale", 1f)
@@ -120,7 +120,7 @@ class FloatingService : Service() {
             modeBtn.text = if (bar) "⤢" else "▭"
             bigger.visibility = if (bar) View.GONE else View.VISIBLE
             smaller.visibility = bigger.visibility
-            now.maxLines = if (bar) 1 else 2
+            now.maxLines = if (bar) 1 else 3
             now.ellipsize = if (bar) android.text.TextUtils.TruncateAt.END else null
             now.textSize = (if (bar) 15f else 18f) * scale; next.textSize = 14f * scale
             root.background = if (full) bg else null
@@ -163,6 +163,7 @@ class FloatingService : Service() {
                 MotionEvent.ACTION_DOWN -> { downX = e.rawX; downY = e.rawY; startX = params.x; startY = params.y }
                 MotionEvent.ACTION_MOVE -> { params.x = startX + (e.rawX - downX).toInt(); params.y = startY + (e.rawY - downY).toInt(); runCatching { wm.updateViewLayout(root, params) }
                     if (Math.abs(e.rawX - downX) > 8 * dp || Math.abs(e.rawY - downY) > 8 * dp) { showTarget(); target?.let { it.scaleX = if (overTarget(e.rawX, e.rawY)) 1.25f else 1f; it.scaleY = it.scaleX } } }
+                MotionEvent.ACTION_CANCEL -> hideTarget()
                 MotionEvent.ACTION_UP -> {
                     val drop = overTarget(e.rawX, e.rawY); hideTarget()
                     if (drop) { dismiss(); return@setOnTouchListener true }

@@ -5,11 +5,16 @@ class LyricLine(val timeMs: Long, val text: String, val endMs: Long? = null)
 
 object Lrc {
     private val endTag = Regex("""\s*<(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?>\s*$""")
+    private val offsetTag = Regex("""^\s*\[offset:\s*([+-]?\d+)\s*]""", RegexOption.IGNORE_CASE)
+    /** Word-by-word marks of enhanced LRC ("<00:12.30>word"): the app times whole lines, so they would only show up as junk in the text. */
+    private val wordTag = Regex("""<\d{1,3}:\d{2}(?:[.:]\d{1,3})?>""")
     private val stamp = Regex("""\[(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?]""")
 
     /** Parses LRC text ("[mm:ss.xx] words", several stamps per line allowed) into lines sorted by time. Tags like [ar:..] are ignored. */
     fun parse(text: String): List<LyricLine> {
         val out = ArrayList<LyricLine>()
+        // the LRC "[offset:+500]" tag: positive means the lyric should show that much earlier
+        val shift = text.lines().firstNotNullOfOrNull { offsetTag.find(it)?.groupValues?.get(1)?.toLongOrNull() } ?: 0L
         for (raw in text.lines()) {
             val stamps = stamp.findAll(raw).toList()
             if (stamps.isEmpty()) continue
@@ -22,10 +27,11 @@ object Lrc {
                 endMs = e.groupValues[1].toLong() * 60_000 + e.groupValues[2].toLong() * 1000 + ms
                 words = words.substring(0, e.range.first).trim()
             }
+            words = wordTag.replace(words, "").replace(Regex("""\s{2,}"""), " ").trim()
             for (m in stamps) {
                 val frac = m.groupValues[3]
                 val ms = when (frac.length) { 0 -> 0L; 1 -> frac.toLong() * 100; 2 -> frac.toLong() * 10; else -> frac.take(3).toLong() }
-                out += LyricLine(m.groupValues[1].toLong() * 60_000 + m.groupValues[2].toLong() * 1000 + ms, words, endMs)
+                out += LyricLine((m.groupValues[1].toLong() * 60_000 + m.groupValues[2].toLong() * 1000 + ms - shift).coerceAtLeast(0), words, endMs?.let { (it - shift).coerceAtLeast(0) })
             }
         }
         return out.sortedBy { it.timeMs }
