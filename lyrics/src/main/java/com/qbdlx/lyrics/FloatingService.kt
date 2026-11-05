@@ -87,9 +87,33 @@ class FloatingService : Service() {
         }
         // pop in / out like a chat head
         val spring = android.view.animation.DecelerateInterpolator(1.6f) // never above 1: the window clips whatever grows past its edges
-        fun dismiss() { root.animate().scaleX(0.3f).scaleY(0.3f).alpha(0f).setDuration(160).withEndAction { stopSelf() }.start() }
+        var closing = false
+        // dropped on the ✕: the window flies into it while it shrinks and fades (the whole window moves, because a view cannot
+        // travel outside its own window); a hardware layer keeps the rounded edges while it is scaled
+        fun dismiss(cx: Float, cy: Float) {
+            if (closing) return
+            closing = true
+            val c = IntArray(2); root.getLocationOnScreen(c)
+            val dx = cx - (c[0] + root.width / 2f); val dy = cy - (c[1] + root.height / 2f)
+            val sx = params.x; val sy = params.y
+            root.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+            root.animate().cancel()
+            root.pivotX = root.width / 2f; root.pivotY = root.height / 2f
+            android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
+                duration = 240; interpolator = android.view.animation.AccelerateInterpolator(1.3f)
+                addUpdateListener {
+                    val f = it.animatedValue as Float
+                    params.x = sx + (dx * f).toInt(); params.y = sy + (dy * f).toInt()
+                    root.scaleX = 1f - 0.85f * f; root.scaleY = root.scaleX; root.alpha = 1f - f
+                    relayout()
+                }
+                addListener(object : android.animation.AnimatorListenerAdapter() { override fun onAnimationEnd(a: android.animation.Animator) { stopSelf() } })
+                start()
+            }
+        }
         // like a picture-in-picture window or a chat head: dragging it onto the ✕ at the bottom closes it
         var target: TextView? = null
+        fun targetCenter(): Pair<Float, Float>? { val t = target ?: return null; val c = IntArray(2); t.getLocationOnScreen(c); return (c[0] + t.width / 2f) to (c[1] + t.height / 2f) }
         fun overTarget(x: Float, y: Float): Boolean { val t = target ?: return false; val c = IntArray(2); t.getLocationOnScreen(c); return Math.hypot((x - (c[0] + t.width / 2)).toDouble(), (y - (c[1] + t.height / 2)).toDouble()) < 80 * dp }
         fun showTarget() {
             if (target != null) return
@@ -178,8 +202,8 @@ class FloatingService : Service() {
                     if (Math.abs(e.rawX - downX) > 8 * dp || Math.abs(e.rawY - downY) > 8 * dp) { showTarget(); target?.let { it.scaleX = if (overTarget(e.rawX, e.rawY)) 1.25f else 1f; it.scaleY = it.scaleX } } }
                 MotionEvent.ACTION_CANCEL -> hideTarget()
                 MotionEvent.ACTION_UP -> {
-                    val drop = overTarget(e.rawX, e.rawY); hideTarget()
-                    if (drop) { dismiss(); return@setOnTouchListener true }
+                    val drop = overTarget(e.rawX, e.rawY); val tc = targetCenter(); hideTarget()
+                    if (drop && tc != null) { dismiss(tc.first, tc.second); return@setOnTouchListener true }
                     // optionally the window sticks to the nearest side edge when let go
                     if (folded) snapBubble()
                     else if (prefs.getBoolean("float_snap", false)) {
@@ -213,7 +237,7 @@ class FloatingService : Service() {
             while (isActive) {
                 // a setting changed in Ajustes: the window follows within a quarter of a second
                 val now2 = listOf("float_scale", "float_bar", "float_bubble", "float_min", "float_alpha", "float_bubble_dp", "float_w", "float_next").joinToString("|") { prefs.all[it].toString() }
-                if (now2 != sig) { sig = now2; applyLayout() }
+                if (now2 != sig && !closing) { sig = now2; applyLayout() }
                 val state = Tracker.state.value
                 val wantBreath = folded && state.playing
                 if (wantBreath && !breath.isRunning) breath.start() else if (!wantBreath && breath.isRunning) { breath.cancel(); bubble.scaleX = 1f; bubble.scaleY = 1f }
