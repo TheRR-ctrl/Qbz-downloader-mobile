@@ -112,7 +112,7 @@ object Tracker {
                     ?: return@withContext "No encuentro esta canción como archivo en el teléfono (o falta el permiso de audio)."
                 val asr = Whisper.listen(ctx, t.storeKey, uri, { !isActive }) { m -> timing.value = m } ?: return@withContext if (!isActive) "Cancelado." else "Whisper no pudo con esta canción."
                 var timed = WhisperAlign.align(lines, asr.words)
-                ytWhy = ""
+                ytWhy = ""; var offer: String? = null
                 // The lyric and the voice use different alphabets: YouTube Music often writes the same song in the alphabet Whisper heard.
                 // Its lines only serve to find the times; they are moved onto the user's lines by position.
                 if ((timed == null || WhisperAlign.approximate) && _state.value.source != YtMusic.SOURCE && !LyricEdit.isEdited(_state.value.source) && !(auto && declined(t.storeKey))) {
@@ -129,7 +129,8 @@ object Tracker {
                         if (replaced != null) {
                             val approx = other.synced == null && WhisperAlign.approximate
                             withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key) suggestion.value = Suggestion(t.key, t.storeKey, replaced, YtMusic.SOURCE, other.synced != null) }
-                            return@withContext "Encontré otra letra (YouTube Music) que coincide mejor con la voz" + (if (other.synced != null) ", con sus propios tiempos." else if (approx) ", repartida por cantidad de palabras (aproximado)." else ", sincronizada con la voz.") + " Abajo te pregunto si quieres cambiarla."
+                            offer = "Encontré otra letra (YouTube Music) que coincide mejor con la voz" + (if (other.synced != null) ", con sus propios tiempos." else if (approx) ", repartida por cantidad de palabras (aproximado)." else ", sincronizada con la voz.") + " Abajo te pregunto si quieres cambiarla."
+                            if (timed == null) return@withContext offer
                         }
                     }
                     if (better != null && lines.isNotEmpty()) timed = lines.mapIndexed { i, text -> better[(i.toLong() * (better.size - 1) / (lines.size - 1).coerceAtLeast(1)).toInt()].let { LyricLine(it.timeMs, text, it.endMs) } }
@@ -142,7 +143,7 @@ object Tracker {
                 }
                 val done = timed ?: return@withContext "Whisper entendió muy poco de la voz (${asr.words.size} palabras, idioma ${asr.lang}). Prueba «Detectar con el audio»."
                 withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key) saveTimed(done); if (!WhisperAlign.approximate) SyncCheck.markVerified(t.storeKey) }
-                null
+                offer
             }
             timing.value = result ?: if (WhisperAlign.approximate) "Listo, aproximado: la letra y la voz están en alfabetos distintos, así que se repartió por cantidad de palabras." else "Listo: letra sincronizada con la voz."
             if (result == null && WhisperAlign.approximate && ytWhy.isNotEmpty()) timing.value = "Listo, aproximado. Antes probé YouTube Music y $ytWhy."
