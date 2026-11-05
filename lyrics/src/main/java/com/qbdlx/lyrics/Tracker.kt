@@ -47,6 +47,44 @@ object Tracker {
     /** Another lyric that fits the voice better than the one on screen: the screen asks before replacing anything. */
     class Suggestion(val trackKey: String, val storeKey: String, val lines: List<LyricLine>, val source: String, val timed: Boolean)
     val suggestion = MutableStateFlow<Suggestion?>(null)
+    /** What the check of the current lyric said (see [verifySync]); [fix] is what would be saved if the user accepts the correction. */
+    class Verification(val trackKey: String, val verdict: SyncVerdict, val fix: List<LyricLine>?)
+    val verification = MutableStateFlow<Verification?>(null)
+
+    /** Listens to the song (Whisper) and judges whether the synced lyric on screen is really in time with the voice. */
+    fun verifySync() {
+        val ctx = app ?: return
+        val t = _state.value.track ?: return
+        val lines = _state.value.lines
+        if (_state.value.status != Status.SYNCED || timingJob?.isActive == true) return
+        verification.value = null
+        timingJob = scope.launch {
+            timing.value = "Escuchando la canción para comprobar la sincronización…"
+            val outcome: Pair<SyncVerdict?, String?> = withContext(Dispatchers.Default) {
+                if (!Whisper.available(ctx)) return@withContext null to "Whisper no está en esta versión de la app."
+                val uri = AudioTiming.findOrBorrow(ctx, t.title, t.artist, t.durationMs) ?: return@withContext null to "No encuentro esta canción como archivo en el teléfono (o falta el permiso de audio)."
+                val asr = Whisper.listen(ctx, t.storeKey, uri, { !isActive }) { m -> timing.value = m } ?: return@withContext null to (if (!isActive) "Cancelado." else "Whisper no pudo con esta canción.")
+                val sung = lines.filter { it.text.isNotBlank() }
+                val ref = WhisperAlign.align(sung.map { it.text }, asr.words)
+                if (ref == null || WhisperAlign.approximate) SyncVerdict("unk", 0, 0, sung.size, null) to null else SyncCheck.judge(sung, ref) to null
+            }
+            val v = outcome.first
+            if (v == null) { timing.value = outcome.second; return@launch }
+            // a steady shift moves every line (blank ones too); a drifting lyric takes the voice's times
+            val fix = when (v.kind) { "off" -> lines.map { LyricLine((it.timeMs - v.medianMs).coerceAtLeast(0), it.text, it.endMs?.let { e -> (e - v.medianMs).coerceAtLeast(0) }) }; "drift" -> v.fix; else -> null }
+            if (v.kind == "ok") SyncCheck.markVerified(t.storeKey)
+            withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key) verification.value = Verification(t.key, v, fix) }
+            timing.value = null
+        }
+    }
+
+    fun applyVerificationFix() {
+        val v = verification.value ?: return
+        val fix = v.fix ?: return
+        verification.value = null
+        saveTimed(fix)
+        _state.value.track?.let { SyncCheck.markVerified(it.storeKey) }
+    }
 
     fun acceptSuggestion() {
         val sg = suggestion.value ?: return

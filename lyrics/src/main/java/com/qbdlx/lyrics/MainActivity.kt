@@ -183,6 +183,29 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /** The result of "Verificar sincronización": says in words whether the lyric is in time and offers the fix. */
+    @Composable
+    private fun VerificationBanner(track: TrackInfo?) {
+        val vf by Tracker.verification.collectAsState()
+        val r = vf ?: return
+        if (track == null || r.trackKey != track.key) return
+        val v = r.verdict
+        val secs = "%.1f".format(kotlin.math.abs(v.medianMs) / 1000.0)
+        QCard(Modifier.fillMaxWidth()) {
+            Text(when (v.kind) { "ok" -> "✓ Bien sincronizada"; "off" -> "Desfasada"; "drift" -> "Se va desfasando"; else -> "No se pudo comprobar" }, fontWeight = FontWeight.Bold)
+            Text(when (v.kind) {
+                "ok" -> "${v.within} de ${v.total} líneas coinciden con la voz (margen de 2,5 s)."
+                "off" -> "Toda la letra va ${if (v.medianMs < 0) "adelantada" else "atrasada"} unos $secs s respecto a la voz."
+                "drift" -> "Solo ${v.within} de ${v.total} líneas coinciden: el error cambia a lo largo de la canción. Puedo usar los tiempos de la voz."
+                else -> "La letra y la voz están en alfabetos distintos, o se entendió muy poco de la voz."
+            }, style = MaterialTheme.typography.bodySmall)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                if (r.fix != null) PillButton({ Tracker.applyVerificationFix() }) { Text(if (v.kind == "off") "Corregir" else "Usar tiempos de la voz", maxLines = 1, softWrap = false) }
+                TextButton({ Tracker.verification.value = null }) { Text("Cerrar") }
+            }
+        }
+    }
+
     private class EditRow(val line: LyricLine, text: String) { var text by mutableStateOf(text) }
 
     /** Full-screen editor: fix the words of any line, delete a line, or change a misheard word everywhere. Times are kept. */
@@ -479,6 +502,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 SuggestionBanner(state.track)
+                VerificationBanner(state.track)
                 if (state.status == Status.NOT_FOUND && whisperOk && state.track != null && timingMsg?.let { it.endsWith("…") || it.endsWith("minutos.") } != true)
                     PillButton({ Tracker.writeWithWhisper() }, Modifier.padding(top = 8.dp)) { Text("Escribir la letra con Whisper", maxLines = 1, softWrap = false) }
                 if (!tools && state.status == Status.PLAIN) {
@@ -510,6 +534,7 @@ class MainActivity : ComponentActivity() {
                     if (state.status == Status.SYNCED) { if (browsing) PillButton({ browsing = false }) { Text("Seguir audio", maxLines = 1, softWrap = false) } else PillTonal({ browsing = true }) { Text("Siguiendo el audio ✓", maxLines = 1, softWrap = false) } }
                     if (state.status == Status.SYNCED || state.status == Status.PLAIN) PillTonal({ editing = true }) { Text("Editar letra", maxLines = 1, softWrap = false) }
                     PillTonal({ enterPip() }) { Text("Burbuja flotante", maxLines = 1, softWrap = false) }
+                    if (state.status == Status.SYNCED && whisperOk) PillTonal({ Tracker.verifySync() }, enabled = timingMsg == null || !(timingMsg!!.endsWith("…") || timingMsg!!.endsWith("minutos."))) { Text("Verificar sincronización", maxLines = 1, softWrap = false) }
                     PillTonal({ picking = true }) { Text("Elegir letra", maxLines = 1, softWrap = false) }
                 }
                 if (!tools) BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
