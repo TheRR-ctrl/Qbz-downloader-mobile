@@ -108,6 +108,34 @@ object Tracker {
         }
     }
 
+    /** For a song with no lyrics: Whisper writes what it hears; if it understands too little, the lyric comes from YouTube Music instead. */
+    fun writeWithWhisper() {
+        val ctx = app ?: return
+        val t = _state.value.track ?: return
+        if (timingJob?.isActive == true) return
+        timingJob = scope.launch {
+            timing.value = "Buscando el archivo de la canción…"
+            val result = withContext(Dispatchers.Default) {
+                fun fromYoutube(): String? {
+                    val yt = runCatching { YtMusic.find(t.title, t.artist, (t.durationMs / 1000).toInt()) }.getOrNull() ?: return null
+                    LyricsStore.put(t.storeKey, yt); cache[t.key] = yt
+                    scope.launch(Dispatchers.Main) { if (_state.value.track?.key == t.key) { _saved.value = LyricsStore.count(); publish(t, yt, _state.value.playing) } }
+                    return "Whisper no entendió la voz; la letra salió de YouTube Music."
+                }
+                val uri = AudioTiming.find(ctx, t.title, t.artist, t.durationMs) ?: return@withContext fromYoutube() ?: "No encuentro esta canción como archivo en el teléfono (o falta el permiso de audio)."
+                withContext(Dispatchers.Main) { timing.value = "Preparando el audio…" }
+                val pcm = Whisper.pcm16k(ctx, uri, cancelled = { !isActive }) ?: return@withContext fromYoutube() ?: "No se pudo leer el audio de ese archivo."
+                withContext(Dispatchers.Main) { timing.value = "Whisper está escuchando la canción… puede tardar unos minutos." }
+                val asr = Whisper.transcribe(ctx, pcm) ?: return@withContext if (!isActive) "Cancelado." else (fromYoutube() ?: "Whisper no pudo con esta canción.")
+                val heard = WhisperAlign.linesFromHeard(asr.words)
+                if (asr.words.size < 8 || heard.size < 2) return@withContext fromYoutube() ?: "Whisper entendió muy poco (${asr.words.size} palabras) y YouTube Music no tiene esta letra."
+                withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key) saveTimed(heard, "Whisper (lo que se oyó)") }
+                "Listo: letra escrita con lo que Whisper oyó. Puede tener errores."
+            }
+            timing.value = result
+        }
+    }
+
     fun cancelTiming() { Whisper.cancel(); timingJob?.cancel(); timing.value = "Cancelado." }
 
     /** The playing app's colour (ARGB, 0 when unknown): its notification's colour, else the cover's main colour. */

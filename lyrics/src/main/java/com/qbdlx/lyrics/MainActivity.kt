@@ -291,6 +291,8 @@ class MainActivity : ComponentActivity() {
                         if (m.endsWith("…") || m.endsWith("minutos.")) TextButton({ Tracker.cancelTiming() }) { Text("Cancelar") }
                     }
                 }
+                if (state.status == Status.NOT_FOUND && whisperOk && state.track != null && timingMsg?.let { it.endsWith("…") || it.endsWith("minutos.") } != true)
+                    PillButton({ Tracker.writeWithWhisper() }, Modifier.padding(top = 8.dp)) { Text("Escribir la letra con Whisper", maxLines = 1, softWrap = false) }
                 if (!tools && state.status == Status.PLAIN) {
                     fun finish() {
                         // lines left unmarked follow the last mark, three seconds apart
