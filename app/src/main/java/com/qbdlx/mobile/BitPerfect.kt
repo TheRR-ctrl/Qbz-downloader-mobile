@@ -47,6 +47,80 @@ enum class BitPerfectKind {
 
 data class BitPerfectState(val kind: BitPerfectKind, val device: String = "", val sampleRate: Int = 0, val bits: Int = 0)
 
+/** Last things the output saw, for [diagnoseUsb]. */
+object BitPerfectLog {
+    @Volatile var lastTrack = "(todavía no se ha creado ninguna pista con el modo activo)"
+    @Volatile var lastResult = "(sin intentos)"
+}
+
+private fun typeName(t: Int) = when (t) {
+    AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> "BUILTIN_SPEAKER"
+    AudioDeviceInfo.TYPE_BUILTIN_EARPIECE -> "BUILTIN_EARPIECE"
+    AudioDeviceInfo.TYPE_WIRED_HEADSET -> "WIRED_HEADSET"
+    AudioDeviceInfo.TYPE_WIRED_HEADPHONES -> "WIRED_HEADPHONES"
+    AudioDeviceInfo.TYPE_BLUETOOTH_A2DP -> "BLUETOOTH_A2DP"
+    AudioDeviceInfo.TYPE_BLUETOOTH_SCO -> "BLUETOOTH_SCO"
+    AudioDeviceInfo.TYPE_USB_DEVICE -> "USB_DEVICE"
+    AudioDeviceInfo.TYPE_USB_HEADSET -> "USB_HEADSET"
+    AudioDeviceInfo.TYPE_USB_ACCESSORY -> "USB_ACCESSORY"
+    else -> "tipo $t"
+}
+
+private fun encName(e: Int) = when (e) {
+    AudioFormat.ENCODING_PCM_8BIT -> "PCM8"
+    AudioFormat.ENCODING_PCM_16BIT -> "PCM16"
+    AudioFormat.ENCODING_PCM_24BIT_PACKED -> "PCM24"
+    AudioFormat.ENCODING_PCM_32BIT -> "PCM32"
+    AudioFormat.ENCODING_PCM_FLOAT -> "FLOAT"
+    else -> "enc$e"
+}
+
+/** A plain-text report of everything Android says about the outputs, to find out why bit-perfect does or doesn't work. */
+@android.annotation.SuppressLint("NewApi")
+fun diagnoseUsb(context: Context): String {
+    val am = context.getSystemService(AudioManager::class.java)
+    val sb = StringBuilder()
+    sb.appendLine("Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}) · ${Build.MANUFACTURER} ${Build.MODEL}")
+    if (Build.VERSION.SDK_INT < 34) sb.appendLine("API < 34: Android no tiene salida bit-perfect.")
+    val outs = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+    sb.appendLine("Salidas (${outs.size}):")
+    for (d in outs) {
+        val isUsb = d.type == AudioDeviceInfo.TYPE_USB_DEVICE || d.type == AudioDeviceInfo.TYPE_USB_HEADSET
+        sb.appendLine("- ${typeName(d.type)} «${d.productName}» id=${d.id}${if (isUsb) "  ← USB" else ""}")
+        if (isUsb || d.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP) {
+            sb.appendLine("    frecuencias: ${d.sampleRates.joinToString().ifEmpty { "(cualquiera)" }}")
+            sb.appendLine("    codificaciones: ${d.encodings.joinToString { encName(it) }.ifEmpty { "(ninguna)" }}")
+            sb.appendLine("    canales: ${d.channelCounts.joinToString().ifEmpty { "(?)" }}")
+        }
+        if (isUsb && Build.VERSION.SDK_INT >= 34) {
+            val sup = runCatching { am.getSupportedMixerAttributes(d) }
+            sup.onFailure { sb.appendLine("    mezclador: error ${it.javaClass.simpleName}: ${it.message}") }
+            sup.getOrNull()?.let { list ->
+                if (list.isEmpty()) sb.appendLine("    mezclador: el DAC NO ofrece ningún modo (ni bit-perfect ni por defecto)")
+                for (m in list) {
+                    val beh = if (m.mixerBehavior == android.media.AudioMixerAttributes.MIXER_BEHAVIOR_BIT_PERFECT) "BIT-PERFECT" else "por defecto"
+                    sb.appendLine("    mezclador $beh: ${m.format.sampleRate} Hz · ${encName(m.format.encoding)} · ${Integer.bitCount(m.format.channelMask)} canales")
+                }
+            }
+            val attrs = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build()
+            val cur = runCatching { am.getPreferredMixerAttributes(attrs, d) }
+            sb.appendLine("    mezclador fijado ahora: " + (cur.getOrNull()?.let { "${it.format.sampleRate} Hz ${encName(it.format.encoding)} (${if (it.mixerBehavior == android.media.AudioMixerAttributes.MIXER_BEHAVIOR_BIT_PERFECT) "bit-perfect" else "defecto"})" } ?: (cur.exceptionOrNull()?.let { "error ${it.message}" } ?: "ninguno")))
+        }
+    }
+    if (outs.none { it.type == AudioDeviceInfo.TYPE_USB_DEVICE || it.type == AudioDeviceInfo.TYPE_USB_HEADSET })
+        sb.appendLine("\n⚠ Android no ve ningún DAC USB como salida de audio (revisa cable, adaptador y el modo USB del BTR5).")
+    if (Build.VERSION.SDK_INT >= 33) {
+        val attrs = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build()
+        runCatching { am.getDirectProfilesForAttributes(attrs) }.getOrNull()?.let { l ->
+            sb.appendLine("\nSalida directa (offload/direct) disponible: ${l.size} perfil(es)")
+            for (f in l) sb.appendLine("  ${encName(f.format)} · ${f.sampleRates.joinToString()} Hz · máscaras de canal ${f.channelMasks.size}")
+        }
+    }
+    sb.appendLine("\nÚltima pista creada: ${BitPerfectLog.lastTrack}")
+    sb.appendLine("Último intento: ${BitPerfectLog.lastResult}")
+    return sb.toString()
+}
+
 class BitPerfectOutput(context: Context) {
     class Result(val state: BitPerfectState, /** The mixer format changed: the track must be created again. */ val changed: Boolean)
 
@@ -73,16 +147,20 @@ class BitPerfectOutput(context: Context) {
         val devices = usb()
         if (devices.isEmpty()) { clear(); return Result(BitPerfectState(BitPerfectKind.NO_USB), false) }
         val bits = encodingBits(encoding)
+        BitPerfectLog.lastTrack = "$rate Hz · ${encName(encoding)} · ${Integer.bitCount(channelMask)} canales"
         for (d in devices) {
             val offered = bitPerfectModes(d)
             val wanted = chooseMixer(offered.map { it.first }, rate, encoding, channelMask) ?: continue
             if (applied == wanted && device?.id == d.id) return Result(BitPerfectState(BitPerfectKind.ACTIVE, name(d), rate, bits), false)
             val mode = offered.first { it.first == wanted }.second
-            val ok = runCatching { setMixer(d, mode) }.getOrDefault(false)
+            val set = runCatching { setMixer(d, mode) }
+            val ok = set.getOrDefault(false)
+            BitPerfectLog.lastResult = "setPreferredMixerAttributes en ${name(d)} → " + (if (ok) "aceptado" else set.exceptionOrNull()?.let { "excepción ${it.javaClass.simpleName}: ${it.message}" } ?: "rechazado (devolvió false)")
             if (!ok) return Result(BitPerfectState(BitPerfectKind.REFUSED, name(d), rate, bits), false)
             device = d; applied = wanted
             return Result(BitPerfectState(BitPerfectKind.ACTIVE, name(d), rate, bits), true)
         }
+        BitPerfectLog.lastResult = "el DAC no ofrece bit-perfect idéntico a la pista"
         return Result(BitPerfectState(BitPerfectKind.NO_MATCH, name(devices.first()), rate, bits), false)
     }
 

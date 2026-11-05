@@ -593,8 +593,8 @@ class MainActivity : ComponentActivity() {
                             val lit = if (on && Tracker.karaoke && state.status == Status.SYNCED) Lrc.litChars(l.text, l.timeMs, state.lines.getOrNull(i + 1)?.timeMs, pos, l.endMs) else 0
                             val shown = if (lit > 0) androidx.compose.ui.text.buildAnnotatedString {
                                 append(l.text)
-                                addStyle(androidx.compose.ui.text.SpanStyle(color = MaterialTheme.colorScheme.primary), 0, lit)
-                                addStyle(androidx.compose.ui.text.SpanStyle(color = MaterialTheme.colorScheme.onSurface), lit, l.text.length)
+                                addStyle(androidx.compose.ui.text.SpanStyle(color = MaterialTheme.colorScheme.onSurface), 0, lit)
+                                addStyle(androidx.compose.ui.text.SpanStyle(color = MaterialTheme.colorScheme.primary), lit, l.text.length)
                             } else androidx.compose.ui.text.AnnotatedString(l.text.ifBlank { "♪" })
                             androidx.compose.foundation.layout.Column {
                             Text(shown, fontSize = 22.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal, color = color,

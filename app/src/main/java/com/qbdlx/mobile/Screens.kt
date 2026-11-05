@@ -11,6 +11,10 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardActions
@@ -661,6 +665,19 @@ fun SettingsScreen(vm: MainViewModel) {
                     if (vm.bitPerfect) Text(s.bitPerfectStatus(vm.bitPerfectState), fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
                 }
                 Switch(vm.bitPerfect, { vm.updateBitPerfect(it) })
+            }
+            var diag by remember { mutableStateOf<String?>(null) }
+            val ctx = LocalContext.current
+            TextButton(onClick = { diag = diagnoseUsb(ctx) }, Modifier.padding(horizontal = 8.dp)) { Text(s.usbDiagButton) }
+            diag?.let { txt ->
+                val clip = LocalClipboardManager.current
+                AlertDialog(
+                    onDismissRequest = { diag = null },
+                    title = { Text(s.usbDiagButton) },
+                    text = { Column(Modifier.verticalScroll(rememberScrollState())) { SelectionContainer { Text(txt, fontSize = 12.sp, fontFamily = FontFamily.Monospace) } } },
+                    confirmButton = { TextButton({ clip.setText(androidx.compose.ui.text.AnnotatedString(txt)) }) { Text(s.usbDiagCopy) } },
+                    dismissButton = { TextButton({ diag = null }) { Text(s.usbDiagClose) } },
+                )
             }
         }
 
