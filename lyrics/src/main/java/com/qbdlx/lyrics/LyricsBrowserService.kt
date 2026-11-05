@@ -35,7 +35,7 @@ class LyricsBrowserService : MediaBrowserService() {
         scope.launch {
             while (isActive) {
                 val state = Tracker.state.value
-                val rows = CarView.rows(state, Tracker.positionMs() + Tracker.carLeadMs)
+                val rows = CarView.rows(state, Tracker.positionMs() + Tracker.carLeadMs, Tracker.translations.value)
                 val signature = rows.map { it.id + it.title } + (Tracker.cover?.hashCode() ?: 0).toString()
                 val meta = (state.track?.key ?: "") + (Tracker.cover?.hashCode() ?: 0)
                 if (meta != shownMeta) {
@@ -62,7 +62,7 @@ class LyricsBrowserService : MediaBrowserService() {
 
     override fun onLoadChildren(parentId: String, result: Result<MutableList<MediaItem>>) {
         if (parentId != ROOT_ID) { result.sendResult(mutableListOf()); return }
-        val rows = CarView.rows(Tracker.state.value, Tracker.positionMs() + Tracker.carLeadMs)
+        val rows = CarView.rows(Tracker.state.value, Tracker.positionMs() + Tracker.carLeadMs, Tracker.translations.value)
         result.sendResult(rows.map { r ->
             MediaItem(
                 MediaDescription.Builder().setMediaId(r.id).setTitle(r.title)

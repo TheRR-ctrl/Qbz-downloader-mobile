@@ -21,7 +21,7 @@ class Row(val id: String, val title: String, val subtitle: String = "", val curr
 
 object CarView {
     /** The rows for the car screen: the song, then the current lyric line with its neighbours (or a message). */
-    fun rows(state: LyricsState, posMs: Long): List<Row> {
+    fun rows(state: LyricsState, posMs: Long, tr: Map<Int, String> = emptyMap()): List<Row> {
         val head = state.track?.let { listOf(Row("track", it.title, it.artist, cover = true)) }.orEmpty()
         return head + when (state.status) {
             Status.NO_ACCESS -> listOf(Row("msg", "Falta el acceso a notificaciones", "Ábrelo en el teléfono: Q Lyrics"))
@@ -29,11 +29,11 @@ object CarView {
             Status.LOADING -> listOf(Row("msg", "Buscando la letra…"))
             Status.NOT_FOUND -> listOf(Row("msg", "No hay letra para esta canción"))
             Status.ERROR -> listOf(Row("msg", "No se pudo cargar la letra", "Revisa la conexión"))
-            Status.SYNCED -> window(state.lines, Lrc.indexAt(state.lines, posMs))
+            Status.SYNCED -> window(state.lines, Lrc.indexAt(state.lines, posMs), tr)
             Status.PLAIN -> {
                 val d = state.track?.durationMs ?: 0
                 val idx = if (d > 0 && state.lines.isNotEmpty()) ((posMs.toDouble() / d) * state.lines.size).toInt().coerceIn(0, state.lines.size - 1) else 0
-                window(state.lines, idx)
+                window(state.lines, idx, tr)
             }
         }
     }
@@ -42,10 +42,12 @@ object CarView {
     fun header(title: String, artist: String) = if (artist.isBlank()) title else "$title - $artist"
 
     /** Two lyric rows under the song's own row: the one being sung and the next (the previous one was dropped so everything fits the car screen); missing ones show "♪". */
-    private fun window(lines: List<LyricLine>, idx: Int): List<Row> {
+    private fun window(lines: List<LyricLine>, idx: Int, tr: Map<Int, String> = emptyMap()): List<Row> {
         if (lines.isEmpty()) return listOf(Row("msg", "♪"))
         fun at(i: Int, id: String) = Row(id, lines.getOrNull(i)?.text?.ifBlank { "♪" } ?: "♪")
         val mid = if (idx < 0) "♪ …" else "▶ " + lines[idx].text.ifBlank { "♪" }
-        return listOf(Row("l-now", mid, current = true), at(idx + 1, "l-next"))
+        // a line in another language: its Spanish translation takes the place of the next line
+        val t = if (idx >= 0) tr[idx] else null
+        return listOf(Row("l-now", mid, current = true), if (t != null) Row("l-tr", "↳ $t") else at(idx + 1, "l-next"))
     }
 }

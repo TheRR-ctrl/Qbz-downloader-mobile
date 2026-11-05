@@ -38,6 +38,12 @@ object Tracker {
     @Volatile var karaoke = true
     /** Lyrics without times are timed by Whisper on their own the first time they play (once per song). */
     @Volatile var autoWhisper = true
+    /** Spanish translation under the lines that are in another language. */
+    @Volatile var translate = true
+    /** Translation by line index of the lyric on screen (only lines not in Spanish). */
+    val translations = MutableStateFlow<Map<Int, String>>(emptyMap())
+    private var trJob: Job? = null
+    private var trFor = ""
     private val triedAuto = HashSet<String>()
     @Volatile var lastError = ""
 
@@ -176,7 +182,7 @@ object Tracker {
         LyricsStore.init(app); SyncCheck.init(app)
         // The sync settings must be read here and not only when the screen opens: the car can start the service without the app ever being opened.
         app.getSharedPreferences("lyrics", Context.MODE_PRIVATE).let { p ->
-            offsetMs = p.getLong("offset", 0); carLeadMs = p.getLong("car_lead", 1000); karaoke = p.getBoolean("karaoke", true); autoWhisper = p.getBoolean("auto_whisper", true)
+            offsetMs = p.getLong("offset", 0); carLeadMs = p.getLong("car_lead", 1000); karaoke = p.getBoolean("karaoke", true); translate = p.getBoolean("translate", true); autoWhisper = p.getBoolean("auto_whisper", true)
         }
         scope.launch { var tick = 0
             while (isActive) { runCatching { refresh(app) }; if (++tick % 150 == 0) runCatching { SyncCheck.autoTick(app) }; delay(400) } }
@@ -276,8 +282,22 @@ object Tracker {
             l?.plain != null -> LyricsState(Status.PLAIN, track, Lrc.plain(l.plain), playing, l.source)
             else -> LyricsState(Status.NOT_FOUND, track, playing = playing)
         }
+        translateLines(track)
         val ctx = app
         if (autoWhisper && _state.value.status == Status.PLAIN && ctx != null && playing && triedAuto.add(track.key) && Whisper.available(ctx)) timeFromWhisper()
+    }
+
+    fun translateLines(track: TrackInfo? = _state.value.track) {
+        val ctx = app ?: return
+        val lines = _state.value.lines.map { it.text }
+        val sig = (track?.storeKey ?: "") + "|" + lines.hashCode() + "|" + translate
+        if (sig == trFor) return
+        trFor = sig; trJob?.cancel(); translations.value = emptyMap()
+        if (!translate || track == null || lines.none { it.isNotBlank() }) return
+        trJob = scope.launch(Dispatchers.IO) {
+            val r = Translator.translate(ctx, track.storeKey, lines) { !isActive }
+            if (isActive && _state.value.track?.key == track.key) translations.value = r else if (!isActive) Unit else trFor = ""
+        }
     }
 
     /** The song's own clock, without the user's sync offset: what a tap-made timing is saved against. */

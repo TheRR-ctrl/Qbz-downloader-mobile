@@ -170,6 +170,7 @@ class MainActivity : ComponentActivity() {
             else if (tagging && state.lines.isNotEmpty()) marks.size.coerceAtMost(state.lines.size - 1) else -1
         val listState = androidx.compose.foundation.lazy.rememberLazyListState()
         // Dragging the list lets the reader browse without being pulled back; "Resincronizar" returns to the line being sung.
+        val translations by Tracker.translations.collectAsState()
         var browsing by remember { mutableStateOf(false) }
         val dragged by listState.interactionSource.collectIsDraggedAsState()
         LaunchedEffect(dragged) { if (dragged) browsing = true }
@@ -224,6 +225,12 @@ class MainActivity : ComponentActivity() {
                             androidx.compose.material3.Switch(karaoke, { karaoke = it; Tracker.karaoke = it; sp.edit().putBoolean("karaoke", it).apply() })
                         }
                         Text("Pinta la línea palabra por palabra mientras se canta (aproximado).", style = small)
+                        var trOn by remember { mutableStateOf(Tracker.translate) }
+                        Row(Modifier.padding(top = 10.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                            Text("Traducir al español", Modifier.weight(1f))
+                            androidx.compose.material3.Switch(trOn, { trOn = it; Tracker.translate = it; sp.edit().putBoolean("translate", it).apply(); Tracker.translateLines() })
+                        }
+                        Text("Pone la traducción bajo las líneas que no están en español (en el coche y en la ventana flotante también). Usa internet.", style = small)
                     }
                     QCard(Modifier.fillMaxWidth()) {
                         Text("Verificar sincronía", fontWeight = FontWeight.Bold)
@@ -434,6 +441,8 @@ class MainActivity : ComponentActivity() {
                                         setOffset((l.timeMs - (Tracker.positionMs() - Tracker.offsetMs)).coerceIn(-10_000, 10_000))
                                         browsing = false
                                     }).padding(vertical = 6.dp))
+                            val trLine = if (Tracker.translate) translations[i] else null
+                            if (trLine != null) Text(trLine, fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (on) 1f else .7f), modifier = Modifier.fillMaxWidth(.83f).padding(bottom = 4.dp))
                             // A pause of 5 s or more after a sung line (the line is taken as sung at ~100 ms a character, at least 2.5 s): the same three dots as before the first line.
                             val nextT = state.lines.getOrNull(i + 1)?.timeMs
                             if (state.status == Status.SYNCED && nextT != null && l.text.isNotBlank()) {
