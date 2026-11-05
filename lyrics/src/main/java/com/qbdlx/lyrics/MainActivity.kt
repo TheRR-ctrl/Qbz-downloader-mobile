@@ -532,19 +532,32 @@ class MainActivity : ComponentActivity() {
                         TextButton({ if (marks.isNotEmpty()) finish() else tagging = false }) { Text(if (marks.isNotEmpty()) "Guardar" else "Cancelar") }
                     }
                 }
-                if (!tools && state.track != null) androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    // Follow the audio again after browsing; while following it shows the state instead.
-                    if (state.status == Status.SYNCED && whisperOk) PillTonal({ Tracker.timeFromWhisper() }, enabled = timingMsg == null || !(timingMsg!!.endsWith("…") || timingMsg!!.endsWith("minutos."))) { Text("Resincronizar con la voz", maxLines = 1, softWrap = false) }
-                    if (state.status == Status.SYNCED) { if (browsing) PillButton({ browsing = false }) { Text("Seguir audio", maxLines = 1, softWrap = false) } else PillTonal({ browsing = true }) { Text("Siguiendo el audio ✓", maxLines = 1, softWrap = false) } }
-                    if (state.status == Status.SYNCED || state.status == Status.PLAIN) PillTonal({ editing = true }) { Text("Editar letra", maxLines = 1, softWrap = false) }
-                    PillTonal({ enterPip() }) { Text("Burbuja flotante", maxLines = 1, softWrap = false) }
-                    if (state.status == Status.SYNCED && whisperOk) PillTonal({ Tracker.verifySync() }, enabled = timingMsg == null || !(timingMsg!!.endsWith("…") || timingMsg!!.endsWith("minutos."))) { Text("Verificar sincronización", maxLines = 1, softWrap = false) }
-                    if (state.status == Status.SYNCED) PillTonal({
-                        val checking = Tracker.reportBadSync()
-                        android.widget.Toast.makeText(this@MainActivity, if (checking) "Informe guardado. Compruebo la letra con la voz…" else "Informe guardado. Elige otra letra de la lista.", android.widget.Toast.LENGTH_LONG).show()
-                        if (!checking) picking = true
-                    }) { Text("Informar mala sincronización", maxLines = 1, softWrap = false) }
-                    PillTonal({ picking = true }) { Text("Elegir letra", maxLines = 1, softWrap = false) }
+                if (!tools && state.track != null) {
+                    // Two buttons that matter while listening, and the rest tucked in a menu. Lit (filled) means on or ready; grey means it cannot be pressed right now.
+                    var menu by remember { mutableStateOf(false) }
+                    val idle = timingMsg == null || !(timingMsg!!.endsWith("…") || timingMsg!!.endsWith("minutos."))
+                    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        if (state.status == Status.SYNCED) {
+                            if (browsing) PillButton({ browsing = false }) { Text("Seguir el audio", maxLines = 1, softWrap = false) }
+                            else PillButton({ browsing = true }) { Text("✓ Siguiendo el audio", maxLines = 1, softWrap = false) }
+                        }
+                        if (state.status == Status.SYNCED && whisperOk) PillOutlined({ Tracker.timeFromWhisper() }, enabled = idle) { Text("Resincronizar con la voz", maxLines = 1, softWrap = false) }
+                        Box {
+                            PillOutlined({ menu = true }) { Text("Más ▾", maxLines = 1, softWrap = false) }
+                            androidx.compose.material3.DropdownMenu(menu, { menu = false }) {
+                                @Composable fun item(label: String, on: Boolean = true, run: () -> Unit) = androidx.compose.material3.DropdownMenuItem({ Text(label) }, { menu = false; run() }, enabled = on)
+                                if (state.status == Status.SYNCED || state.status == Status.PLAIN) item("Editar letra") { editing = true }
+                                item("Elegir letra") { picking = true }
+                                item("Burbuja flotante") { enterPip() }
+                                if (state.status == Status.SYNCED && whisperOk) item("Verificar sincronización", idle) { Tracker.verifySync() }
+                                if (state.status == Status.SYNCED) item("Informar mala sincronización") {
+                                    val checking = Tracker.reportBadSync()
+                                    android.widget.Toast.makeText(this@MainActivity, if (checking) "Informe guardado. Compruebo la letra con la voz…" else "Informe guardado. Elige otra letra de la lista.", android.widget.Toast.LENGTH_LONG).show()
+                                    if (!checking) picking = true
+                                }
+                            }
+                        }
+                    }
                 }
                 if (!tools) BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                     // a third of the height as padding above, so the line being sung sits in the first third however many lines fit

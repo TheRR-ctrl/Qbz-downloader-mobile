@@ -78,3 +78,15 @@ fun PillTonal(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boole
         elevation = null, content = content,
     )
 }
+
+/** Pill with a visible outline in the accent colour: it reads as pressable (a grey fill looks switched off); when it cannot be pressed it fades. */
+@Composable
+fun PillOutlined(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, content: @Composable RowScope.() -> Unit) {
+    val src = remember { MutableInteractionSource() }
+    androidx.compose.material3.OutlinedButton(
+        onClick, modifier.then(pressScale(src)), enabled, shape = RoundedCornerShape(50), interactionSource = src,
+        border = androidx.compose.foundation.BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = if (enabled) 1f else .3f)),
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary, disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = .38f)),
+        content = content,
+    )
+}
