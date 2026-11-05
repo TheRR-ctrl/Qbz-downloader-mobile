@@ -83,6 +83,7 @@ object Tracker {
         val t = _state.value.track ?: return false
         SyncCheck.report(t.storeKey, t.title, t.artist, _state.value.source)
         val ctx = app
+        if (ctx != null) Whisper.forget(ctx, t.storeKey) // a bad cached listening would repeat the same mistake
         if (ctx != null && Whisper.available(ctx)) { verifySync(); return true }
         return false
     }

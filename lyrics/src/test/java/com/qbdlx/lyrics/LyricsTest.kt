@@ -124,6 +124,18 @@ class WhisperAlignTest {
         r.forEachIndexed { i, l -> assertTrue("line $i at ${l.timeMs}", kotlin.math.abs(l.timeMs - expect[i]) <= 400) }
     }
 
+    @Test fun aStrayCommonWordFarAwayDoesNotDragALine() {
+        val lines = listOf("alegria desbordante mañana", "recuerdo aquella tarde lluviosa", "nunca olvidaré tu abrazo", "caminando juntos despacio", "cantando canciones viejas", "mirando las estrellas")
+        val heard = ArrayList<AsrWord>()
+        var t = 5_000L
+        for (l in lines) { l.split(" ").forEach { heard.add(w(t, it)); t += 400 }; t += 3_000 }
+        heard.add(w(2_000, "tu")) // a stray word near the start that also appears in line 3
+        heard.sortBy { it.startMs }
+        val r = WhisperAlign.align(lines, heard)!!
+        assertTrue("line 2 at ${r[2].timeMs}", r[2].timeMs > 12_000)
+        assertTrue(r.zipWithNext().all { (a, b) -> a.timeMs < b.timeMs })
+    }
+
     @Test fun aLineWithNothingHeardIsPlacedBetweenItsNeighbours() {
         val lines = listOf("uno dos tres cuatro", "palabras que nadie oyó", "cinco seis siete ocho")
         val heard = listOf(w(1_000, "uno"), w(1_400, "dos"), w(1_800, "tres"), w(2_200, "cuatro"), w(9_000, "cinco"), w(9_400, "seis"), w(9_800, "siete"), w(10_200, "ocho"))

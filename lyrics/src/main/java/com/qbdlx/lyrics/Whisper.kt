@@ -105,6 +105,9 @@ object Whisper {
     /** What Whisper heard in this song if it was listened to before (kept on the phone, so no song is listened to twice). */
     fun heardBefore(context: Context, key: String): Asr? = runCatching { cacheFile(context, key).takeIf { it.exists() }?.readText()?.let { parse(it) }?.takeIf { it.words.isNotEmpty() } }.getOrNull()
 
+    /** Drops what was heard of this song, so the next check listens again from scratch. */
+    fun forget(context: Context, key: String) { runCatching { cacheFile(context, key).delete() } }
+
     /** Listens to [uri] (or reuses the saved result for [key]). [status] tells the screen what is happening. Null if it failed or was cancelled. */
     fun listen(context: Context, key: String, uri: Uri, cancelled: () -> Boolean, status: (String) -> Unit = {}): Asr? {
         heardBefore(context, key)?.let { return it }
