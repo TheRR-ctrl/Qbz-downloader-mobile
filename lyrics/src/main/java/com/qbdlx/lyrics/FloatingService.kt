@@ -105,19 +105,30 @@ class FloatingService : Service() {
         }
         fun hideTarget() { target?.let { t -> target = null; t.animate().alpha(0f).setDuration(120).withEndAction { runCatching { wm.removeView(t) } }.start() } }
         var wasFolded: Boolean? = null
+        // the setting buttons fade out 2 s after the last touch; touching the window brings them back
+        var toolsShown = true
+        val hideTools = Runnable { toolsShown = false; tools.animate().alpha(0f).setDuration(300).withEndAction { if (!toolsShown) tools.visibility = View.INVISIBLE }.start() }
+        fun showTools() {
+            toolsShown = true; tools.animate().cancel(); tools.visibility = View.VISIBLE; tools.animate().alpha(1f).setDuration(150).start()
+            root.removeCallbacks(hideTools); root.postDelayed(hideTools, 2000)
+        }
         val bg = CoverBackground(if (bar) 30 * dp else 18 * dp)
         applyLayout = {
             // everything is read from the saved settings, so the Ajustes sliders and the handles on the window act on the same values
             scale = prefs.getFloat("float_scale", 1f); bar = prefs.getBoolean("float_bar", true)
             folded = prefs.getBoolean("float_min", false)
-            val hasBubble = prefs.getBoolean("float_bubble", true) || folded // a folded window is always the bubble
+            val hasBubble = folded // the round cover only shows while folded: the open window is just the text
             val full = !folded
             bg.opacity = prefs.getInt("float_alpha", 100) / 100f
+            // with little or no background the text carries its own dark halo (like Musixmatch), so it reads over any app
+            val halo = if (bg.opacity < 0.7f) Color.argb(((0.7f - bg.opacity) / 0.7f * 230).toInt().coerceIn(90, 230), 0, 0, 0) else Color.TRANSPARENT
+            val r = if (bg.opacity < 0.7f) 3.5f * dp else 0f
+            for (t in listOf(now, prev, next, close, modeBtn, bigger, smaller)) t.setShadowLayer(r, 0f, 1f * dp, halo)
             val bd = (prefs.getInt("float_bubble_dp", 60) * dp).toInt()
             bubble.layoutParams = LinearLayout.LayoutParams(bd, bd)
             bubble.visibility = if (hasBubble) View.VISIBLE else View.GONE
             texts.visibility = if (full) View.VISIBLE else View.GONE
-            tools.visibility = if (full) View.VISIBLE else View.GONE
+            if (full) showTools() else { root.removeCallbacks(hideTools); tools.animate().cancel(); tools.visibility = View.GONE }
             modeBtn.text = if (bar) "⤢" else "▭"
             bigger.visibility = if (bar) View.GONE else View.VISIBLE
             smaller.visibility = bigger.visibility
@@ -158,10 +169,11 @@ class FloatingService : Service() {
         close.setOnClickListener { prefs.edit().putBoolean("float_min", true).apply(); applyLayout(); snapBubble() }
         modeBtn.setOnClickListener { prefs.edit().putBoolean("float_bar", !bar).apply(); applyLayout() }
 
+        var wasHidden = false
         var downX = 0f; var downY = 0f; var startX = 0; var startY = 0
         root.setOnTouchListener { _, e ->
             when (e.action) {
-                MotionEvent.ACTION_DOWN -> { downX = e.rawX; downY = e.rawY; startX = params.x; startY = params.y }
+                MotionEvent.ACTION_DOWN -> { wasHidden = !folded && !toolsShown; if (!folded) showTools(); downX = e.rawX; downY = e.rawY; startX = params.x; startY = params.y }
                 MotionEvent.ACTION_MOVE -> { params.x = (startX + (e.rawX - downX).toInt()).coerceIn(0, (resources.displayMetrics.widthPixels - root.width).coerceAtLeast(0)); params.y = startY + (e.rawY - downY).toInt(); runCatching { wm.updateViewLayout(root, params) }
                     if (Math.abs(e.rawX - downX) > 8 * dp || Math.abs(e.rawY - downY) > 8 * dp) { showTarget(); target?.let { it.scaleX = if (overTarget(e.rawX, e.rawY)) 1.25f else 1f; it.scaleY = it.scaleX } } }
                 MotionEvent.ACTION_CANCEL -> hideTarget()
@@ -177,7 +189,8 @@ class FloatingService : Service() {
                     prefs.edit().putInt("float_x", params.x).putInt("float_y", params.y).apply()
                     // a tap (no drag) anywhere on the window folds it to the round button, and a tap on the button opens it again
                     val tap = Math.abs(e.rawX - downX) < 8 * dp && Math.abs(e.rawY - downY) < 8 * dp
-                    if (tap) { prefs.edit().putBoolean("float_min", !folded).apply(); applyLayout(); if (!folded) Unit else snapBubble() }
+                    if (tap && wasHidden) Unit // the first tap only brings the buttons back
+                    else if (tap) { prefs.edit().putBoolean("float_min", !folded).apply(); applyLayout(); if (!folded) Unit else snapBubble() }
                 }
             }
             true
@@ -208,7 +221,7 @@ class FloatingService : Service() {
                 // the notification's colour, darkened so white text stays readable
                 bg.update(Color.argb(255, (Color.red(color) * 0.55f).toInt(), (Color.green(color) * 0.55f).toInt(), (Color.blue(color) * 0.55f).toInt()), Tracker.cover)
                 if (bubbleCover !== Tracker.cover) { bubbleCover = Tracker.cover; bubble.setImageBitmap(bubbleCover) }
-                val fg = if (bg.light) Color.rgb(20, 20, 20) else Color.WHITE
+                val fg = if (bg.light && bg.opacity > 0.55f) Color.rgb(20, 20, 20) else Color.WHITE // over a see-through window the text is white with a shadow
                 if (now.currentTextColor != fg) {
                     now.setTextColor(fg); prev.setTextColor(Color.argb(150, Color.red(fg), Color.green(fg), Color.blue(fg))); next.setTextColor(Color.argb(190, Color.red(fg), Color.green(fg), Color.blue(fg)))
                     close.setTextColor(fg); modeBtn.setTextColor(fg); bigger.setTextColor(fg); smaller.setTextColor(fg); resize.setTextColor(fg)
@@ -228,6 +241,12 @@ class FloatingService : Service() {
                     Status.ERROR -> "No se pudo cargar la letra" to ""
                     Status.NO_ACCESS -> "Falta el acceso a notificaciones" to ""
                     Status.NO_MEDIA -> "♪" to "Pon una canción"
+                }
+                if (now.text.toString() != a && !folded && now.text.isNotEmpty()) {
+                    // a new line rolls up into place: a short rise and fade, inside the window padding so nothing is clipped
+                    texts.animate().cancel()
+                    texts.translationY = 8 * dp; texts.alpha = 0.25f
+                    texts.animate().translationY(0f).alpha(1f).setDuration(260).setInterpolator(android.view.animation.DecelerateInterpolator(1.8f)).start()
                 }
                 if (now.text.toString() != a || litNow != litShown) {
                     litShown = litNow

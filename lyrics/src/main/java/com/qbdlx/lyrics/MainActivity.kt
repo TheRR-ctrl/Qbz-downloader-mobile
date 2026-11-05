@@ -422,7 +422,6 @@ class MainActivity : ComponentActivity() {
                         var fScale by remember { mutableFloatStateOf(sp.getFloat("float_scale", 1f)) }
                         var fWidth by remember { mutableFloatStateOf(sp.getInt("float_w", (resources.displayMetrics.widthPixels * 0.86f).toInt()).toFloat()) }
                         var fBubble by remember { mutableFloatStateOf(sp.getInt("float_bubble_dp", 60).toFloat()) }
-                        var fShowBubble by remember { mutableStateOf(sp.getBoolean("float_bubble", true)) }
                         var fFolded by remember { mutableStateOf(sp.getBoolean("float_min", false)) }
                         var fNext by remember { mutableStateOf(sp.getBoolean("float_next", true)) }
                         var fSnap by remember { mutableStateOf(sp.getBoolean("float_snap", false)) }
@@ -433,7 +432,7 @@ class MainActivity : ComponentActivity() {
                             androidx.compose.material3.Slider(value, onChange, valueRange = range)
                         }
                         Text("Aspecto de la ventana", Modifier.padding(top = 10.dp), fontWeight = FontWeight.SemiBold)
-                        slider("Transparencia del fondo: ${100 - fAlpha.toInt()} %", fAlpha, 20f..100f) { fAlpha = it; sp.edit().putInt("float_alpha", it.toInt()).apply() }
+                        slider("Transparencia del fondo: ${100 - fAlpha.toInt()} %", fAlpha, 0f..100f) { fAlpha = it; sp.edit().putInt("float_alpha", it.toInt()).apply() }
                         slider("Tamaño del texto: ${(fScale * 100).toInt()} %", fScale, 0.6f..2.2f) { fScale = it; sp.edit().putFloat("float_scale", it).apply() }
                         slider("Ancho: ${(fWidth / resources.displayMetrics.density).toInt()} dp", fWidth.coerceIn(minW, maxW), minW..maxW) { fWidth = it; sp.edit().putInt("float_w", it.toInt()).apply() }
                         slider("Tamaño de la burbuja: ${fBubble.toInt()} dp", fBubble, 28f..80f) { fBubble = it; sp.edit().putInt("float_bubble_dp", it.toInt()).apply() }
@@ -441,7 +440,6 @@ class MainActivity : ComponentActivity() {
                             Text(label, Modifier.weight(1f), fontSize = 13.sp)
                             androidx.compose.material3.Switch(on, { set(it); sp.edit().putBoolean(key, it).apply() })
                         }
-                        toggle("Mostrar la burbuja con la portada", fShowBubble, "float_bubble") { fShowBubble = it }
                         toggle("Plegar a solo la burbuja (tócala para abrir)", fFolded, "float_min") { fFolded = it }
                         toggle("Barra compacta (una línea)", fBar, "float_bar") { fBar = it }
                         toggle("Mostrar la línea siguiente (modo grande)", fNext, "float_next") { fNext = it }
@@ -449,7 +447,7 @@ class MainActivity : ComponentActivity() {
                         Text("En la ventana, arrastra ⤡ para cambiar el ancho (izquierda/derecha) y el texto (arriba/abajo).", style = small)
                         TextButton({
                             sp.edit().remove("float_alpha").remove("float_scale").remove("float_w").remove("float_bubble_dp").remove("float_bubble").remove("float_min").remove("float_bar").remove("float_next").remove("float_snap").apply()
-                            fAlpha = 100f; fScale = 1f; fWidth = resources.displayMetrics.widthPixels * 0.86f; fBubble = 46f; fShowBubble = true; fFolded = false; fBar = true; fNext = true; fSnap = false
+                            fAlpha = 100f; fScale = 1f; fWidth = resources.displayMetrics.widthPixels * 0.86f; fBubble = 46f; fFolded = false; fBar = true; fNext = true; fSnap = false
                         }) { Text("Restablecer el aspecto") }
                     }
                     QCard(Modifier.fillMaxWidth()) {
