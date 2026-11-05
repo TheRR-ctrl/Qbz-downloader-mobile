@@ -44,7 +44,7 @@ class FloatingService : Service() {
 
         val now = TextView(this).apply { setTextColor(Color.WHITE); textSize = 18f; setTypeface(typeface, android.graphics.Typeface.BOLD); maxLines = 2 }
         val next = TextView(this).apply { setTextColor(Color.argb(180, 255, 255, 255)); textSize = 14f; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
-        val close = TextView(this).apply { text = "✕"; setTextColor(Color.argb(200, 255, 255, 255)); textSize = 16f; setPadding((10 * dp).toInt(), (6 * dp).toInt(), (10 * dp).toInt(), (6 * dp).toInt()); setOnClickListener { stopSelf() } }
+        val close = TextView(this).apply { text = "✕"; setTextColor(Color.argb(200, 255, 255, 255)); textSize = 16f; setPadding((10 * dp).toInt(), (6 * dp).toInt(), (10 * dp).toInt(), (6 * dp).toInt()); }
         var scale = prefs.getFloat("float_scale", 1f)
         fun tool(label: String) = TextView(this).apply { text = label; setTextColor(Color.argb(220, 255, 255, 255)); textSize = 16f; gravity = Gravity.CENTER; setPadding((10 * dp).toInt(), (6 * dp).toInt(), (10 * dp).toInt(), (6 * dp).toInt()) }
         fun relayout() { runCatching { wm.updateViewLayout(view, params) } }
@@ -85,6 +85,10 @@ class FloatingService : Service() {
             addView(texts, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = (10 * dp).toInt() })
             addView(tools)
         }
+        // pop in / out like a chat head
+        val spring = android.view.animation.OvershootInterpolator(1.6f)
+        close.setOnClickListener { root.animate().scaleX(0.3f).scaleY(0.3f).alpha(0f).setDuration(160).withEndAction { stopSelf() }.start() }
+        var wasFolded: Boolean? = null
         val bg = CoverBackground(if (bar) 30 * dp else 18 * dp)
         applyLayout = {
             // everything is read from the saved settings, so the Ajustes sliders and the handles on the window act on the same values
@@ -114,12 +118,26 @@ class FloatingService : Service() {
             // opened next to the right edge, the panel must not hang off the screen
             if (full && params.width > 0) params.x = params.x.coerceIn(0, (resources.displayMetrics.widthPixels - params.width).coerceAtLeast(0))
             relayout()
+            if (wasFolded != folded) {
+                // folding / unfolding: the window grows or shrinks from the centre of the round button
+                if (wasFolded != null) {
+                    root.pivotX = (((if (hasBubble) pad else 14) * dp) + bd / 2f); root.pivotY = bd / 2f + vp
+                    root.scaleX = if (folded) 1.25f else 0.7f; root.scaleY = root.scaleX; root.alpha = 0.5f
+                    root.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(260).setInterpolator(spring).start()
+                }
+                wasFolded = folded
+            }
         }
         // a folded bubble rests against the nearest side edge
         fun snapBubble() {
             val sw = resources.displayMetrics.widthPixels; val bd = (prefs.getInt("float_bubble_dp", 60) * dp).toInt()
-            params.x = if (params.x + bd / 2 < sw / 2) 0 else (sw - bd).coerceAtLeast(0); relayout()
-            prefs.edit().putInt("float_x", params.x).apply()
+            val target = if (params.x + bd / 2 < sw / 2) 0 else (sw - bd).coerceAtLeast(0)
+            android.animation.ValueAnimator.ofInt(params.x, target).apply {
+                duration = 260; interpolator = android.view.animation.DecelerateInterpolator(1.5f)
+                addUpdateListener { params.x = it.animatedValue as Int; relayout() }
+                start()
+            }
+            prefs.edit().putInt("float_x", target).apply()
         }
         fold.setOnClickListener { prefs.edit().putBoolean("float_min", true).apply(); applyLayout(); snapBubble() }
         modeBtn.setOnClickListener { prefs.edit().putBoolean("float_bar", !bar).apply(); applyLayout() }
@@ -147,7 +165,15 @@ class FloatingService : Service() {
         wm.addView(root, params)
         view = root
         applyLayout()
+        root.pivotX = 0f; root.pivotY = 0f; root.scaleX = 0.3f; root.scaleY = 0.3f; root.alpha = 0f
+        root.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(280).setInterpolator(spring).start()
+        // while the song plays, the folded bubble breathes slowly
+        val breath = android.animation.ValueAnimator.ofFloat(1f, 1.08f).apply {
+            duration = 900; repeatMode = android.animation.ValueAnimator.REVERSE; repeatCount = android.animation.ValueAnimator.INFINITE
+            addUpdateListener { bubble.scaleX = it.animatedValue as Float; bubble.scaleY = bubble.scaleX }
+        }
 
+        scope.coroutineContext[kotlinx.coroutines.Job]?.invokeOnCompletion { breath.cancel() }
         var litNow = 0; var litShown = -1; var sig = ""
         var bubbleCover: android.graphics.Bitmap? = null
         scope.launch {
@@ -156,6 +182,8 @@ class FloatingService : Service() {
                 val now2 = listOf("float_scale", "float_bar", "float_bubble", "float_min", "float_alpha", "float_bubble_dp", "float_w", "float_next").joinToString("|") { prefs.all[it].toString() }
                 if (now2 != sig) { sig = now2; applyLayout() }
                 val state = Tracker.state.value
+                val wantBreath = folded && state.playing
+                if (wantBreath && !breath.isRunning) breath.start() else if (!wantBreath && breath.isRunning) { breath.cancel(); bubble.scaleX = 1f; bubble.scaleY = 1f }
                 val color = Tracker.accent.value.takeIf { it != 0 } ?: 0xFF455A64.toInt()
                 // the notification's colour, darkened so white text stays readable
                 bg.update(Color.argb(255, (Color.red(color) * 0.55f).toInt(), (Color.green(color) * 0.55f).toInt(), (Color.blue(color) * 0.55f).toInt()), Tracker.cover)
