@@ -12,6 +12,16 @@ object WhisperAlign {
     /** True when the last result came from word counts only (the lyric and what was heard use different alphabets, so words cannot be compared). */
     @Volatile var approximate = false; private set
 
+    /** The lyric as Whisper heard it: words grouped into lines at pauses (0.8 s) or after 8 words, each starting when its first word does. */
+    fun linesFromHeard(words: List<AsrWord>): List<LyricLine> {
+        val ws = words.filter { w -> w.text.isNotBlank() && w.text.first().let { it != '[' && it != '(' && it != '♪' } }
+        val out = ArrayList<LyricLine>(); val cur = ArrayList<AsrWord>()
+        fun flush() { if (cur.isNotEmpty()) { out.add(LyricLine(cur.first().startMs, cur.joinToString(" ") { it.text.trim() })); cur.clear() } }
+        for (w in ws) { if (cur.isNotEmpty() && (w.startMs - cur.last().endMs > 800 || cur.size >= 8)) flush(); cur.add(w) }
+        flush()
+        return out
+    }
+
     fun markApproximate() { approximate = true }
 
     private fun script(words: List<String>): Character.UnicodeScript? =

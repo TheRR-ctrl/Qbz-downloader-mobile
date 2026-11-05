@@ -186,3 +186,12 @@ class YtMusicTest {
         assertEquals("primera linea de la letra\nsegunda linea", YtMusic.parsePlain(plain))
     }
 }
+
+class HeardLinesTest {
+    @Test fun groupsHeardWordsAtPauses() {
+        val w = listOf(AsrWord(0, 300, "uno"), AsrWord(350, 600, "dos"), AsrWord(3000, 3300, "tres"), AsrWord(3350, 3600, "[Música]"), AsrWord(3650, 3900, "cuatro"))
+        val l = WhisperAlign.linesFromHeard(w)
+        assertEquals(listOf("uno dos", "tres cuatro"), l.map { it.text })
+        assertEquals(listOf(0L, 3000L), l.map { it.timeMs })
+    }
+}

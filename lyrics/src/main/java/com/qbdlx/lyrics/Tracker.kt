@@ -87,13 +87,18 @@ object Tracker {
                 var timed = WhisperAlign.align(lines, asr.words)
                 // The lyric and the voice use different alphabets: YouTube Music often writes the same song in the alphabet Whisper heard.
                 // Its lines only serve to find the times; they are moved onto the user's lines by position.
-                if (WhisperAlign.approximate && _state.value.source != YtMusic.SOURCE) {
+                if ((timed == null || WhisperAlign.approximate) && _state.value.source != YtMusic.SOURCE) {
                     withContext(Dispatchers.Main) { timing.value = "Buscando la letra en otro alfabeto…" }
                     val other = runCatching { YtMusic.find(t.title, t.artist, (t.durationMs / 1000).toInt()) }.getOrNull()
                     val otherLines = (other?.plain ?: other?.synced?.let { Lrc.parse(it).map { l -> l.text }.joinToString("\n") })?.lines()?.map { it.trim() }?.filter { it.isNotEmpty() }
                     val better = otherLines?.let { WhisperAlign.align(it, asr.words) }?.takeIf { !WhisperAlign.approximate }
                     if (better != null && lines.isNotEmpty()) timed = lines.mapIndexed { i, text -> LyricLine(better[(i.toLong() * (better.size - 1) / (lines.size - 1).coerceAtLeast(1)).toInt()].timeMs, text) }
-                    else WhisperAlign.markApproximate()
+                    else if (timed != null) WhisperAlign.markApproximate()
+                }
+                // Nothing matches and no other lyric helps: what Whisper heard becomes the lyric, with its real times.
+                if (timed == null && asr.words.size >= 8) {
+                    val heard = WhisperAlign.linesFromHeard(asr.words)
+                    if (heard.size >= 2) { withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key) saveTimed(heard, "Whisper (lo que se oyó)") }; return@withContext "Listo: no coincidía con la letra, así que se escribió lo que Whisper oyó. Puede tener errores." }
                 }
                 val done = timed ?: return@withContext "Whisper entendió muy poco de la voz (${asr.words.size} palabras, idioma ${asr.lang}). Prueba «Detectar con el audio»."
                 withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key) saveTimed(done) }
@@ -234,9 +239,9 @@ object Tracker {
     fun rawPositionMs() = (positionMs() - offsetMs).coerceAtLeast(0)
 
     /** Saves lines timed by the user as this song's synced lyrics (kept on the phone like any found lyrics) and shows them at once. */
-    fun saveTimed(lines: List<LyricLine>) {
+    fun saveTimed(lines: List<LyricLine>, source: String? = _state.value.source) {
         val t = _state.value.track ?: return
-        val l = Lyrics(Lrc.toLrc(lines), lines.joinToString("\n") { it.text }, _state.value.source)
+        val l = Lyrics(Lrc.toLrc(lines), lines.joinToString("\n") { it.text }, source)
         LyricsStore.put(t.storeKey, l); cache[t.key] = l; _saved.value = LyricsStore.count()
         publish(t, l, _state.value.playing)
     }
