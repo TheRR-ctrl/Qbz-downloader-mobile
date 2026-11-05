@@ -197,6 +197,7 @@ class MainActivity : ComponentActivity() {
                 val savedCount by Tracker.saved.collectAsState()
                 val isSaved = state.track?.let { (LyricsStore.has(it.storeKey) || LyricsStore.has(it.key)) } == true && savedCount >= 0
                 var karaoke by remember { mutableStateOf(Tracker.karaoke) }
+                var autoW by remember { mutableStateOf(Tracker.autoWhisper) }
                 var lead by remember { mutableLongStateOf(Tracker.carLeadMs) }
                 var floating by remember { mutableStateOf(FloatingService.running) }
                 val whisperOk = remember { Whisper.available(this@MainActivity) }
@@ -205,6 +206,10 @@ class MainActivity : ComponentActivity() {
                 Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     QCard(Modifier.fillMaxWidth()) {
                         Text("Sincronía y karaoke", fontWeight = FontWeight.Bold)
+                        if (whisperOk) Row(Modifier.padding(top = 6.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                            Text("Poner tiempos solo a las letras sin sincronizar, escuchando la voz (Whisper; gasta batería)", Modifier.weight(1f), fontSize = 13.sp)
+                            androidx.compose.material3.Switch(autoW, { autoW = it; Tracker.autoWhisper = it; sp.edit().putBoolean("auto_whisper", it).apply() })
+                        }
                         Row(Modifier.padding(top = 6.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                             Text("Sincronía: $offset ms", Modifier.weight(1f))
                             TextButton({ setOffset((offset - 250).coerceIn(-10_000, 10_000)) }) { Text("−", fontSize = 20.sp) }
@@ -310,6 +315,7 @@ class MainActivity : ComponentActivity() {
                 }
                 if (!tools && state.track != null) Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     // Follow the audio again after browsing; while following it shows the state instead.
+                    if (state.status == Status.SYNCED && whisperOk) PillTonal({ Tracker.timeFromWhisper() }, enabled = timingMsg == null || !(timingMsg!!.endsWith("…") || timingMsg!!.endsWith("minutos."))) { Text("Resincronizar con la voz") }
                     if (state.status == Status.SYNCED) { if (browsing) PillButton({ browsing = false }) { Text("Seguir audio") } else PillTonal({ browsing = true }) { Text("Siguiendo el audio ✓") } }
                     PillTonal({ enterPip() }) { Text("Ventana flotante") }
                 }

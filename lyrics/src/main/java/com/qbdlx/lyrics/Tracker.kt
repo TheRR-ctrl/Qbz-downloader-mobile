@@ -36,6 +36,9 @@ object Tracker {
     @Volatile var carLeadMs = 1000L
     /** Fill the line word by word while it is sung. */
     @Volatile var karaoke = true
+    /** Lyrics without times are timed by Whisper on their own the first time they play (once per song). */
+    @Volatile var autoWhisper = true
+    private val triedAuto = HashSet<String>()
     @Volatile var lastError = ""
 
     /** What the audio timing is doing, for the screen: null when idle. */
@@ -114,7 +117,7 @@ object Tracker {
         LyricsStore.init(app)
         // The sync settings must be read here and not only when the screen opens: the car can start the service without the app ever being opened.
         app.getSharedPreferences("lyrics", Context.MODE_PRIVATE).let { p ->
-            offsetMs = p.getLong("offset", 0); carLeadMs = p.getLong("car_lead", 1000); karaoke = p.getBoolean("karaoke", true)
+            offsetMs = p.getLong("offset", 0); carLeadMs = p.getLong("car_lead", 1000); karaoke = p.getBoolean("karaoke", true); autoWhisper = p.getBoolean("auto_whisper", true)
         }
         scope.launch { while (isActive) { runCatching { refresh(app) }; delay(400) } }
     }
@@ -212,6 +215,8 @@ object Tracker {
             l?.plain != null -> LyricsState(Status.PLAIN, track, Lrc.plain(l.plain), playing)
             else -> LyricsState(Status.NOT_FOUND, track, playing = playing)
         }
+        val ctx = app
+        if (autoWhisper && _state.value.status == Status.PLAIN && ctx != null && playing && triedAuto.add(track.key) && Whisper.available(ctx)) timeFromWhisper()
     }
 
     /** The song's own clock, without the user's sync offset: what a tap-made timing is saved against. */
