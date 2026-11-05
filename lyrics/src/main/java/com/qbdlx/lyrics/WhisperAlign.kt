@@ -22,6 +22,9 @@ object WhisperAlign {
         return out
     }
 
+    /** Lyric words found in what was heard, and the lyric's total, in the last [align]. */
+    @Volatile var lastMatched = 0 to 0; private set
+
     fun markApproximate() { approximate = true }
 
     private fun script(words: List<String>): Character.UnicodeScript? =
@@ -32,7 +35,9 @@ object WhisperAlign {
 
     private fun similarity(a: String, b: String): Double {
         if (a == b) return 1.0
-        if (min(a.length, b.length) < 4) return 0.0
+        // words in Gurmukhi, Devanagari… are short once the vowel signs are gone: three letters already say something
+        val short = if (a.any { it.code > 0x24F } || b.any { it.code > 0x24F }) 3 else 4
+        if (min(a.length, b.length) < short) return 0.0
         val d = Array(2) { IntArray(b.length + 1) { it } }
         for (i in 1..a.length) {
             val c = i and 1; val p = c xor 1; d[c][0] = i
@@ -42,7 +47,7 @@ object WhisperAlign {
     }
 
     /** Start of each of [lines] in ms, or null when too little of the lyric was recognised. */
-    fun align(lines: List<String>, words: List<AsrWord>): List<LyricLine>? {
+    fun align(lines: List<String>, words: List<AsrWord>, minMatched: Double = MIN_MATCHED): List<LyricLine>? {
         approximate = false
         // lyric words with their line; heard words without Whisper's sound tags ("[Música]", "(aplausos)", ♪)
         val lw = ArrayList<Pair<Int, String>>()
@@ -67,7 +72,8 @@ object WhisperAlign {
                 else -> j--
             }
         }
-        if (match.count { it >= 0 } < n * MIN_MATCHED) {
+        lastMatched = match.count { it >= 0 } to n
+        if (match.count { it >= 0 } < n * minMatched) {
             // Different alphabets (a Hindi lyric in Devanagari, Whisper writing the same song in Gurmukhi): no word is comparable. Both
             // still run through the same song, so the k-th lyric word is placed at the same fraction of what was heard.
             // A song can mix alphabets (Spanish in Latin, the rest in Devanagari or Gurmukhi), so the dominant one says little: what counts is that Whisper heard enough words.

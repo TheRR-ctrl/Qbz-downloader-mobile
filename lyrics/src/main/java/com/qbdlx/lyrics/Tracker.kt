@@ -95,8 +95,8 @@ object Tracker {
                     val other = runCatching { YtMusic.find(t.title, t.artist, (t.durationMs / 1000).toInt()) }.getOrNull()
                     val otherLines = (other?.plain ?: other?.synced?.let { Lrc.parse(it).map { l -> l.text }.joinToString("\n") })?.lines()?.map { it.trim() }?.filter { it.isNotEmpty() }
                     if (other == null) ytWhy = YtMusic.lastFail
-                    val better = otherLines?.let { WhisperAlign.align(it, asr.words) }?.takeIf { !WhisperAlign.approximate }
-                    if (other != null && better == null) ytWhy = "encontró la letra, pero tampoco coincidía con lo que oyó Whisper"
+                    val better = otherLines?.let { WhisperAlign.align(it, asr.words, 0.12) }?.takeIf { !WhisperAlign.approximate }
+                    if (other != null && better == null) ytWhy = "encontró la letra, pero solo coincidieron ${WhisperAlign.lastMatched.first} de ${WhisperAlign.lastMatched.second} palabras con lo que oyó Whisper"
                     if (better != null && lines.isNotEmpty()) timed = lines.mapIndexed { i, text -> LyricLine(better[(i.toLong() * (better.size - 1) / (lines.size - 1).coerceAtLeast(1)).toInt()].timeMs, text) }
                     else if (timed != null) WhisperAlign.markApproximate()
                 }
