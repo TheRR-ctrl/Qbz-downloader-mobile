@@ -350,6 +350,8 @@ class MainActivity : ComponentActivity() {
                 if (state.status == Status.PLAIN) Text(
                     if (tagging) "Pulsa el botón justo cuando empiece a cantarse la línea resaltada." else "Solo hay letra sin sincronizar.", fontSize = 12.sp)
                 val timingMsg by Tracker.timing.collectAsState()
+                val trMsg by Tracker.translating.collectAsState()
+                trMsg?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 val whisperOk = remember { Whisper.available(this@MainActivity) }
                 LaunchedEffect(state.track?.key) { Tracker.timing.value = null }
                 timingMsg?.let { m ->

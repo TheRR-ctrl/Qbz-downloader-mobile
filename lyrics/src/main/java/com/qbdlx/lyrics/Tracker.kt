@@ -42,6 +42,8 @@ object Tracker {
     @Volatile var translate = true
     /** Translation by line index of the lyric on screen (only lines not in Spanish). */
     val translations = MutableStateFlow<Map<Int, String>>(emptyMap())
+    /** What the translation is doing, for the screen (null when idle or off). */
+    val translating = MutableStateFlow<String?>(null)
     private var trJob: Job? = null
     private var trFor = ""
     private val triedAuto = HashSet<String>()
@@ -295,8 +297,16 @@ object Tracker {
         trFor = sig; trJob?.cancel(); translations.value = emptyMap()
         if (!translate || track == null || lines.none { it.isNotBlank() }) return
         trJob = scope.launch(Dispatchers.IO) {
+            translating.value = "Traduciendo…"
             val r = Translator.translate(ctx, track.storeKey, lines) { !isActive }
-            if (isActive && _state.value.track?.key == track.key) translations.value = r else if (!isActive) Unit else trFor = ""
+            if (!isActive) return@launch
+            if (_state.value.track?.key == track.key) translations.value = r
+            translating.value = when {
+                r.isNotEmpty() -> null
+                Translator.lastError.isNotEmpty() -> "No se pudo traducir: ${Translator.lastError}"
+                else -> null // nothing in another language
+            }
+            if (Translator.lastError.isNotEmpty() && r.isEmpty()) { delay(60_000); if (isActive) { trFor = ""; translateLines(track) } } // try again in a minute
         }
     }
 
