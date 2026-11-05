@@ -67,17 +67,25 @@ class MainActivity : ComponentActivity() {
     private var inPip by mutableStateOf(false)
     private fun pipOn() = getSharedPreferences("lyrics", MODE_PRIVATE).getBoolean("pip_on_leave", true)
 
+    /** Leaving the app opens the floating bubble; the small picture-in-picture window is only the fallback while the overlay permission is missing. */
+    private fun bubbleReady() = Settings.canDrawOverlays(this)
+
     private fun pipParams(auto: Boolean) = android.app.PictureInPictureParams.Builder().setAspectRatio(android.util.Rational(239, 100)).also {
         if (android.os.Build.VERSION.SDK_INT >= 31) it.setAutoEnterEnabled(auto)
     }.build()
 
-    private fun enterPip() { runCatching { enterPictureInPictureMode(pipParams(false)) } }
+    /** The floating bubble when it can be shown; otherwise the picture-in-picture window. */
+    private fun enterPip() { if (!FloatingService.show(this, false)) runCatching { enterPictureInPictureMode(pipParams(false)) } }
+
+    override fun onResume() { super.onResume(); FloatingService.hideIfAuto(this) }
 
     /** Leaving the app (Home) keeps the lyrics in a small window when the setting is on: automatically on Android 12+, from here before. */
-    fun applyPipSetting() { if (android.os.Build.VERSION.SDK_INT >= 31) runCatching { setPictureInPictureParams(pipParams(pipOn())) } }
+    fun applyPipSetting() { if (android.os.Build.VERSION.SDK_INT >= 31) runCatching { setPictureInPictureParams(pipParams(pipOn() && !bubbleReady())) } }
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (android.os.Build.VERSION.SDK_INT < 31 && pipOn() && Tracker.state.value.track != null) enterPip()
+        if (!pipOn() || Tracker.state.value.track == null) return
+        if (bubbleReady()) FloatingService.show(this, true)
+        else if (android.os.Build.VERSION.SDK_INT < 31) enterPip()
     }
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: android.content.res.Configuration) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig); inPip = isInPictureInPictureMode
@@ -335,10 +343,10 @@ class MainActivity : ComponentActivity() {
                     QCard(Modifier.fillMaxWidth()) {
                         Text("Ventana flotante", fontWeight = FontWeight.Bold)
                         Row(Modifier.padding(top = 6.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                            Text("Abrirla sola al salir de la app", Modifier.weight(1f))
+                            Text("Abrir la burbuja al salir de la app", Modifier.weight(1f))
                             androidx.compose.material3.Switch(pipAuto, { pipAuto = it; sp.edit().putBoolean("pip_on_leave", it).apply(); applyPipSetting() })
                         }
-                        Text("Al ir a Inicio, la letra queda en una ventanita (imagen en imagen). También la abres con el botón de la pestaña Letra.", style = small)
+                        Text(if (Settings.canDrawOverlays(this@MainActivity)) "Al ir a Inicio, la letra queda en una burbuja sobre las demás apps (como Messenger) y se cierra sola al volver a Q Lyrics. También la abres con el botón de la pestaña Letra." else "Para la burbuja hace falta el permiso «Mostrar sobre otras apps»: pulsa el botón de abajo para darlo. Mientras tanto se usa la ventana pequeña (imagen en imagen).", style = small)
                         PillTonal({
                             if (!Settings.canDrawOverlays(this@MainActivity))
                                 startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:$packageName"))) // then tap the button again
@@ -463,7 +471,7 @@ class MainActivity : ComponentActivity() {
                     if (state.status == Status.SYNCED && whisperOk) PillTonal({ Tracker.timeFromWhisper() }, enabled = timingMsg == null || !(timingMsg!!.endsWith("…") || timingMsg!!.endsWith("minutos."))) { Text("Resincronizar con la voz", maxLines = 1, softWrap = false) }
                     if (state.status == Status.SYNCED) { if (browsing) PillButton({ browsing = false }) { Text("Seguir audio", maxLines = 1, softWrap = false) } else PillTonal({ browsing = true }) { Text("Siguiendo el audio ✓", maxLines = 1, softWrap = false) } }
                     if (state.status == Status.SYNCED || state.status == Status.PLAIN) PillTonal({ editing = true }) { Text("Editar letra", maxLines = 1, softWrap = false) }
-                    PillTonal({ enterPip() }) { Text("Ventana flotante", maxLines = 1, softWrap = false) }
+                    PillTonal({ enterPip() }) { Text("Burbuja flotante", maxLines = 1, softWrap = false) }
                 }
                 if (!tools) BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                     // a third of the height as padding above, so the line being sung sits in the first third however many lines fit

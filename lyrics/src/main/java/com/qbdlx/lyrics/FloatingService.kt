@@ -190,8 +190,21 @@ class FloatingService : Service() {
 
     companion object {
         @Volatile var running = false
+        /** True when the bubble was opened by leaving the app (it closes by itself when the app comes back); false when the person opened it. */
+        @Volatile var openedByLeaving = false
+        /** Shows the bubble if it is not already showing; false when Android's "display over other apps" permission is missing. */
+        fun show(context: Context, byLeaving: Boolean): Boolean {
+            if (!android.provider.Settings.canDrawOverlays(context)) return false
+            if (!running) { openedByLeaving = byLeaving; context.startService(Intent(context, FloatingService::class.java)) }
+            return true
+        }
+        /** Closes a bubble that opening the app made redundant; one the person opened themselves stays. */
+        fun hideIfAuto(context: Context) {
+            if (running && openedByLeaving) { openedByLeaving = false; context.stopService(Intent(context, FloatingService::class.java)) }
+        }
         fun toggle(context: Context) {
             val i = Intent(context, FloatingService::class.java)
+            openedByLeaving = false
             if (running) context.stopService(i) else context.startService(i)
         }
     }
