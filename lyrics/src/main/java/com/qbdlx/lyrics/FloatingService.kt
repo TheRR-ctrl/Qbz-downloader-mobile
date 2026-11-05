@@ -85,7 +85,7 @@ class FloatingService : Service() {
             addView(tools)
         }
         // pop in / out like a chat head
-        val spring = android.view.animation.OvershootInterpolator(1.6f)
+        val spring = android.view.animation.DecelerateInterpolator(1.6f) // never above 1: the window clips whatever grows past its edges
         fun dismiss() { root.animate().scaleX(0.3f).scaleY(0.3f).alpha(0f).setDuration(160).withEndAction { stopSelf() }.start() }
         // like a picture-in-picture window or a chat head: dragging it onto the ✕ at the bottom closes it
         var target: TextView? = null
@@ -137,7 +137,7 @@ class FloatingService : Service() {
                 // folding / unfolding: the window grows or shrinks from the centre of the round button
                 if (wasFolded != null) {
                     root.pivotX = (((if (hasBubble) pad else 14) * dp) + bd / 2f); root.pivotY = bd / 2f + vp
-                    root.scaleX = if (folded) 1.25f else 0.7f; root.scaleY = root.scaleX; root.alpha = 0.5f
+                    root.scaleX = if (folded) 0.85f else 0.7f; root.scaleY = root.scaleX; root.alpha = 0.5f
                     root.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(260).setInterpolator(spring).start()
                 }
                 wasFolded = folded
@@ -161,7 +161,7 @@ class FloatingService : Service() {
         root.setOnTouchListener { _, e ->
             when (e.action) {
                 MotionEvent.ACTION_DOWN -> { downX = e.rawX; downY = e.rawY; startX = params.x; startY = params.y }
-                MotionEvent.ACTION_MOVE -> { params.x = startX + (e.rawX - downX).toInt(); params.y = startY + (e.rawY - downY).toInt(); runCatching { wm.updateViewLayout(root, params) }
+                MotionEvent.ACTION_MOVE -> { params.x = (startX + (e.rawX - downX).toInt()).coerceIn(0, (resources.displayMetrics.widthPixels - root.width).coerceAtLeast(0)); params.y = startY + (e.rawY - downY).toInt(); runCatching { wm.updateViewLayout(root, params) }
                     if (Math.abs(e.rawX - downX) > 8 * dp || Math.abs(e.rawY - downY) > 8 * dp) { showTarget(); target?.let { it.scaleX = if (overTarget(e.rawX, e.rawY)) 1.25f else 1f; it.scaleY = it.scaleX } } }
                 MotionEvent.ACTION_CANCEL -> hideTarget()
                 MotionEvent.ACTION_UP -> {
@@ -187,7 +187,7 @@ class FloatingService : Service() {
         root.pivotX = 0f; root.pivotY = 0f; root.scaleX = 0.3f; root.scaleY = 0.3f; root.alpha = 0f
         root.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(280).setInterpolator(spring).start()
         // while the song plays, the folded bubble breathes slowly
-        val breath = android.animation.ValueAnimator.ofFloat(1f, 1.08f).apply {
+        val breath = android.animation.ValueAnimator.ofFloat(0.92f, 1f).apply {
             duration = 900; repeatMode = android.animation.ValueAnimator.REVERSE; repeatCount = android.animation.ValueAnimator.INFINITE
             addUpdateListener { bubble.scaleX = it.animatedValue as Float; bubble.scaleY = bubble.scaleX }
         }
