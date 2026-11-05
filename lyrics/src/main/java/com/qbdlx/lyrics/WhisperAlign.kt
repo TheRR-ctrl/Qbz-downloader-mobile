@@ -9,6 +9,12 @@ object WhisperAlign {
     /** Share of the lyric's words that must be found in what was heard; below it the result is not trusted. */
     const val MIN_MATCHED = 0.25
 
+    /** True when the last result came from word counts only (the lyric and what was heard use different alphabets, so words cannot be compared). */
+    @Volatile var approximate = false; private set
+
+    private fun script(words: List<String>): Character.UnicodeScript? =
+        words.joinToString("").filter { it.isLetter() }.groupBy { Character.UnicodeScript.of(it.code) }.maxByOrNull { it.value.size }?.key
+
     private fun norm(s: String): String =
         Normalizer.normalize(s.lowercase(), Normalizer.Form.NFD).filter { it.isLetterOrDigit() }
 
@@ -25,6 +31,7 @@ object WhisperAlign {
 
     /** Start of each of [lines] in ms, or null when too little of the lyric was recognised. */
     fun align(lines: List<String>, words: List<AsrWord>): List<LyricLine>? {
+        approximate = false
         // lyric words with their line; heard words without Whisper's sound tags ("[Música]", "(aplausos)", ♪)
         val lw = ArrayList<Pair<Int, String>>()
         lines.forEachIndexed { i, l -> l.split(Regex("\\s+")).map(::norm).filter { it.isNotEmpty() }.forEach { lw.add(i to it) } }
@@ -48,7 +55,16 @@ object WhisperAlign {
                 else -> j--
             }
         }
-        if (match.count { it >= 0 } < n * MIN_MATCHED) return null
+        if (match.count { it >= 0 } < n * MIN_MATCHED) {
+            // Different alphabets (a Hindi lyric in Devanagari, Whisper writing the same song in Gurmukhi): no word is comparable. Both
+            // still run through the same song, so the k-th lyric word is placed at the same fraction of what was heard.
+            if (n < 8 || m < 8 || script(lw.map { it.second }) == script(hw.map { it.second })) return null
+            approximate = true
+            val st = LongArray(lines.size) { -1L }
+            for (k in 0 until n) { val line = lw[k].first; if (st[line] < 0) st[line] = hw[(k.toLong() * (m - 1) / (n - 1).coerceAtLeast(1)).toInt()].first.startMs }
+            var last = 0L
+            return lines.mapIndexed { idx, t -> last = if (st[idx] >= 0) maxOf(st[idx], last + 400) else last + 400; LyricLine(last, t) }
+        }
         val avgWord = 350L
         // a line starts at its first recognised word (minus the words of the line before it)
         val start = LongArray(lines.size) { -1L }

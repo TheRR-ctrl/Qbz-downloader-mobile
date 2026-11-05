@@ -89,7 +89,7 @@ object Tracker {
                 withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key) saveTimed(timed) }
                 null
             }
-            timing.value = result ?: "Listo: letra sincronizada con la voz."
+            timing.value = result ?: if (WhisperAlign.approximate) "Listo, aproximado: la letra y la voz están en alfabetos distintos, así que se repartió por cantidad de palabras." else "Listo: letra sincronizada con la voz."
         }
     }
 

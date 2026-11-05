@@ -144,3 +144,14 @@ class WhisperAlignTest {
         assertEquals(1200L, asr.words[0].startMs)
     }
 }
+
+class WhisperScriptTest {
+    @Test fun differentAlphabetsFallBackToWordProportion() {
+        val lines = List(6) { "हाँ चलदा ना चलदा $it" }
+        val heard = (0 until 36).map { AsrWord(it * 1000L, it * 1000L + 400, "ਹਾਂ") } // same song, written in Gurmukhi
+        val r = WhisperAlign.align(lines, heard)!!
+        assertTrue(WhisperAlign.approximate)
+        assertTrue(r.zipWithNext().all { (a, b) -> a.timeMs < b.timeMs })
+        assertTrue(r[3].timeMs in 12_000..22_000)
+    }
+}
