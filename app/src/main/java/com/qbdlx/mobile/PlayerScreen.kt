@@ -1,5 +1,6 @@
 package com.qbdlx.mobile
 
+import sh.calvin.reorderable.ReorderableItem
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
 import android.os.Build
@@ -59,6 +60,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.Explore
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Lyrics
+import androidx.compose.material.icons.outlined.QueueMusic
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Explore
@@ -72,6 +79,8 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.filled.DragHandle
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
@@ -132,6 +141,12 @@ private enum class PlayerPage { Player, Explore, Lyrics, Info, Queue }
 private val OnPlayer = Color.White
 private val OnPlayerDim = Color.White.copy(alpha = .7f)
 private val Chip = Color.White.copy(alpha = .12f)
+
+/** The quality asked for before the real file is known ("24/48" or "24/44.1") written like Qobuz does: "24 Bit / 48 kHz". */
+private fun qualityText(q: String): String {
+    val m = Regex("""^\s*(\d{1,2})\s*/\s*([\d.]+)\s*(?:kHz)?\s*$""", RegexOption.IGNORE_CASE).find(q) ?: return q.ifBlank { "—" }
+    return "${m.groupValues[1]} Bit / ${m.groupValues[2]} kHz"
+}
 
 private fun clock(ms: Long): String = ms.coerceAtLeast(0).let { "%02d:%02d".format(java.util.Locale.ROOT, it / 60000, it / 1000 % 60) }
 
@@ -252,10 +267,10 @@ private fun PlayerBar(page: PlayerPage, onPick: (PlayerPage) -> Unit) {
     val s = LocalStrings.current
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
         listOf(
-            Triple(PlayerPage.Explore, Icons.Default.Explore, s.playerExplore),
-            Triple(PlayerPage.Lyrics, Icons.Default.Lyrics, s.lyricsTitle),
-            Triple(PlayerPage.Info, Icons.Default.Info, s.playerInfo),
-            Triple(PlayerPage.Queue, Icons.Default.QueueMusic, s.playerQueue),
+            Triple(PlayerPage.Explore, Icons.Outlined.Explore, s.playerExplore),
+            Triple(PlayerPage.Lyrics, Icons.Outlined.Lyrics, s.lyricsTitle),
+            Triple(PlayerPage.Info, Icons.Outlined.Info, s.playerInfo),
+            Triple(PlayerPage.Queue, Icons.Outlined.QueueMusic, s.playerQueue),
         ).forEach { (p, icon, label) ->
             Box(
                 Modifier.clip(RoundedCornerShape(16.dp)).background(if (page == p) Chip else Color.Transparent)
@@ -307,6 +322,7 @@ private fun rememberPlaybackProgress(vm: MainViewModel, track: Track): State<Tri
     return state
 }
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun NowPlayingPage(vm: MainViewModel, album: Album, track: Track, close: (() -> Unit) -> Unit) {
     val s = LocalStrings.current
@@ -364,7 +380,7 @@ private fun NowPlayingPage(vm: MainViewModel, album: Album, track: Track, close:
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
             InfoPill(onClick = { qualityDialog = true }) {
                 if (quality?.isHiRes == true || (quality == null && track.hiRes)) HiResBadge("Hi-Res") else Icon(Icons.Default.Album, null, Modifier.size(20.dp))
-                Text(quality?.label() ?: track.quality.ifBlank { "—" }, fontSize = 14.sp)
+                Text(quality?.label() ?: qualityText(track.quality), fontSize = 14.sp)
             }
             InfoPill {
                 Icon(Icons.Default.PhoneAndroid, null, Modifier.size(20.dp))
@@ -374,7 +390,7 @@ private fun NowPlayingPage(vm: MainViewModel, album: Album, track: Track, close:
         Row(verticalAlignment = Alignment.CenterVertically) {
             Crossfade(targetState = track, animationSpec = tween(350), label = "title", modifier = Modifier.weight(1f)) { t ->
                 Column {
-                    Text(t.displayTitle, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(t.displayTitle, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         if (t.explicit) {
                             Text("E", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.Black, modifier = Modifier.clip(RoundedCornerShape(3.dp)).background(OnPlayerDim).padding(horizontal = 4.dp))
@@ -388,6 +404,10 @@ private fun NowPlayingPage(vm: MainViewModel, album: Album, track: Track, close:
                             modifier = Modifier.weight(1f, fill = false).clip(RoundedCornerShape(4.dp)).clickable { close { vm.openAlbum(album.id) } })
                     }
                 }
+            }
+            val fav = vm.isFavorite(track.id)
+            IconButton({ vm.toggleFavorite(album, track) }) {
+                Icon(if (fav) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder, null, tint = OnPlayer)
             }
             Box {
                 IconButton({ menu = true }) { Icon(Icons.Default.MoreVert, s.more, tint = OnPlayer) }
@@ -416,6 +436,11 @@ private fun NowPlayingPage(vm: MainViewModel, album: Album, track: Track, close:
                 onValueChange = { dragging = true; dragValue = it },
                 onValueChangeFinished = { vm.seekTo((dragValue * len).toLong()); dragging = false },
                 colors = SliderDefaults.colors(thumbColor = OnPlayer, activeTrackColor = OnPlayer, inactiveTrackColor = Color.White.copy(alpha = .25f)),
+                // Like the Qobuz player: a thin rounded bar with no dot, which only shows a small thumb while it is dragged.
+                thumb = { Box(Modifier.size(if (dragging) 14.dp else 1.dp).clip(CircleShape).background(OnPlayer)) },
+                track = { st ->
+                    SliderDefaults.Track(st, Modifier.height(6.dp), colors = SliderDefaults.colors(activeTrackColor = OnPlayer, inactiveTrackColor = Color.White.copy(alpha = .25f)), thumbTrackGapSize = 0.dp, trackInsideCornerSize = 0.dp, drawStopIndicator = null)
+                },
             )
             Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(clock(posMs), fontSize = 12.sp, color = OnPlayerDim)
@@ -570,12 +595,20 @@ private fun LyricsPage(vm: MainViewModel, album: Album, track: Track) {
                     androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxSize(), state = state, contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 16.dp, end = 16.dp, top = pad, bottom = pad)) {
                         itemsIndexed(lyrics.lines) { i, line ->
                             val on = !lyrics.synced || i == current
-                            val size by androidx.compose.animation.core.animateFloatAsState(if (on && lyrics.synced) 34f else 28f, androidx.compose.animation.core.tween(300), label = "size")
-                            val alpha by androidx.compose.animation.core.animateFloatAsState(if (on) 1f else .4f, androidx.compose.animation.core.tween(300), label = "alpha")
+                            // Emil's motion rules: animate transform and opacity (never font size, which re-lays out the text every frame),
+                            // ease-out, short. Lines fade with their distance from the one being sung, like a scrolling wheel.
+                            val dist = if (lyrics.synced && current >= 0) kotlin.math.abs(i - current) else 0
+                            val scale by androidx.compose.animation.core.animateFloatAsState(if (on && lyrics.synced) 1.16f else 1f, androidx.compose.animation.core.tween(if (on) 280 else 200, easing = UiEaseOut), label = "scale")
+                            val alpha by androidx.compose.animation.core.animateFloatAsState(
+                                when { !lyrics.synced || dist == 0 -> 1f; dist == 1 -> .55f; dist == 2 -> .42f; else -> .3f },
+                                androidx.compose.animation.core.tween(if (on) 280 else 200, easing = UiEaseOut), label = "alpha",
+                            )
                             Text(
-                                line.text.ifBlank { "♪" }, fontSize = size.sp, fontWeight = FontWeight.Bold,
+                                line.text.ifBlank { "♪" }, fontSize = 28.sp, fontWeight = FontWeight.Bold,
                                 color = OnPlayer.copy(alpha = alpha),
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp).let { if (lyrics.synced) it.clickable { browsing = false; vm.seekTo((line.timeMs - vm.lyricsOffsetMs).coerceAtLeast(0)) } else it },
+                                modifier = Modifier.fillMaxWidth(if (lyrics.synced) .85f else 1f).padding(vertical = 8.dp)
+                                    .graphicsLayer { scaleX = scale; scaleY = scale; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, .5f) }
+                                    .let { if (lyrics.synced) it.clickable { browsing = false; vm.seekTo((line.timeMs - vm.lyricsOffsetMs).coerceAtLeast(0)) } else it },
                             )
                         }
                     }
@@ -660,7 +693,11 @@ private fun QueuePage(vm: MainViewModel) {
     var menu by remember { mutableStateOf(false) }
     val offset = q.history.size // index of the current track on the queue page
 
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 8.dp)) {
+    val lazyState = androidx.compose.foundation.lazy.rememberLazyListState()
+    // The first upcoming song sits after: title, [history], "current" heading, the current song and the "next" heading.
+    val firstUp = 1 + (if (showHistory && q.history.isNotEmpty()) 1 + q.history.size else 0) + 1 + (if (q.current != null) 1 else 0) + 1
+    val reorder = sh.calvin.reorderable.rememberReorderableLazyListState(lazyState) { from, to -> vm.moveUpcoming(from.index - firstUp, to.index - firstUp) }
+    LazyColumn(Modifier.fillMaxSize(), state = lazyState, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 8.dp)) {
         item {
             Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(s.queueTitle, fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
@@ -685,7 +722,16 @@ private fun QueuePage(vm: MainViewModel) {
         q.current?.let { (a, t) -> item { QueueRow(a, t, dim = false, onClick = { vm.jumpTo(offset) }, onRemove = null) } }
         item { QueueHeading(s.queueNext) }
         if (q.upcoming.isEmpty()) item { Text(s.queueEmpty, color = OnPlayerDim, modifier = Modifier.padding(vertical = 8.dp)) }
-        itemsIndexed(q.upcoming) { k, (a, t) -> QueueRow(a, t, dim = false, onClick = { vm.jumpTo(offset + 1 + k) }, onRemove = { vm.removeUpcoming(k) }) }
+        itemsIndexed(q.upcoming, key = { _, it -> System.identityHashCode(it) }) { k, it ->
+            val (a, t) = it
+            ReorderableItem(reorder, key = System.identityHashCode(it)) { dragging ->
+                val lift by androidx.compose.animation.core.animateFloatAsState(if (dragging) 1.03f else 1f, androidx.compose.animation.core.tween(160), label = "lift")
+                Row(Modifier.graphicsLayer { scaleX = lift; scaleY = lift }.background(if (dragging) Chip else Color.Transparent), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.weight(1f)) { QueueRow(a, t, dim = false, onClick = { vm.jumpTo(offset + 1 + k) }, onRemove = { vm.removeUpcoming(k) }) }
+                    Icon(Icons.Default.DragHandle, null, tint = OnPlayerDim, modifier = Modifier.padding(end = 4.dp).size(24.dp).draggableHandle())
+                }
+            }
+        }
     }
 }
 

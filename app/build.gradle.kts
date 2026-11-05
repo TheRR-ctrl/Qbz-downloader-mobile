@@ -12,8 +12,8 @@ android {
         applicationId = "com.qbdlx.mobile"
         minSdk = 29
         targetSdk = 35
-        versionCode = 116
-        versionName = "0.36.10"
+        versionCode = 160
+        versionName = "0.43.8"
     }
 
     buildTypes {
@@ -42,9 +42,9 @@ tasks.withType<Test>().configureEach {
 }
 
 dependencies {
-    val composeBom = platform("androidx.compose:compose-bom:2024.10.01")
+    val composeBom = platform("androidx.compose:compose-bom:2025.09.00")
     implementation(composeBom)
-    implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material3:material3:1.4.0-alpha18")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.activity:activity-compose:1.9.3")
@@ -54,6 +54,10 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("androidx.media3:media3-exoplayer:1.4.1")
     // Backdrop blur for the translucent bars; 1.1.x matches Compose 1.7 from the BOM above.
+    implementation("com.materialkolor:material-kolor:2.1.1")
+    implementation("com.airbnb.android:lottie-compose:6.6.2")
+    implementation("sh.calvin.reorderable:reorderable:2.4.3")
+    implementation("com.valentinilk.shimmer:compose-shimmer:1.3.1")
     implementation("dev.chrisbanes.haze:haze:1.1.1")
     implementation("dev.chrisbanes.haze:haze-materials:1.1.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")

@@ -170,7 +170,7 @@ class MediaStoreWorker(
             if (resolution is FolderResolution.Ready) {
                 resolution.writer.find(listOf(artist, album), name)?.let { treeRef(resolution.writer, resolution.treeUri, it, name, ext == "mp3") }
             } else {
-                findInMusic("Music/QobuzDownloaderX/$artist/$album", name)?.let { mediaRef(it, name, ext == "mp3") }
+                findInMusic("Music/${DefaultFolder.name}/$artist/$album", name)?.let { mediaRef(it, name, ext == "mp3") }
             }
         }
     } catch (e: Exception) {
@@ -284,7 +284,7 @@ class MediaStoreWorker(
         val values = ContentValues().apply {
             put(MediaStore.Audio.Media.DISPLAY_NAME, plan.name)
             put(MediaStore.Audio.Media.MIME_TYPE, plan.file.mimeType)
-            put(MediaStore.Audio.Media.RELATIVE_PATH, "Music/QobuzDownloaderX/${plan.artistDir}/${plan.albumDir}")
+            put(MediaStore.Audio.Media.RELATIVE_PATH, "Music/${DefaultFolder.name}/${plan.artistDir}/${plan.albumDir}")
             put(MediaStore.Audio.Media.TITLE, plan.track.displayTitle)
             put(MediaStore.Audio.Media.ARTIST, plan.track.artist)
             put(MediaStore.Audio.Media.ALBUM, plan.album.title)

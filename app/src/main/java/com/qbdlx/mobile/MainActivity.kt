@@ -196,15 +196,15 @@ private fun AppShell(vm: MainViewModel) {
             // Translucent: the screens scroll underneath and show through blurred, like the web player.
             Column(Modifier.hazeChild(haze, HazeMaterials.thin(MaterialTheme.colorScheme.background))) {
                 FolderBanner(vm.folderStatus) { vm.chooseFolder() }
-                AnimatedVisibility(vm.nowPlaying != null, enter = slideInVertically { it } + fadeIn(), exit = slideOutVertically { it } + fadeOut()) {
+                AnimatedVisibility(vm.nowPlaying != null, enter = slideInVertically(tween(280, easing = UiEaseOut)) { it } + fadeIn(tween(200, easing = UiEaseOut)), exit = slideOutVertically(tween(180, easing = UiEaseOut)) { it } + fadeOut(tween(140, easing = UiEaseOut))) {
                     MiniPlayer(vm)
                 }
                 NavigationBar(containerColor = Color.Transparent, tonalElevation = 0.dp) {
                     // Search lives in the page headers (a button at the top), not in the bottom bar.
                     NavigationBarItem(
                         modifier = Modifier.weight(1f),
-                        selected = false,
-                        onClick = { vm.downloadNowPlaying() },
+                        selected = vm.showListen,
+                        onClick = { vm.openListening() },
                         icon = { Icon(Icons.Filled.MusicNote, LocalStrings.current.nowButton) },
                         label = { Text(LocalStrings.current.nowButton, maxLines = 1, softWrap = false, fontSize = 10.sp) },
                         colors = qbdlxNavColors(),
@@ -213,15 +213,15 @@ private fun AppShell(vm: MainViewModel) {
                         if (t == Tab.Settings && (vm.ipodPlugged || vm.ipodProgress != null)) NavigationBarItem(
                             modifier = Modifier.weight(1f),
                             selected = vm.showIpod,
-                            onClick = { vm.closeAlbum(); vm.closePlaylist(); vm.closeDiagnostics(); vm.closeImport(); vm.openIpod() },
+                            onClick = { vm.closeAlbum(); vm.closeArtist(); vm.closePlaylist(); vm.closeDiagnostics(); vm.closeImport(); vm.openIpod() },
                             icon = { Icon(Icons.Filled.Smartphone, LocalStrings.current.ipodEntry) },
                             label = { Text(LocalStrings.current.ipodEntry, maxLines = 1, softWrap = false, fontSize = 10.sp) },
                             colors = qbdlxNavColors(),
                         )
                         NavigationBarItem(
                             modifier = Modifier.weight(1f),
-                            selected = vm.tab == t && vm.detail == null && vm.playlistDetail == null && !vm.showDiagnostics && !vm.showIpod && !vm.showImport,
-                            onClick = { vm.closeAlbum(); vm.closePlaylist(); vm.closeDiagnostics(); vm.closeIpod(); vm.closeImport(); vm.tab = t },
+                            selected = vm.tab == t && vm.detail == null && vm.playlistDetail == null && vm.artistPage == null && !vm.showDiagnostics && !vm.showIpod && !vm.showImport && !vm.showListen,
+                            onClick = { vm.closeAlbum(); vm.closeArtist(); vm.closePlaylist(); vm.closeDiagnostics(); vm.closeIpod(); vm.closeImport(); vm.tab = t },
                             icon = { Icon(t.icon(), LocalStrings.current.tab(t)) },
                             label = { Text(LocalStrings.current.tab(t), maxLines = 1, softWrap = false, fontSize = 10.sp) },
                             colors = qbdlxNavColors(),
@@ -239,8 +239,10 @@ private fun AppShell(vm: MainViewModel) {
                     vm.showDiagnostics -> "diagnostics"
                     vm.showIpod -> "ipod"
                     vm.showImport -> "import"
+                    vm.showListen -> "listen"
                     vm.detail != null -> "album"
                     vm.playlistDetail != null -> "playlist"
+                    vm.artistPage != null -> "artist"
                     else -> vm.tab.name
                 }
                 AnimatedContent(
@@ -248,14 +250,17 @@ private fun AppShell(vm: MainViewModel) {
                     modifier = Modifier.fillMaxSize(),
                     transitionSpec = {
                         val detail = targetState == "album" || targetState == "playlist"
-                        (fadeIn(tween(240)) + (if (detail) slideInVertically(tween(280)) { it / 18 } else EnterTransition.None)) togetherWith fadeOut(tween(140))
+                        // Emil Kowalski: strong ease-out, enter ~220 ms, exit faster (120 ms) so the next screen never waits for the old one.
+                        (fadeIn(tween(220, delayMillis = 40, easing = UiEaseOut)) + (if (detail) slideInVertically(tween(260, easing = UiEaseOut)) { it / 18 } else EnterTransition.None)) togetherWith fadeOut(tween(120, easing = UiEaseOut))
                     },
                     label = "screen",
                 ) { key ->
                     when (key) {
+                        "artist" -> ArtistScreen(vm)
                         "diagnostics" -> DiagnosticsScreen(vm)
                         "ipod" -> IpodScreen(vm)
                         "import" -> ImportScreen(vm)
+                        "listen" -> ListeningScreen(vm)
                         "album" -> AlbumScreen(vm)
                         "playlist" -> PlaylistScreen(vm)
                         Tab.Home.name -> HomeScreen(vm)
@@ -283,3 +288,6 @@ private fun AppShell(vm: MainViewModel) {
     if (vm.playerOpen) PlayerHost(vm)
     }
 }
+
+/** The app's one strong ease-out curve for entrances and exits (no ease-in, no stock curves). */
+val UiEaseOut = androidx.compose.animation.core.CubicBezierEasing(0.23f, 1f, 0.32f, 1f)

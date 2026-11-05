@@ -128,7 +128,7 @@ fun listMusicDownloads(context: Context, tag: String): List<KnownSong> {
     val collection = android.provider.MediaStore.Audio.Media.getContentUri(android.provider.MediaStore.VOLUME_EXTERNAL_PRIMARY)
     context.contentResolver.query(
         collection, arrayOf(android.provider.MediaStore.Audio.Media._ID, android.provider.MediaStore.Audio.Media.DISPLAY_NAME, android.provider.MediaStore.Audio.Media.RELATIVE_PATH),
-        "${android.provider.MediaStore.Audio.Media.RELATIVE_PATH} LIKE ?", arrayOf("Music/QobuzDownloaderX%"), null,
+        "${android.provider.MediaStore.Audio.Media.RELATIVE_PATH} LIKE ?", arrayOf("Music/${DefaultFolder.name}%"), null,
     )?.use { c ->
         while (c.moveToNext()) {
             val name = c.getString(1).orEmpty(); val dir = c.getString(2).orEmpty().trim('/')

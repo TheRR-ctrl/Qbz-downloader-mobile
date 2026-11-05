@@ -250,6 +250,24 @@ class ItlpLibrary(
         lib.query("SELECT pid, artwork_cache_id AS id FROM item WHERE artwork_status=1").map { (it["pid"] as Number).toLong() to (it["id"] as Number).toInt() }
 
     /** pid of the user playlist called [name] (not the master list, not a smart or built-in one), if there is one. */
+    /** The user's own playlists on the iPod (no smart or system lists) with the pids of their songs, in order. */
+    fun listPlaylists(): List<IpodPlaylist> {
+        val master = (row(lib, "SELECT primary_container_pid AS p FROM db_info")?.get("p") as Number?)?.toLong() ?: 0L
+        val items = lib.query("SELECT container_pid, item_pid FROM item_to_container ORDER BY container_pid, physical_order")
+            .groupBy({ (it["container_pid"] as Number).toLong() }, { (it["item_pid"] as Number).toLong() })
+        return lib.query("SELECT pid, name FROM container WHERE COALESCE(distinguished_kind,0)=0 AND COALESCE(smart_is_dynamic,0)=0 ORDER BY name_order")
+            .map { (it["pid"] as Number).toLong() to (it["name"] as String? ?: "") }
+            .filter { it.first != master }
+            .map { (pid, name) -> IpodPlaylist(pid, name, items[pid].orEmpty()) }
+    }
+
+    /** Removes a user playlist (the list only; its songs stay in the library). */
+    fun deletePlaylist(pid: Long) {
+        lib.exec("DELETE FROM item_to_container WHERE container_pid=?", listOf(pid))
+        lib.exec("DELETE FROM container WHERE pid=?", listOf(pid))
+        runCatching { dyn.exec("DELETE FROM container_ui WHERE container_pid=?", listOf(pid)) }
+    }
+
     fun userPlaylistPid(name: String): Long? =
         (row(lib, "SELECT pid FROM container WHERE name=? AND COALESCE(distinguished_kind,0)=0 AND COALESCE(smart_is_dynamic,0)=0 AND pid<>COALESCE((SELECT primary_container_pid FROM db_info),0) LIMIT 1", listOf(name))?.get("pid") as Number?)?.toLong()
 
@@ -332,3 +350,6 @@ class ItlpLibrary(
         )
     }
 }
+
+/** A playlist stored on the iPod: its name and the pids of its songs. */
+class IpodPlaylist(val pid: Long, val name: String, val trackPids: List<Long>)

@@ -32,7 +32,127 @@ object Tracker {
     }
 
     @Volatile var offsetMs = 0L
+    /** How early the car's list switches line (the car redraws a moment after the list changes), in ms. Adjustable in Ajustes. */
+    @Volatile var carLeadMs = 1000L
+    /** Fill the line word by word while it is sung. */
+    @Volatile var karaoke = true
+    /** Lyrics without times are timed by Whisper on their own the first time they play (once per song). */
+    @Volatile var autoWhisper = true
+    private val triedAuto = HashSet<String>()
     @Volatile var lastError = ""
+
+    /** What the audio timing is doing, for the screen: null when idle. */
+    val timing = MutableStateFlow<String?>(null)
+    private var timingJob: Job? = null
+    private var app: Context? = null
+
+    /** Times the current unsynced lyrics from the song's audio file on the phone; the result is saved like any synced lyric. */
+    fun timeFromAudio() {
+        val ctx = app ?: return
+        val t = _state.value.track ?: return
+        val lines = _state.value.lines.map { it.text }
+        if (_state.value.status != Status.PLAIN || timingJob?.isActive == true) return
+        timingJob = scope.launch {
+            timing.value = "Buscando el archivo de la canción…"
+            val result = withContext(Dispatchers.IO) {
+                val uri = AudioTiming.find(ctx, t.title, t.artist, t.durationMs)
+                    ?: return@withContext "No encuentro esta canción como archivo en el teléfono (o falta el permiso de audio). Prueba con «Estimar» o «Marcar mientras suena»."
+                withContext(Dispatchers.Main) { timing.value = "Analizando el audio…" }
+                val env = AudioTiming.envelope(ctx, uri, cancelled = { !isActive })
+                    ?: return@withContext "No se pudo leer el audio de ese archivo."
+                val timed = AudioTiming.align(env, lines)
+                withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key) saveTimed(timed) }
+                null
+            }
+            timing.value = result
+        }
+    }
+
+    /** Whisper: listens to the song's audio file, matches the words it hears to the lyric and times every line. Works on synced or unsynced lyrics. */
+    @Volatile private var ytWhy = ""
+
+    fun timeFromWhisper() {
+        val ctx = app ?: return
+        val t = _state.value.track ?: return
+        val lines = _state.value.lines.map { it.text }
+        if ((_state.value.status != Status.PLAIN && _state.value.status != Status.SYNCED) || timingJob?.isActive == true) return
+        timingJob = scope.launch {
+            timing.value = "Buscando el archivo de la canción…"
+            val result = withContext(Dispatchers.Default) {
+                if (!Whisper.available(ctx)) return@withContext "Whisper no está en esta versión de la app."
+                val uri = AudioTiming.find(ctx, t.title, t.artist, t.durationMs)
+                    ?: return@withContext "No encuentro esta canción como archivo en el teléfono (o falta el permiso de audio)."
+                withContext(Dispatchers.Main) { timing.value = "Preparando el audio…" }
+                val pcm = Whisper.pcm16k(ctx, uri, cancelled = { !isActive }) ?: return@withContext "No se pudo leer el audio de ese archivo."
+                withContext(Dispatchers.Main) { timing.value = "Whisper está escuchando la canción… puede tardar unos minutos." }
+                val asr = Whisper.transcribe(ctx, pcm) ?: return@withContext if (!isActive) "Cancelado." else "Whisper no pudo con esta canción."
+                var timed = WhisperAlign.align(lines, asr.words)
+                ytWhy = ""
+                // The lyric and the voice use different alphabets: YouTube Music often writes the same song in the alphabet Whisper heard.
+                // Its lines only serve to find the times; they are moved onto the user's lines by position.
+                if ((timed == null || WhisperAlign.approximate) && _state.value.source != YtMusic.SOURCE) {
+                    withContext(Dispatchers.Main) { timing.value = "Buscando la letra en otro alfabeto…" }
+                    val other = runCatching { YtMusic.find(t.title, t.artist, (t.durationMs / 1000).toInt()) }.getOrNull()
+                    val otherLines = (other?.plain ?: other?.synced?.let { Lrc.parse(it).map { l -> l.text }.joinToString("\n") })?.lines()?.map { it.trim() }?.filter { it.isNotEmpty() }
+                    if (other == null) ytWhy = YtMusic.lastFail
+                    val better = otherLines?.let { WhisperAlign.align(it, asr.words, 0.12) }?.takeIf { !WhisperAlign.approximate }
+                    if (other != null && better == null) ytWhy = "encontró la letra, pero solo coincidieron ${WhisperAlign.lastMatched.first} de ${WhisperAlign.lastMatched.second} palabras con lo que oyó Whisper"
+                    // The lyric did not match the voice but YouTube's is the same alphabet as what was heard: it replaces the user's one.
+                    if (better == null && other != null && otherLines != null && otherLines.size >= 2) {
+                        val replaced = other.synced?.let { Lrc.parse(it) }?.takeIf { it.size >= 2 }
+                            ?: WhisperAlign.align(otherLines, asr.words, 0.12)
+                        if (replaced != null) {
+                            val approx = other.synced == null && WhisperAlign.approximate
+                            withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key) saveTimed(replaced, YtMusic.SOURCE) }
+                            return@withContext "Listo: se usó la letra de YouTube Music" + (if (other.synced != null) " con sus propios tiempos." else if (approx) ", repartida por cantidad de palabras (aproximado)." else ", sincronizada con la voz.")
+                        }
+                    }
+                    if (better != null && lines.isNotEmpty()) timed = lines.mapIndexed { i, text -> better[(i.toLong() * (better.size - 1) / (lines.size - 1).coerceAtLeast(1)).toInt()].let { LyricLine(it.timeMs, text, it.endMs) } }
+                    else if (timed != null) WhisperAlign.markApproximate()
+                }
+                // Nothing matches and no other lyric helps: what Whisper heard becomes the lyric, with its real times.
+                if (timed == null && asr.words.size >= 8) {
+                    val heard = WhisperAlign.linesFromHeard(asr.words)
+                    if (heard.size >= 2) { withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key) saveTimed(heard, "Whisper (lo que se oyó)") }; return@withContext "Listo: no coincidía con la letra, así que se escribió lo que Whisper oyó. Puede tener errores." }
+                }
+                val done = timed ?: return@withContext "Whisper entendió muy poco de la voz (${asr.words.size} palabras, idioma ${asr.lang}). Prueba «Detectar con el audio»."
+                withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key) saveTimed(done) }
+                null
+            }
+            timing.value = result ?: if (WhisperAlign.approximate) "Listo, aproximado: la letra y la voz están en alfabetos distintos, así que se repartió por cantidad de palabras." else "Listo: letra sincronizada con la voz."
+            if (result == null && WhisperAlign.approximate && ytWhy.isNotEmpty()) timing.value = "Listo, aproximado. Antes probé YouTube Music y $ytWhy."
+        }
+    }
+
+    /** For a song with no lyrics: Whisper writes what it hears; if it understands too little, the lyric comes from YouTube Music instead. */
+    fun writeWithWhisper() {
+        val ctx = app ?: return
+        val t = _state.value.track ?: return
+        if (timingJob?.isActive == true) return
+        timingJob = scope.launch {
+            timing.value = "Buscando el archivo de la canción…"
+            val result = withContext(Dispatchers.Default) {
+                fun fromYoutube(): String? {
+                    val yt = runCatching { YtMusic.find(t.title, t.artist, (t.durationMs / 1000).toInt()) }.getOrNull() ?: return null
+                    LyricsStore.put(t.storeKey, yt); cache[t.key] = yt
+                    scope.launch(Dispatchers.Main) { if (_state.value.track?.key == t.key) { _saved.value = LyricsStore.count(); publish(t, yt, _state.value.playing) } }
+                    return "Whisper no entendió la voz; la letra salió de YouTube Music."
+                }
+                val uri = AudioTiming.find(ctx, t.title, t.artist, t.durationMs) ?: return@withContext fromYoutube() ?: "No encuentro esta canción como archivo en el teléfono (o falta el permiso de audio)."
+                withContext(Dispatchers.Main) { timing.value = "Preparando el audio…" }
+                val pcm = Whisper.pcm16k(ctx, uri, cancelled = { !isActive }) ?: return@withContext fromYoutube() ?: "No se pudo leer el audio de ese archivo."
+                withContext(Dispatchers.Main) { timing.value = "Whisper está escuchando la canción… puede tardar unos minutos." }
+                val asr = Whisper.transcribe(ctx, pcm) ?: return@withContext if (!isActive) "Cancelado." else (fromYoutube() ?: "Whisper no pudo con esta canción.")
+                val heard = WhisperAlign.linesFromHeard(asr.words)
+                if (asr.words.size < 8 || heard.size < 2) return@withContext fromYoutube() ?: "Whisper entendió muy poco (${asr.words.size} palabras) y YouTube Music no tiene esta letra."
+                withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key) saveTimed(heard, "Whisper (lo que se oyó)") }
+                "Listo: letra escrita con lo que Whisper oyó. Puede tener errores."
+            }
+            timing.value = result
+        }
+    }
+
+    fun cancelTiming() { Whisper.cancel(); timingJob?.cancel(); timing.value = "Cancelado." }
 
     /** The playing app's colour (ARGB, 0 when unknown): its notification's colour, else the cover's main colour. */
     val accent = MutableStateFlow(0)
@@ -52,7 +172,12 @@ object Tracker {
         if (started) return
         started = true
         val app = context.applicationContext
+        this.app = app
         LyricsStore.init(app)
+        // The sync settings must be read here and not only when the screen opens: the car can start the service without the app ever being opened.
+        app.getSharedPreferences("lyrics", Context.MODE_PRIVATE).let { p ->
+            offsetMs = p.getLong("offset", 0); carLeadMs = p.getLong("car_lead", 1000); karaoke = p.getBoolean("karaoke", true); autoWhisper = p.getBoolean("auto_whisper", true)
+        }
         scope.launch { while (isActive) { runCatching { refresh(app) }; delay(400) } }
     }
 
@@ -137,6 +262,7 @@ object Tracker {
                 loadedKey = null; retryAt = SystemClock.elapsedRealtime() + 8000 // keep trying in the background
                 return@launch
             }
+            if (found == null) found = withContext(Dispatchers.IO) { runCatching { YtMusic.find(track.title, track.artist, (track.durationMs / 1000).toInt()) }.getOrNull() }
             cache[track.key] = found
             found?.let { LyricsStore.put(track.storeKey, it); _saved.value = LyricsStore.count() }
             publish(track, found, playing)
@@ -145,10 +271,23 @@ object Tracker {
 
     private fun publish(track: TrackInfo, l: Lyrics?, playing: Boolean) {
         _state.value = when {
-            l?.synced != null -> LyricsState(Status.SYNCED, track, Lrc.parse(l.synced), playing)
-            l?.plain != null -> LyricsState(Status.PLAIN, track, Lrc.plain(l.plain), playing)
+            l?.synced != null -> LyricsState(Status.SYNCED, track, Lrc.parse(l.synced), playing, l.source)
+            l?.plain != null -> LyricsState(Status.PLAIN, track, Lrc.plain(l.plain), playing, l.source)
             else -> LyricsState(Status.NOT_FOUND, track, playing = playing)
         }
+        val ctx = app
+        if (autoWhisper && _state.value.status == Status.PLAIN && ctx != null && playing && triedAuto.add(track.key) && Whisper.available(ctx)) timeFromWhisper()
+    }
+
+    /** The song's own clock, without the user's sync offset: what a tap-made timing is saved against. */
+    fun rawPositionMs() = (positionMs() - offsetMs).coerceAtLeast(0)
+
+    /** Saves lines timed by the user as this song's synced lyrics (kept on the phone like any found lyrics) and shows them at once. */
+    fun saveTimed(lines: List<LyricLine>, source: String? = _state.value.source) {
+        val t = _state.value.track ?: return
+        val l = Lyrics(Lrc.toLrc(lines), lines.joinToString("\n") { it.text }, source)
+        LyricsStore.put(t.storeKey, l); cache[t.key] = l; _saved.value = LyricsStore.count()
+        publish(t, l, _state.value.playing)
     }
 
     /** Car buttons (play/pause, next, previous) are passed on to the music app that is playing. */

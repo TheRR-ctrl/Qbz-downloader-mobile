@@ -10,3 +10,5 @@ QBDLX-Mobile-debug.apk
 .kotlin/
 QBDLX-Mobile-source.zip
 CONTEXT-app-secret.md
+
+lyrics/src/main/assets/ggml-*.bin

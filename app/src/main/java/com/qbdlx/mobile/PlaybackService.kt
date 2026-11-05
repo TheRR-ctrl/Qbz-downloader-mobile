@@ -115,6 +115,7 @@ class PlaybackService : MediaBrowserService() {
                 val c = QbdlxApp.playback
                 val np = c?.nowPlaying
                 var sig = ""
+                if (np == null) sig = qobuzRows()?.joinToString("|") { it.id + it.title }.orEmpty()
                 if (c != null && np != null) {
                     if (c.isPlaying) c.ensureLyrics()
                     sig = CarLyrics.rows(np.second.displayTitle, np.first.artist, c.lyrics, c.positionMs + c.lyricsOffsetMs + CAR_LEAD_MS).joinToString("|") { it.id + it.title }
@@ -125,37 +126,81 @@ class PlaybackService : MediaBrowserService() {
         }
     }
 
+    // ---- Lyrics of what the official Qobuz app plays (needs notification access, as the import does) -----------------------
+    private var qKey = ""
+    private var qLyrics: Lyrics? = null
+    private var qLoading = false
+
+    /** Car rows for the song Qobuz is playing; null when the player here is idle and Qobuz has nothing either (or access was not given). */
+    private fun qobuzRows(): List<CarRow>? {
+        if (!QobuzNowPlaying.accessGranted(this)) return null
+        val q = QobuzNowPlaying.read(this) ?: return null
+        val key = "${q.title}|${q.artist}|${q.durationSec}"
+        if (key != qKey) {
+            qKey = key; qLyrics = null; qLoading = true
+            scope.launch {
+                // LRCLIB is often briefly overloaded: a few quick retries before giving up (and a new try later, as Q Lyrics does)
+                var l: Lyrics? = null
+                var ok = false
+                for (attempt in 0 until 5) {
+                    if (attempt > 0) delay(2000L * attempt)
+                    try { l = kotlinx.coroutines.withContext(Dispatchers.IO) { LyricsClient.fetch(q.artist, q.title, q.album, q.durationSec) }; ok = true; break }
+                    catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) { /* try again */ }
+                }
+                if (qKey == key) { qLyrics = l; qLoading = false; if (!ok) qKey = "" }
+            }
+        }
+        return CarLyrics.rows(q.title, q.artist, qLyrics, q.positionMs + CAR_LEAD_MS).ifEmpty {
+            listOf(CarRow("ltrack", q.title, q.artist), CarRow("lmsg", if (qLoading) label("Buscando la letra…", "Looking for the lyrics…") else label("Esta canción no tiene letra sincronizada", "This song has no synced lyrics")))
+        }
+    }
+
     // ---- Android Auto: the browse tree is the list of recently played songs --------------------------------------------
 
-    override fun onGetRoot(clientPackageName: String, clientUid: Int, rootHints: Bundle?) = BrowserRoot(ROOT_ID, null)
+    /** Android Auto draws the list itself; these hints are the only styling it accepts: the top level as a grid of big icons, songs as lists. */
+    override fun onGetRoot(clientPackageName: String, clientUid: Int, rootHints: Bundle?) = BrowserRoot(
+        ROOT_ID,
+        Bundle().apply {
+            putBoolean("android.media.browse.CONTENT_STYLE_SUPPORTED", true)
+            putInt("android.media.browse.CONTENT_STYLE_BROWSABLE_HINT", 2) // grid
+            putInt("android.media.browse.CONTENT_STYLE_PLAYABLE_HINT", 1) // list
+        },
+    )
+
+    private fun iconBitmap(res: Int): Bitmap? = runCatching {
+        ContextCompat.getDrawable(this, res)?.let { d -> Bitmap.createBitmap(192, 192, Bitmap.Config.ARGB_8888).also { b -> val c = android.graphics.Canvas(b); d.setBounds(0, 0, 192, 192); d.draw(c) } }
+    }.getOrNull()
 
     override fun onLoadChildren(parentId: String, result: Result<MutableList<android.media.browse.MediaBrowser.MediaItem>>) {
         val c = QbdlxApp.playback
-        fun item(id: String, title: String, flag: Int, subtitle: String = "", cover: String? = null) = android.media.browse.MediaBrowser.MediaItem(
-            MediaDescription.Builder().setMediaId(id).setTitle(title).apply { if (subtitle.isNotBlank()) setSubtitle(subtitle); cover?.let { setIconUri(Uri.parse(it)) } }.build(), flag,
+        fun item(id: String, title: String, flag: Int, subtitle: String = "", cover: String? = null, icon: Int = 0) = android.media.browse.MediaBrowser.MediaItem(
+            MediaDescription.Builder().setMediaId(id).setTitle(title).apply {
+                if (subtitle.isNotBlank()) setSubtitle(subtitle)
+                if (cover != null) setIconUri(Uri.parse(cover)) else if (icon != 0) iconBitmap(icon)?.let { setIconBitmap(it) }
+            }.build(), flag,
         )
         val browsable = android.media.browse.MediaBrowser.MediaItem.FLAG_BROWSABLE
         val playable = android.media.browse.MediaBrowser.MediaItem.FLAG_PLAYABLE
         when (parentId) {
             ROOT_ID -> result.sendResult(mutableListOf(
-                item(LYRICS_ID, label("Letra", "Lyrics"), browsable, label("La canción que suena, en vivo", "The song playing, live")),
-                item(DOWNLOADED_ID, label("Descargadas", "Downloaded"), browsable, label("Sin gastar datos", "Uses no data")),
-                item(HISTORY_ID, label("Reproducidas recientemente", "Recently played"), browsable, label("Las que no están descargadas van en MP3", "Songs not downloaded stream as MP3")),
+                item(LYRICS_ID, label("Letra", "Lyrics"), browsable, icon = R.drawable.ic_car_lyrics),
+                item(DOWNLOADED_ID, label("Descargadas", "Downloaded"), browsable, icon = R.drawable.ic_car_downloaded),
+                item(HISTORY_ID, label("Recientes", "Recent"), browsable, icon = R.drawable.ic_car_recent),
             ))
             LYRICS_ID -> {
                 val np = c?.nowPlaying
-                val rows = if (c != null && np != null) CarLyrics.rows(np.second.displayTitle, np.first.artist, c.lyrics, c.positionMs + c.lyricsOffsetMs + CAR_LEAD_MS) else emptyList()
+                val rows = if (c != null && np != null) CarLyrics.rows(np.second.displayTitle, np.first.artist, c.lyrics, c.positionMs + c.lyricsOffsetMs + CAR_LEAD_MS) else (qobuzRows() ?: emptyList())
                 result.sendResult(
                     if (rows.isEmpty()) mutableListOf(item("lmsg", if (np == null) label("Pon una canción para ver su letra", "Play a song to see its lyrics") else label("Esta canción no tiene letra sincronizada", "This song has no synced lyrics"), playable))
                     else rows.map { r -> item(r.id, r.title, playable, r.subtitle) }.toMutableList(),
                 )
             }
             DOWNLOADED_ID -> result.sendResult(
-                (c?.downloadedSongs().orEmpty()).take(200).mapIndexed { i, (album, track) -> item("d$i", track.displayTitle, playable, album.artist, album.coverUrl) }.toMutableList(),
+                (c?.downloadedSongs().orEmpty()).take(200).mapIndexed { i, (album, track) -> item("d$i", track.displayTitle, playable, "${album.artist} • ${album.title}", album.coverUrl) }.toMutableList(),
             )
             HISTORY_ID -> {
                 val history = QueueStore.decodeList(getSharedPreferences("qbdlx", 0).getString("history", null))
-                result.sendResult(history.mapIndexed { i, (album, track) -> item(i.toString(), track.displayTitle, playable, album.artist, album.coverUrl) }.toMutableList())
+                result.sendResult(history.mapIndexed { i, (album, track) -> item(i.toString(), track.displayTitle, playable, "${album.artist} • ${album.title}", album.coverUrl) }.toMutableList())
             }
             else -> result.sendResult(mutableListOf())
         }

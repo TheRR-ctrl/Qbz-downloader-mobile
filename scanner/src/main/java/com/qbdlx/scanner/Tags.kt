@@ -21,12 +21,13 @@ object OmittedFolders {
     val defaults = listOf("WhatsApp", "Telegram")
 
     /** Call and voice recordings are never songs: always left out. */
-    val recordings = listOf("call", "record", "voice", "grab", "llamada", "memo", "dictaphone")
+    // Whole words, not pieces: "Blue Note Records", "Call Me Maybe" or "Grabbed" are music folders.
+    private val recordingWords = Regex("""(?<![\p{L}\p{N}])(call recordings?|calls? recordings?|recordings?|recorder|voice (recorder|memos?|notes?)|voice|memos?|llamadas?|grabaci[oó]n(es)?|grabadora|notas? de voz|dictaphone)(?![\p{L}\p{N}])""", RegexOption.IGNORE_CASE)
 
     /** The places songs normally live; with "only common folders" on, anything else is left out. */
     val common = listOf("music", "musica", "música", "download", "descarga", "documents", "documentos", "podcast", "audiobook", "qobuz", "qbdlx", "deezer", "spotify", "itunes", "dcim", "movies")
 
-    fun isRecording(relativePath: String?) = relativePath.orEmpty().lowercase().let { p -> recordings.any { p.contains(it) } }
+    fun isRecording(relativePath: String?) = recordingWords.containsMatchIn(relativePath.orEmpty())
 
     fun isCommon(relativePath: String?) = relativePath.orEmpty().lowercase().let { p -> p.isBlank() || common.any { p.contains(it) } }
 

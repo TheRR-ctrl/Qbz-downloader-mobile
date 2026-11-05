@@ -71,6 +71,15 @@ class QobuzApi(val http: OkHttpClient = OkHttpClient()) {
         trackIds.distinct().chunked(50).forEach { post("favorite/create", mapOf("track_ids" to it.joinToString(","), "type" to "track")) }
     }
 
+    /** Removes tracks from the user's favourite tracks. */
+    fun removeFavoriteTracks(trackIds: List<Long>) {
+        trackIds.distinct().chunked(50).forEach { post("favorite/delete", mapOf("track_ids" to it.joinToString(","), "type" to "track")) }
+    }
+
+    fun addTrackToPlaylist(playlistId: String, trackId: Long) {
+        post("playlist/addTracks", mapOf("playlist_id" to playlistId, "track_ids" to "$trackId", "no_duplicate" to "true"))
+    }
+
     /** Creates a private playlist in the user's Qobuz library holding [trackIds]; returns the playlist id. */
     fun createPlaylist(name: String, trackIds: List<Long>): Long {
         val id = post("playlist/create", mapOf("name" to name, "is_public" to "false", "is_collaborative" to "false")).getLong("id")
@@ -87,12 +96,6 @@ class QobuzApi(val http: OkHttpClient = OkHttpClient()) {
     }
 
     /** Returns the display name of the logged-in user. */
-    fun loginWithPassword(email: String, password: String): String {
-        val json = get("user/login", mapOf("email" to email, "password" to password, "app_id" to appId))
-        authToken = json.getString("user_auth_token")
-        return json.optJSONObject("user")?.optString("display_name").orEmpty()
-    }
-
     fun loginWithToken(userId: String, token: String): String {
         authToken = token
         val json = get("user/get", mapOf("user_id" to userId, "user_auth_token" to token, "app_id" to appId))
@@ -161,6 +164,29 @@ class QobuzApi(val http: OkHttpClient = OkHttpClient()) {
         val json = get("catalog/search", mapOf("query" to query, "limit" to "$limit", "offset" to "0"))
         val items = json.optJSONObject("albums")?.optJSONArray("items") ?: return emptyList()
         return (0 until items.length()).map { parseAlbum(items.getJSONObject(it)) }
+    }
+
+    /** The artist Qobuz finds for [name]: the one whose name matches exactly (ignoring case), else the first result. Null when none. */
+    fun findArtist(name: String): Pair<Long, String>? {
+        val items = get("catalog/search", mapOf("query" to name, "limit" to "10", "offset" to "0")).optJSONObject("artists")?.optJSONArray("items") ?: return null
+        val all = (0 until items.length()).map { items.getJSONObject(it) }
+        val pick = all.firstOrNull { nameOf(it).trim().equals(name.trim(), ignoreCase = true) } ?: all.firstOrNull() ?: return null
+        return pick.optLong("id") to nameOf(pick).ifBlank { name }
+    }
+
+    /** An artist's page: picture and every album (newest first). */
+    fun artistPage(id: Long, name: String): ArtistPage {
+        val albums = ArrayList<Album>(); var image: String? = null; var offset = 0
+        while (offset < 1000) {
+            val json = get("artist/get", mapOf("artist_id" to "$id", "extra" to "albums", "limit" to "100", "offset" to "$offset"))
+            if (image == null) image = json.optJSONObject("image")?.let { img -> listOf("large", "medium", "small", "portrait").map { img.optString(it) }.firstOrNull { it.startsWith("http") } }
+            val items = json.optJSONObject("albums")?.optJSONArray("items") ?: break
+            for (i in 0 until items.length()) runCatching { parseAlbum(items.getJSONObject(i)) }.getOrNull()?.let { albums += it }
+            if (items.length() < 100) break
+            offset += 100
+        }
+        val list = albums.distinctBy { it.id }.sortedByDescending { it.releaseDate.ifBlank { it.year } }
+        return ArtistPage(name, image ?: list.firstOrNull()?.coverUrl, list)
     }
 
     /** Tracks matching [query] (as (album, track) pairs, like a playlist's), for the player's Explore page. */
@@ -237,13 +263,15 @@ class QobuzApi(val http: OkHttpClient = OkHttpClient()) {
     }
 
     /** Qobuz returns at most 500 items per request: this asks page after page (offset 0, 500, 1000…) and joins the items. */
-    private fun allPages(endpoint: String, params: Map<String, String>, section: String): org.json.JSONArray {
+    private fun allPages(endpoint: String, params: Map<String, String>, section: String, known: ((JSONObject) -> Boolean)? = null): org.json.JSONArray {
         val all = org.json.JSONArray()
         var offset = 0
         while (offset < 20_000) {
             val sec = get(endpoint, params + mapOf("limit" to "500", "offset" to "$offset")).optJSONObject(section)
             val items = sec?.optJSONArray("items") ?: break
             for (i in 0 until items.length()) all.put(items.get(i))
+            // Incremental refresh: a whole page of things we already have means everything after it is old too.
+            if (known != null && items.length() > 0 && (0 until items.length()).all { known(items.getJSONObject(it)) }) break
             val total = sec.optInt("total", 0)
             offset += 500
             if (items.length() < 500 || (total in 1..offset)) break
@@ -255,8 +283,9 @@ class QobuzApi(val http: OkHttpClient = OkHttpClient()) {
     fun userPlaylists(): List<Playlist> =
         allPages("playlist/getUserPlaylists", emptyMap(), "playlists").mapObjects(::parsePlaylist).distinctBy { it.id }
 
-    fun favoriteAlbums(): List<Album> =
-        allPages("favorite/getUserFavorites", mapOf("type" to "albums"), "albums").mapObjects(::parseAlbum).distinctBy { it.id }
+    /** [knownIds]: albums already held; the search stops once a whole page of them is seen (only the newest are fetched). */
+    fun favoriteAlbums(knownIds: Set<String>? = null): List<Album> =
+        allPages("favorite/getUserFavorites", mapOf("type" to "albums"), "albums", knownIds?.let { k -> { o -> o.opt("id")?.toString() in k } }).mapObjects(::parseAlbum).distinctBy { it.id }
 
     /** The artists the user follows in Qobuz: name and picture. */
     fun favoriteArtists(): List<FavArtist> =
@@ -268,8 +297,8 @@ class QobuzApi(val http: OkHttpClient = OkHttpClient()) {
                 })
             }.distinctBy { it.name.lowercase() }
 
-    fun favoriteTracks(): List<Pair<Album, Track>> =
-        allPages("favorite/getUserFavorites", mapOf("type" to "tracks"), "tracks").mapObjects { t ->
+    fun favoriteTracks(knownIds: Set<Long>? = null): List<Pair<Album, Track>> =
+        allPages("favorite/getUserFavorites", mapOf("type" to "tracks"), "tracks", knownIds?.let { k -> { o -> o.optLong("id") in k } }).mapObjects { t ->
                 val album = t.optJSONObject("album")?.let(::parseAlbum) ?: return@mapObjects null
                 album to parseTrack(t, 0, album.artist)
             }.distinctBy { it.second.id }
@@ -546,4 +575,5 @@ class QobuzApi(val http: OkHttpClient = OkHttpClient()) {
 }
 
 /** An artist followed in the Qobuz library. */
+data class ArtistPage(val name: String, val image: String?, val albums: List<Album>)
 data class FavArtist(val name: String, val cover: String?)

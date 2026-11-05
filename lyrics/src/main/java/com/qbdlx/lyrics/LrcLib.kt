@@ -8,7 +8,7 @@ import java.net.URLEncoder
 import kotlin.math.abs
 
 /** What LRCLIB (https://lrclib.net) has for a song: synced LRC text and/or plain text. */
-class Lyrics(val synced: String?, val plain: String?)
+class Lyrics(val synced: String?, val plain: String?, val source: String? = null)
 
 object LrcLib {
     private const val BASE = "https://lrclib.net/api"
@@ -18,18 +18,26 @@ object LrcLib {
         val exact = "$BASE/get?track_name=${enc(title)}&artist_name=${enc(artist)}" +
             (if (album.isNotBlank()) "&album_name=${enc(album)}" else "") + (if (durationSec > 0) "&duration=$durationSec" else "")
         // The exact endpoint is often overloaded (HTTP 503): any failure of it just moves on to the search.
-        try { get(exact)?.let { parseOne(JSONObject(it))?.let { l -> return l } } } catch (e: java.io.IOException) { /* fall through to search */ }
+        var exactFailed = false
+        try { get(exact)?.let { parseOne(JSONObject(it))?.let { l -> return l } } } catch (e: java.io.IOException) { exactFailed = true }
         val cleaned = TrackText.clean(title)
-        for (q in listOf("$artist $cleaned", cleaned).distinct()) {
-            val search = get("$BASE/search?q=${enc(q)}") ?: continue
+        val firstArtist = artist.split(',', '&', ';', '/').first().trim()
+        val queries = listOf("$artist $cleaned", "$firstArtist $cleaned", cleaned).filter { it.isNotBlank() }.distinct()
+        var searchFailed = false
+        for (q in queries) {
+            val search = try { get("$BASE/search?q=${enc(q)}") } catch (e: java.io.IOException) { searchFailed = true; null } ?: continue
             pickBest(JSONArray(search), durationSec, title, artist)?.let { return it }
         }
+        // A "not found" built on a request that failed is not a real "not found": let the caller retry instead of marking the song as without lyrics.
+        if (exactFailed && searchFailed) throw java.io.IOException("LRCLIB sin respuesta")
+        if (searchFailed) throw java.io.IOException("LRCLIB sin respuesta en la búsqueda")
         return null
     }
 
     internal fun parseOne(o: JSONObject): Lyrics? {
         val synced = o.optString("syncedLyrics", "").takeIf { it.isNotBlank() && it != "null" }
         val plain = o.optString("plainLyrics", "").takeIf { it.isNotBlank() && it != "null" }
+        if (synced == null && plain == null && o.optBoolean("instrumental", false)) return Lyrics(null, "♪ Instrumental ♪")
         return if (synced == null && plain == null) null else Lyrics(synced, plain)
     }
 
@@ -39,8 +47,9 @@ object LrcLib {
             .filter { title.isBlank() || sameSong(it.optString("trackName"), it.optString("artistName"), title, artist) }
         if (items.isEmpty()) return null
         fun gap(o: JSONObject) = if (durationSec > 0) abs(o.optDouble("duration", 0.0) - durationSec) else 0.0
-        val best = items.filter { gap(it) <= 10 }.minByOrNull { (if (it.optString("syncedLyrics", "").isBlank()) 1000 else 0) + gap(it) }
-            ?: return null
+        fun rank(o: JSONObject) = (if (o.optString("syncedLyrics", "").isBlank()) 1000 else 0) + gap(o)
+        // First the ones within 10 s; if none, up to 20 s (remasters and live cuts often differ a little).
+        val best = items.filter { gap(it) <= 10 }.minByOrNull(::rank) ?: items.filter { gap(it) <= 20 }.minByOrNull(::rank) ?: return null
         return parseOne(best)
     }
 
@@ -59,12 +68,19 @@ object LrcLib {
         return titleOk && artistOk
     }
 
+    /** Time before which the service asked us not to call again (from a 429 Retry-After). */
+    @Volatile var retryAfterUntil = 0L
+
     private fun get(url: String): String? {
         val c = URL(url).openConnection() as HttpURLConnection
         try {
-            c.connectTimeout = 10_000; c.readTimeout = 15_000
-            c.setRequestProperty("User-Agent", "Q-Lyrics/0.1")
+            c.connectTimeout = 20_000; c.readTimeout = 30_000
+            c.setRequestProperty("User-Agent", "Q-Lyrics/0.8.0 (https://github.com/therr-ctrl/qbz-downloader-mobile)")
             if (c.responseCode == 404) return null
+            if (c.responseCode == 429) {
+                val wait = c.getHeaderField("Retry-After")?.trim()?.toLongOrNull() ?: 5L
+                retryAfterUntil = System.currentTimeMillis() + wait.coerceIn(1, 60) * 1000
+            }
             if (c.responseCode !in 200..299) throw java.io.IOException("LRCLIB ${c.responseCode}")
             return c.inputStream.bufferedReader().readText()
         } finally { c.disconnect() }
@@ -77,5 +93,10 @@ object TrackText {
     private val tags = Regex("""\s*[(\[](?:[^)\]]*\b(?:remaster\w*|hi-?res|lossless|mono|stereo|deluxe|explicit|bonus|live|version|\d{4})\b[^)\]]*)[)\]]""", RegexOption.IGNORE_CASE)
 
     /** Drops the "(Remastered 2011)" / "[Hi-Res]" style suffixes streaming apps add, for the fallback search. */
-    fun clean(title: String) = tags.replace(title, "").trim().ifBlank { title }
+    fun clean(title: String): String {
+        val noTags = tags.replace(title, "").trim().ifBlank { title }
+        // "Song - Remastered 2011", "Song - Live at X", "Song - Radio Edit": the dash suffix streaming apps add.
+        return dashTag.replace(noTags, "").trim().ifBlank { noTags }
+    }
+    private val dashTag = Regex("""\s+-\s+[^-]*\b(?:remaster\w*|live|version|mono|stereo|edit|mix|demo|\d{4})\b.*$""", RegexOption.IGNORE_CASE)
 }

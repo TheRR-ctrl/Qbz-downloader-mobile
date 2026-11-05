@@ -1,5 +1,11 @@
 package com.qbdlx.mobile
 
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import com.valentinilk.shimmer.shimmer
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.BorderStroke
@@ -48,10 +54,13 @@ fun QualityBadge(text: String, hiRes: Boolean) {
 
 @Composable
 fun Cover(url: String?, size: Int, modifier: Modifier = Modifier) {
+    var loading by remember(url) { mutableStateOf(url != null) }
     AsyncImage(
         url, null,
-        modifier.size(size.dp).clip(RoundedCornerShape(8.dp)),
+        modifier.size(size.dp).clip(RoundedCornerShape(6.dp))
+            .then(if (loading) Modifier.background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .35f)).shimmer() else Modifier),
         contentScale = ContentScale.Crop,
+        onState = { loading = it is coil.compose.AsyncImagePainter.State.Loading },
     )
 }
 
@@ -59,7 +68,7 @@ fun Cover(url: String?, size: Int, modifier: Modifier = Modifier) {
 @Composable
 private fun CoverWithDownload(url: String?, onDownload: () -> Unit) {
     Box {
-        Cover(url, 118)
+        Cover(url, 150)
         Box(
             Modifier.align(Alignment.BottomEnd).padding(6.dp).size(32.dp)
                 .clip(CircleShape).background(Color.Black.copy(alpha = .65f))
@@ -74,7 +83,7 @@ private fun CoverWithDownload(url: String?, onDownload: () -> Unit) {
 /** Up to four covers in a 2x2 mosaic (a playlist's cover); missing ones repeat the first. */
 @Composable
 fun CoverMosaic(urls: List<String>, size: Int, modifier: Modifier = Modifier) {
-    Column(modifier.size(size.dp).clip(RoundedCornerShape(8.dp))) {
+    Column(modifier.size(size.dp).clip(RoundedCornerShape(6.dp))) {
         for (row in 0 until 2) Row(Modifier.weight(1f)) {
             for (col in 0 until 2) {
                 val url = urls.getOrNull(row * 2 + col) ?: urls.firstOrNull()
@@ -88,7 +97,7 @@ fun CoverMosaic(urls: List<String>, size: Int, modifier: Modifier = Modifier) {
 @Composable
 private fun CoverGrid(urls: List<String>, onDownload: () -> Unit) {
     Box {
-        CoverMosaic(urls, 118)
+        CoverMosaic(urls, 150)
         Box(
             Modifier.align(Alignment.BottomEnd).padding(6.dp).size(32.dp)
                 .clip(CircleShape).background(Color.Black.copy(alpha = .65f))
@@ -103,14 +112,14 @@ private fun CoverGrid(urls: List<String>, onDownload: () -> Unit) {
 @Composable
 private fun CardText(title: String, subtitle: String, extra: String) {
     Spacer(Modifier.height(4.dp))
-    Text(title, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-    Text(subtitle, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .7f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+    Text(title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    Text(subtitle, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
     if (extra.isNotBlank()) Text(extra, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .7f), maxLines = 1)
 }
 
 @Composable
 fun AlbumCard(album: Album, onClick: () -> Unit, onDownload: () -> Unit) {
-    Column(Modifier.width(118.dp).clickable(onClick = onClick), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+    Column(Modifier.width(150.dp).clickable(onClick = onClick), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         CoverWithDownload(album.coverUrl, onDownload)
         CardText(album.title, album.artist, "")
         if (album.quality.isNotBlank()) QualityBadge(album.quality, album.hiRes)
@@ -119,7 +128,7 @@ fun AlbumCard(album: Album, onClick: () -> Unit, onDownload: () -> Unit) {
 
 @Composable
 fun PlaylistCard(playlist: Playlist, onClick: () -> Unit, onDownload: () -> Unit) {
-    Column(Modifier.width(118.dp).clickable(onClick = onClick), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+    Column(Modifier.width(150.dp).clickable(onClick = onClick), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         if (playlist.covers.size >= 2) CoverGrid(playlist.covers, onDownload)
         else CoverWithDownload(playlist.coverUrl, onDownload)
         CardText(playlist.name, playlist.owner, if (playlist.tracksCount > 0) LocalStrings.current.tracks(playlist.tracksCount) else "")
@@ -133,30 +142,30 @@ fun PlaylistCard(playlist: Playlist, onClick: () -> Unit, onDownload: () -> Unit
 @Composable
 fun QChip(selected: Boolean, onClick: () -> Unit, label: @Composable () -> Unit) {
     val c = MaterialTheme.colorScheme
+    // Qobuz's chips: dark grey pills, and the selected one turns white with dark text.
     FilterChip(
         selected = selected, onClick = onClick, label = label,
+        shape = RoundedCornerShape(50),
         colors = FilterChipDefaults.filterChipColors(
+            containerColor = c.surfaceVariant,
             labelColor = c.onSurface,
             selectedContainerColor = c.secondaryContainer,
             selectedLabelColor = c.onSecondaryContainer,
         ),
-        border = FilterChipDefaults.filterChipBorder(
-            enabled = true, selected = selected,
-            borderColor = c.outline, selectedBorderColor = c.primary,
-        ),
+        border = null,
     )
 }
 
-/** Bottom tabs: the selected icon is cyan on a dark-cyan pill and its label gold; the rest stay muted. */
+/** Bottom tabs: the selected one is clearly marked (accent icon and label on a soft accent pill); the rest stay muted. */
 @Composable
 fun qbdlxNavColors(): NavigationBarItemColors {
     val c = MaterialTheme.colorScheme
     return NavigationBarItemDefaults.colors(
-        selectedIconColor = c.onSecondaryContainer,
-        selectedTextColor = c.secondary,
-        indicatorColor = c.secondaryContainer,
-        unselectedIconColor = c.onSurfaceVariant,
-        unselectedTextColor = c.onSurfaceVariant,
+        selectedIconColor = c.primary,
+        selectedTextColor = c.primary,
+        indicatorColor = c.primary.copy(alpha = 0.18f),
+        unselectedIconColor = c.onSurfaceVariant.copy(alpha = 0.75f),
+        unselectedTextColor = c.onSurfaceVariant.copy(alpha = 0.75f),
     )
 }
 
@@ -221,7 +230,7 @@ fun QualityDialog(current: Quality, onPick: (Quality) -> Unit, onCancel: () -> U
                     ) {
                         Text(
                             if (q == Quality.MP3) "♪" else "HQ", color = accent, fontWeight = FontWeight.Bold, fontSize = 11.sp,
-                            modifier = Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)).padding(top = 8.dp),
+                            modifier = Modifier.size(32.dp).clip(RoundedCornerShape(6.dp)).padding(top = 8.dp),
                         )
                         Spacer(Modifier.width(12.dp))
                         Column {

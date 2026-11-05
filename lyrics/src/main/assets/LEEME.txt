@@ -1,0 +1,3 @@
+Aquí va ggml-base-q5_1.bin (modelo multilingüe de Whisper, ~60 MB; no se sube al repo):
+  curl -L -o lyrics/src/main/assets/ggml-base-q5_1.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base-q5_1.bin
+Sin él (o sin libqlwhisper.so, que compila .github/workflows/whisper.yml) el botón de Whisper dice que no está disponible; lo demás funciona igual.

@@ -87,6 +87,9 @@ class IpodDevice(private val context: Context, private val treeUri: Uri) {
     /** The tracks the iPod already has, read from a copy of its library. */
     fun listTracks(): List<IpodTrack> = withLibrary(readOnly = true) { lib, _ -> lib.listTracks() }
 
+    /** The playlists stored on the iPod. */
+    fun listPlaylists(): List<IpodPlaylist> = withLibrary(readOnly = true) { lib, _ -> lib.listPlaylists() }
+
     /** A read-only technical report (table layouts, artwork folder, one old and one new track row) to find out why artwork/metadata are missing. */
     fun report(): String {
         val art = runCatching {
@@ -225,7 +228,7 @@ class IpodDevice(private val context: Context, private val treeUri: Uri) {
     }
 
     /** Takes these tracks off the iPod: the library is backed up and written first, the song files are deleted after. Returns (removed, error). */
-    fun removeTracks(pids: List<Long>, guid: ByteArray): Pair<Int, String?> {
+    fun removeTracks(pids: List<Long>, guid: ByteArray, playlistPids: List<Long> = emptyList()): Pair<Int, String?> {
         val itlp = itlpDir() ?: return 0 to "iPod library not found"
         val music = writer.findDir(listOf("iPod_Control", "Music")) ?: return 0 to "iPod_Control/Music not found"
         backup(itlp)
@@ -233,7 +236,8 @@ class IpodDevice(private val context: Context, private val treeUri: Uri) {
         try {
             val ok = withLibrary(readOnly = false, itlp = itlp) { lib, work ->
                 pids.forEach { pid -> runCatching { lib.removeTrack(pid) }.getOrNull()?.let { files += it } }
-                if (files.isEmpty()) return@withLibrary false
+                playlistPids.forEach { runCatching { lib.deletePlaylist(it) } }
+                if (files.isEmpty() && playlistPids.isEmpty()) return@withLibrary false
                 work.finish(guid)
                 true
             }

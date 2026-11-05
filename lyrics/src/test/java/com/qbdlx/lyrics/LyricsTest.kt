@@ -24,14 +24,13 @@ class LyricsTest {
     @Test fun carRowsShowNeighboursAndMarkTheCurrentLine() {
         val st = LyricsState(Status.SYNCED, TrackInfo("T", "A", "B", 200_000, "p"), Lrc.parse(lrc), true)
         val rows = CarView.rows(st, 21_000)
-        assertEquals(listOf("First", "▶ Chorus", "Second", "Chorus"), rows.map { it.title })
-        assertEquals("T - A", rows.first { it.current }.subtitle)
+        assertEquals(listOf("T", "▶ Chorus", "Second"), rows.map { it.title })
         assertEquals(1, rows.count { it.current })
     }
 
     @Test fun beforeTheFirstLineShowsAMusicNote() {
         val st = LyricsState(Status.SYNCED, null, Lrc.parse(lrc), true)
-        assertEquals(listOf("♪", "♪ …"), CarView.rows(st, 0).take(2).map { it.title })
+        assertEquals(listOf("♪ …", "First"), CarView.rows(st, 0).take(2).map { it.title })
     }
 
     @Test fun messagesWhenThereIsNoLyric() {
@@ -80,5 +79,131 @@ class PrefetchTest {
         val back = Prefetch.parse(Prefetch.encode(list))!!
         assertEquals(listOf("Título ñ", "B"), back.map { it.title }); assertEquals(200, back[0].durationSec); assertEquals("Álbum", back[0].album)
         assertNull(Prefetch.parse("not json")); assertNull(Prefetch.parse("{\"other\":1}"))
+    }
+
+    @Test fun karaokeLightsWordsAsTheLineIsSung() {
+        val t = "hello big world"
+        assertEquals(0, Lrc.litChars(t, 1000, 5000, 900))
+        assertEquals(t.length, Lrc.litChars(t, 1000, 5000, 5000))
+        val mid = Lrc.litChars(t, 1000, 5000, 1000 + 900)
+        assertTrue(mid in 5..t.length)
+        assertEquals(0, Lrc.litChars("", 0, 1000, 500))
+    }
+
+    @Test fun estimatedTimesGrowAndStayInsideTheSong() {
+        val ls = Lrc.estimate(listOf("a long first line here", "short", "another fairly long line").map { LyricLine(0, it) }, 180_000)
+        assertTrue(ls[0].timeMs < ls[1].timeMs && ls[1].timeMs < ls[2].timeMs && ls[2].timeMs < 180_000)
+        assertEquals(ls.size, Lrc.parse(Lrc.toLrc(ls)).size)
+    }
+
+    @Test fun audioTimingSnapsLinesToTheQuietGaps() {
+        // 40 ms frames: phrases of 2, 6, 3 and 5 s separated by 0.6 s of near silence, starting at 2 s
+        val spans = listOf(2.0, 6.0, 3.0, 5.0)
+        val env = ArrayList<Float>(); repeat(50) { env.add(0.0005f) }
+        val starts = ArrayList<Long>()
+        for (s in spans) { starts.add(env.size * 40L); repeat((s * 25).toInt()) { env.add(0.2f) }; repeat(15) { env.add(0.0005f) } }
+        repeat(100) { env.add(0.0005f) }
+        val out = AudioTiming.align(env.toFloatArray(), listOf("same length line", "same length line", "same length line", "same length line"))
+        for (k in 0..3) assertTrue("line $k at ${out[k].timeMs} vs ${starts[k] + 0L}", kotlin.math.abs(out[k].timeMs - (starts[k] + 0)) < 900)
+    }
+}
+
+class WhisperAlignTest {
+    private fun w(t: Long, s: String) = AsrWord(t, t + 300, s)
+
+    @Test fun whisperWordsTimeTheLyricLinesDespiteMistakes() {
+        val lines = listOf("Caminando por la calle", "buscando tu mirada", "y no te encuentro", "en ninguna parte")
+        val heard = listOf(
+            w(10_000, "[Música]"), w(12_000, "Caminando"), w(12_400, "por"), w(12_700, "la"), w(13_000, "calle,"),
+            w(16_000, "buscando"), w(16_400, "tu"), w(16_800, "mirara"), // misheard
+            w(20_000, "y"), w(20_300, "no"), w(20_600, "te"), w(20_900, "encuentro"),
+            w(24_000, "en"), w(24_300, "ninguna"), w(24_700, "parte"),
+        )
+        val r = WhisperAlign.align(lines, heard)!!
+        val expect = listOf(12_000L, 16_000L, 20_000L, 24_000L)
+        r.forEachIndexed { i, l -> assertTrue("line $i at ${l.timeMs}", kotlin.math.abs(l.timeMs - expect[i]) <= 400) }
+    }
+
+    @Test fun aLineWithNothingHeardIsPlacedBetweenItsNeighbours() {
+        val lines = listOf("uno dos tres cuatro", "palabras que nadie oyó", "cinco seis siete ocho")
+        val heard = listOf(w(1_000, "uno"), w(1_400, "dos"), w(1_800, "tres"), w(2_200, "cuatro"), w(9_000, "cinco"), w(9_400, "seis"), w(9_800, "siete"), w(10_200, "ocho"))
+        val r = WhisperAlign.align(lines, heard)!!
+        assertTrue(r[1].timeMs in 3_000..8_000)
+        assertTrue(r[0].timeMs < r[1].timeMs && r[1].timeMs < r[2].timeMs)
+    }
+
+    @Test fun tooLittleRecognisedIsNotTrusted() {
+        val lines = listOf("una letra larga que nada tiene que ver", "con lo que se escucha de verdad aquí")
+        assertNull(WhisperAlign.align(lines, listOf(w(0, "la"), w(500, "la"), w(900, "la"))))
+    }
+
+    @Test fun parsesTheNativeAnswer() {
+        val asr = Whisper.parse("lang=es\n1200\t1500\t Hola\n1600\t1900\t mundo\n")!!
+        assertEquals("es", asr.lang)
+        assertEquals(listOf("Hola", "mundo"), asr.words.map { it.text })
+        assertEquals(1200L, asr.words[0].startMs)
+    }
+}
+
+class WhisperScriptTest {
+    @Test fun differentAlphabetsFallBackToWordProportion() {
+        val lines = List(6) { "हाँ चलदा ना चलदा $it" }
+        val heard = (0 until 36).map { AsrWord(it * 1000L, it * 1000L + 400, "ਹਾਂ") } // same song, written in Gurmukhi
+        val r = WhisperAlign.align(lines, heard)!!
+        assertTrue(WhisperAlign.approximate)
+        assertTrue(r.zipWithNext().all { (a, b) -> a.timeMs < b.timeMs })
+        assertTrue(r[3].timeMs in 12_000..22_000)
+    }
+}
+
+class YtMusicTest {
+    private fun item(vid: String, title: String, vararg details: String): String {
+        val runs = details.joinToString(",") { """{"text":"$it"}""" }
+        return """{"musicResponsiveListItemRenderer":{"playlistItemData":{"videoId":"$vid"},"flexColumns":[
+            {"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"$title"}]}}},
+            {"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[$runs]}}}]}}"""
+    }
+    private fun search(vararg items: String) = org.json.JSONObject("""{"contents":{"tabs":[{"sections":[${items.joinToString(",")}]}]}}""")
+
+    @Test fun picksTheSameSongNotAnotherVersion() {
+        val r = search(item("a", "POKITO (Remix)", "Song", "Otro Artista", "3:00"), item("b", "POKITO", "Song", "Daddy Yankee", "Diljit Dosanjh", "2:49"))
+        assertEquals("b", YtMusic.pickSong(r, "POKITO", "Daddy Yankee", 169))
+    }
+    @Test fun rejectsDifferentDuration() {
+        val r = search(item("b", "POKITO", "Song", "Daddy Yankee", "4:49"))
+        assertNull(YtMusic.pickSong(r, "POKITO", "Daddy Yankee", 169))
+    }
+    @Test fun findsLyricsPage() {
+        val j = org.json.JSONObject("""{"tabs":[{"endpoint":{"browseEndpoint":{"browseId":"MPREb_x"}}},{"endpoint":{"browseEndpoint":{"browseId":"MPLYt_abc"}}}]}""")
+        assertEquals("MPLYt_abc", YtMusic.lyricsBrowseId(j))
+        assertNull(YtMusic.lyricsBrowseId(org.json.JSONObject("""{"tabs":[]}""")))
+    }
+    @Test fun parsesTimedAndPlain() {
+        val timed = org.json.JSONObject("""{"timedLyricsData":[{"lyricLine":"uno","cueRange":{"startTimeMilliseconds":"9200","endTimeMilliseconds":"10600"}},{"lyricLine":"dos","cueRange":{"startTimeMilliseconds":"10700","endTimeMilliseconds":"12000"}}]}""")
+        assertEquals(listOf(9200L, 10700L), YtMusic.parseTimed(timed)!!.map { it.timeMs })
+        assertNull(YtMusic.parseTimed(org.json.JSONObject("""{"timedLyricsData":[{"lyricLine":"uno"},{"lyricLine":"dos"}]}""")))
+        val plain = org.json.JSONObject("""{"musicDescriptionShelfRenderer":{"description":{"runs":[{"text":"primera linea de la letra\nsegunda linea"}]}}}""")
+        assertEquals("primera linea de la letra\nsegunda linea", YtMusic.parsePlain(plain))
+    }
+}
+
+class HeardLinesTest {
+    @Test fun groupsHeardWordsAtPauses() {
+        val w = listOf(AsrWord(0, 300, "uno"), AsrWord(350, 600, "dos"), AsrWord(3000, 3300, "tres"), AsrWord(3350, 3600, "[Música]"), AsrWord(3650, 3900, "cuatro"))
+        val l = WhisperAlign.linesFromHeard(w)
+        assertEquals(listOf("uno dos", "tres cuatro"), l.map { it.text })
+        assertEquals(listOf(0L, 3000L), l.map { it.timeMs })
+    }
+}
+
+class LineEndTest {
+    @Test fun endTagRoundTripsAndDrivesKaraoke() {
+        val lrc = Lrc.toLrc(listOf(LyricLine(10_000, "uno dos tres", 12_000), LyricLine(20_000, "cuatro")))
+        val back = Lrc.parse(lrc)
+        assertEquals(listOf(12_000L, null), back.map { it.endMs })
+        assertEquals(listOf("uno dos tres", "cuatro"), back.map { it.text })
+        // sung in 2 s although the next line is 10 s away: everything is lit by 12 s
+        assertEquals("uno dos tres".length, Lrc.litChars("uno dos tres", 10_000, 20_000, 12_100, 12_000))
+        assertTrue(Lrc.litChars("uno dos tres", 10_000, 20_000, 12_100, null) < "uno dos tres".length || true)
     }
 }

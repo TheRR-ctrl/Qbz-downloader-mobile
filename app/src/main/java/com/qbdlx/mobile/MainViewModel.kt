@@ -62,6 +62,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var selectedTag by mutableStateOf<PlaylistTag?>(null); private set
     var tagPlaylists by mutableStateOf<List<Playlist>>(emptyList()); private set
     var playlistDetail by mutableStateOf<PlaylistDetail?>(null); private set
+    var artistPage by mutableStateOf<ArtistPage?>(null); private set
 
     // Library; null until loaded.
     var myPlaylists by mutableStateOf<List<Playlist>?>(null); private set
@@ -81,7 +82,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var libraryLoading by mutableStateOf(false); private set
 
     /** App secret typed in Settings; overrides the one read from the web player when set. */
-    var customSecret by mutableStateOf(prefs.getString("custom_app_secret", "").orEmpty()); private set
+    // The manual App Secret field is gone; an old saved override must not keep silently winning over the real secret.
+    init { prefs.edit().remove("custom_app_secret").apply() }
     val appId: String get() = api.appId
     var results by mutableStateOf<List<Album>>(emptyList()); private set
     /** Songs matching the last search, shown under the "Songs" tab of Search. */
@@ -243,10 +245,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         // Resume the previous session from the saved token, if there is one.
         val id = prefs.getString("user_id", null)
         val token = prefs.getString("token", null)
-        // A custom secret is sufficient to restore a session even when the
-        // original web-player secret was not persisted or is no longer usable.
         if (!id.isNullOrBlank() && !token.isNullOrBlank() && savedAppId.isNotBlank() &&
-            (savedAppSecret.isNotBlank() || customSecret.isNotBlank())
+            savedAppSecret.isNotBlank()
         ) {
             signingIn = true
             run { tokenLogin(savedAppId, savedAppSecret, id, token, "sesión restaurada (guardado)") }
@@ -344,7 +344,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun importStop() { importJob?.cancel(); importRetryJob?.cancel(); importProgress = null; notice = strings.importStopped }
 
     fun openImport() { closeAlbum(); closePlaylist(); closeDiagnostics(); closeIpod(); showImport = true }
-    fun closeImport() { showImport = false }
+    /** Closing the import screen also closes "Sonando": every navigation path already calls this, and both are full-screen extras. */
+    fun closeImport() { showImport = false; showListen = false }
 
     /** Reads the list the scanner shared (or the user picked) and looks every song up on Qobuz. */
     fun importList(uri: android.net.Uri) = importFrom {
@@ -377,6 +378,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 notice = strings.importFavoritesDone(ids.size)
             } catch (e: Exception) { error = strings.importPlaylistFailed(e.message.orEmpty()) }
             finally { importBusy = null }
+        }
+    }
+
+    /** True when the song is in the user's Qobuz favourite tracks (as far as the library already loaded says). */
+    fun isFavorite(trackId: Long): Boolean = favTracks?.any { it.second.id == trackId } == true
+
+    /** The heart of the player: adds or removes the song in Qobuz, showing the change at once and undoing it if Qobuz refuses. */
+    fun toggleFavorite(album: Album, track: Track) {
+        val before = favTracks.orEmpty()
+        val adding = before.none { it.second.id == track.id }
+        favTracks = if (adding) listOf(album to track) + before else before.filter { it.second.id != track.id }
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) { if (adding) api.addFavoriteTracks(listOf(track.id)) else api.removeFavoriteTracks(listOf(track.id)) }
+            } catch (e: Exception) {
+                favTracks = before
+                error = e.message
+            }
         }
     }
 
@@ -577,13 +596,146 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var confirmIpodClear by mutableStateOf(false)
     var ipodPlaylistPicker by mutableStateOf(false)
     /** A Qobuz playlist waiting for its songs to finish arriving on the iPod: (name, track keys in order). */
-    private var playlistAfterSend: Pair<String, List<String>>? = null
+    private var playlistAfterSend: List<Pair<String, List<String>>>? = null
     var ipodClearing by mutableStateOf(false); private set
     /** What the iPod is doing right now when there is no exact percentage (clear, delete, fix covers): shown as a bar without a number. */
     var ipodTask by mutableStateOf<String?>(null); private set
     /** True once the person pressed Stop: the running iPod job ends at the next safe point (never in the middle of writing the library). */
     var ipodStopping by mutableStateOf(false); private set
-    fun ipodStop() { ipodStopping = true }
+    fun ipodStop() { ipodStopping = true; aiJob?.cancel() }
+
+    // ---- AI mixes for the iPod (see AiMix.kt): the AI proposes, the code validates, and with no key/answer local mixes are made ----
+    var aiKey by mutableStateOf(prefs.getString("ai_key", "") ?: ""); private set
+    var aiMixDialog by mutableStateOf(false)
+    var aiKeyDialog by mutableStateOf(false)
+    var aiKeyTesting by mutableStateOf(false); private set
+    var aiKeyError by mutableStateOf<String?>(null); private set
+    private var aiJob: kotlinx.coroutines.Job? = null
+
+    /** Tests the key against Google and saves it only if it works. The key stays in the app's private storage, never in the repo or the APK. */
+    fun aiSaveKey(raw: String) {
+        val key = raw.trim()
+        if (key.isBlank() || aiKeyTesting) return
+        aiKeyTesting = true; aiKeyError = null
+        viewModelScope.launch {
+            val err = withContext(Dispatchers.IO) { AiMix.testKey(api.http, key) }
+            aiKeyTesting = false
+            if (err == null) { aiKey = key; prefs.edit().putString("ai_key", key).apply(); aiKeyDialog = false }
+            else aiKeyError = strings.aiKeyProblem(err.kind.name)
+        }
+    }
+    fun aiForgetKey() { aiKey = ""; prefs.edit().remove("ai_key").apply() }
+
+    var aiIdeas by mutableStateOf<List<String>>(emptyList()); private set
+    var aiIdeasBusy by mutableStateOf(false); private set
+    var aiIdeasNote by mutableStateOf<String?>(null); private set
+    private var aiIdeasJob: kotlinx.coroutines.Job? = null
+    fun aiIdeasStop() { aiIdeasJob?.cancel() }
+    /** Asks the AI for a few mix ideas from a sample of the library. Only proposes: nothing is written until "Crear" is pressed. Falls back to ideas from the library itself. */
+    fun aiSuggest() {
+        if (aiIdeasBusy) return
+        val tracks = ipodTracks.filter { it.title.isNotBlank() }
+        if (tracks.size < AiMix.MIN_MIX) { aiIdeasNote = strings.aiMixTooFew; return }
+        aiIdeasBusy = true; aiIdeasNote = null
+        aiIdeasJob = viewModelScope.launch {
+            val songs = tracks.shuffled().take(AiMix.MAX_SONGS_SENT / 2).mapIndexed { i, t -> MixSong(i + 1, t.title, t.artist, t.album) }
+            try {
+                var ideas: List<String> = emptyList()
+                if (aiKey.isBlank()) aiIdeasNote = strings.aiMixNoKey
+                else {
+                    ideas = try { AiMix.validateIdeas(withContext(Dispatchers.IO) { AiMix.askIdeas(api.http, aiKey, AiMix.catalog(songs)) }) }
+                    catch (e: AiMix.AiError) { aiIdeasNote = aiProblem(e); emptyList() }
+                    if (ideas.isEmpty() && aiIdeasNote == null) aiIdeasNote = strings.aiMixBadAnswer
+                }
+                if (ideas.isEmpty()) ideas = AiMix.localIdeas(songs).also { aiIdeasNote = (aiIdeasNote?.plus(" ") ?: "") + strings.aiIdeasLocal }
+                aiIdeas = ideas
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                aiIdeasNote = strings.aiIdeasStopped
+            } finally { aiIdeasBusy = false; aiIdeasJob = null }
+        }
+    }
+    class AiPreviewMix(val name: String, val songs: List<MixSong>)
+    var aiPreview by mutableStateOf<List<AiPreviewMix>?>(null); private set
+    var aiPreviewNote by mutableStateOf<String?>(null); private set
+    var aiGenerating by mutableStateOf(false); private set
+    private var aiLast: Triple<List<String>, Int, com.qbdlx.mobile.ipod.IpodTrack?>? = null
+    fun aiPreviewClose() { aiPreview = null; aiPreviewNote = null; aiMixDialog = false }
+    fun aiGenerateStop() { aiJob?.cancel() }
+    fun aiRegenerate() { aiLast?.let { aiGenerate(it.first, it.second, it.third) } }
+    private fun aiProblem(e: AiMix.AiError) = strings.aiKeyProblem(e.kind.name) + if (e.kind == AiMix.AiError.Kind.Bad) " (${e.message})" else ""
+
+    /**
+     * AI mix step 1: the AI (or, failing that, the phone) proposes mixes from the iPod's songs, one per request, optionally
+     * starting from a seed song. Nothing is written to the iPod: the result is a preview the user can keep, drop or regenerate.
+     */
+    fun aiGenerate(requests: List<String>, size: Int, seed: com.qbdlx.mobile.ipod.IpodTrack?) {
+        if (aiGenerating) return
+        val tracks = ipodTracks.filter { it.title.isNotBlank() }
+        if (tracks.size < AiMix.MIN_MIX) { aiPreviewNote = strings.aiMixTooFew; return }
+        aiLast = Triple(requests, size, seed)
+        aiGenerating = true; aiPreviewNote = null
+        aiJob = viewModelScope.launch {
+            try {
+                val seedSong = seed?.takeIf { s -> tracks.any { it.pid == s.pid } }
+                val rest = tracks.filter { it.pid != seedSong?.pid }.shuffled().take(AiMix.MAX_SONGS_SENT - (if (seedSong != null) 1 else 0))
+                val ordered = listOfNotNull(seedSong) + rest
+                val songs = ordered.mapIndexed { i, t -> MixSong(i + 1, t.title, t.artist, t.album) }
+                val first = if (seedSong != null) songs.first() else null
+                val wanted = if (requests.isEmpty()) 3 else requests.size.coerceIn(1, AiMix.MAX_MIXES)
+                var usedAi = true; var note: String? = null
+                var mixes: List<Mix> = emptyList()
+                if (aiKey.isBlank()) { usedAi = false; note = strings.aiMixNoKey }
+                else {
+                    val seedLine = first?.let { "${it.n}|${it.title}|${it.artist}|${it.album}" }
+                    val reqs = if (requests.isEmpty() && first != null) listOf("Música parecida a la canción de partida") else requests
+                    mixes = try {
+                        val json = withContext(Dispatchers.IO) { AiMix.ask(api.http, aiKey, reqs, AiMix.catalog(songs), size, seedLine) }
+                        AiMix.validate(json, songs.map { it.n }.toSet(), wanted, first?.n, size)
+                    } catch (e: AiMix.AiError) { note = aiProblem(e); emptyList() }
+                    if (mixes.isEmpty()) { usedAi = false; if (note == null) note = strings.aiMixBadAnswer }
+                }
+                if (mixes.isEmpty()) mixes = AiMix.localMixes(songs, wanted, System.nanoTime(), size, first)
+                val byN = songs.associateBy { it.n }
+                aiPreview = mixes.map { m -> AiPreviewMix(m.name, m.ns.mapNotNull { byN[it] }) }
+                aiPreviewNote = listOfNotNull(note, if (usedAi) strings.aiMixByAi else strings.aiMixLocal).joinToString(" ")
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                aiPreviewNote = strings.aiIdeasStopped
+            } finally { aiGenerating = false; aiJob = null }
+        }
+    }
+
+    /** AI mix step 2: writes the chosen previews to the iPod as playlists (progress and Stop like every iPod task). */
+    fun aiSave(chosen: Set<Int>) {
+        val uri = ipodUri ?: return
+        val list = aiPreview ?: return
+        if (ipodProgress != null || ipodLyricsStatus != null || ipodTask != null) { aiPreviewNote = strings.ipodBusy; return }
+        val guid = ipodGuid()
+        if (guid == null) { aiPreviewNote = strings.aiSaveNeedId; ipodReadUsbGuid(); return }
+        val picked = list.filterIndexed { i, _ -> i in chosen }
+        if (picked.isEmpty()) return
+        aiPreview = null; aiMixDialog = false; ipodMessage = null; ipodStopping = false
+        aiJob = viewModelScope.launch {
+            try {
+                ipodLyricsStatus = strings.aiMixAsking; ipodLyricsProgress = 0 to picked.size
+                val msgs = ArrayList<String>()
+                for ((i, m) in picked.withIndex()) {
+                    if (ipodStopping) break
+                    ipodLyricsStatus = strings.ipodPlaylistMaking(m.name, i, picked.size)
+                    ipodLyricsProgress = i to picked.size
+                    val keys = m.songs.map { com.qbdlx.mobile.ipod.trackKey(it.title, it.artist, it.album) }
+                    val r = withContext(Dispatchers.IO) { com.qbdlx.mobile.ipod.IpodDevice(context, uri).makePlaylist(m.name, keys, guid) }
+                    msgs.add(strings.ipodPlaylistDone(m.name, r.added, r.missing, r.error))
+                }
+                ipodMessage = msgs.joinToString(" ")
+                if (msgs.isNotEmpty()) ipodDone++
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                ipodMessage = strings.ipodPlaylistDownloadStopped
+            } finally {
+                ipodLyricsStatus = null; ipodLyricsProgress = null; ipodStopping = false; aiJob = null
+                ipodRefresh()
+            }
+        }
+    }
     /** (done, total) of the lyrics job, for a real progress bar. */
     var ipodLyricsProgress by mutableStateOf<Pair<Int, Int>?>(null); private set
 
@@ -698,18 +850,25 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var confirmIpodDeleteSelected by mutableStateOf(false)
     fun ipodToggleTrack(pid: Long) { ipodSelectedPids = if (pid in ipodSelectedPids) ipodSelectedPids - pid else ipodSelectedPids + pid }
     fun ipodSelectVisible(pids: List<Long>, selected: Boolean) { ipodSelectedPids = if (selected) ipodSelectedPids + pids else ipodSelectedPids - pids.toSet() }
+    /** Playlists ticked to be removed together with their songs. */
+    var ipodSelectedPlaylists by mutableStateOf<Set<Long>>(emptySet()); private set
+    fun ipodTogglePlaylist(pl: com.qbdlx.mobile.ipod.IpodPlaylist) {
+        if (pl.pid in ipodSelectedPlaylists) { ipodSelectedPlaylists = ipodSelectedPlaylists - pl.pid; ipodSelectedPids = ipodSelectedPids - pl.trackPids.toSet() }
+        else { ipodSelectedPlaylists = ipodSelectedPlaylists + pl.pid; ipodSelectedPids = ipodSelectedPids + pl.trackPids }
+    }
     fun ipodDeleteSelected() {
         confirmIpodDeleteSelected = false
         val uri = ipodUri ?: return
         val pids = ipodSelectedPids.toList()
-        if (pids.isEmpty() || ipodClearing || ipodProgress != null) return
+        val lists = ipodSelectedPlaylists.toList()
+        if ((pids.isEmpty() && lists.isEmpty()) || ipodClearing || ipodProgress != null) return
         val guid = ipodGuid()
         if (guid == null) { ipodReadUsbGuid(); return }
         ipodClearing = true; ipodMessage = null; ipodTask = strings.ipodTaskDeleting(pids.size)
         viewModelScope.launch {
-            val (n, err) = withContext(Dispatchers.IO) { com.qbdlx.mobile.ipod.IpodDevice(context, uri).removeTracks(pids, guid) }
+            val (n, err) = withContext(Dispatchers.IO) { com.qbdlx.mobile.ipod.IpodDevice(context, uri).removeTracks(pids, guid, lists) }
             ipodClearing = false; ipodTask = null
-            ipodSelectedPids = emptySet()
+            ipodSelectedPids = emptySet(); ipodSelectedPlaylists = emptySet()
             ipodMessage = if (err != null) strings.importDeleteFailed(err) else strings.importDeleteDone(n)
             ipodRefresh()
         }
@@ -717,7 +876,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var ipodChecking by mutableStateOf(false); private set
     var ipodGuidText by mutableStateOf(prefs.getString("ipod_guid", "").orEmpty())
     var ipodProgress by mutableStateOf<Pair<Int, Int>?>(null); private set
-    var ipodMessage by mutableStateOf<String?>(null)
+    private var ipodMessageState by mutableStateOf<String?>(null)
+    /** The result of the last iPod action: shown in a card under the tabs and also as a floating message. */
+    var ipodMessage: String?
+        get() = ipodMessageState
+        set(v) { ipodMessageState = v; if (v != null) notice = v }
 
     /** The GUID to sign with: the one read from the iPod, or the one typed by the user. */
     private fun ipodGuid(): ByteArray? = ipodInspection?.guid ?: com.qbdlx.mobile.ipod.IpodSysInfo.fromUserInput(ipodGuidText)
@@ -812,6 +975,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         ipodUnticked = if (on) ipodUnticked - keys else ipodUnticked + keys
     }
     val ipodSelected: List<DownloadTask> get() = ipodShown.filter { ipodKey(it) !in ipodUnticked }
+    /** The "to send" list as a library (artists → albums → songs) like the iPod's, or as the grouped list. */
+    var ipodSendLib by mutableStateOf(true)
+    var ipodSendArtist by mutableStateOf<String?>(null)
+    var ipodSendAlbum by mutableStateOf<String?>(null)
+    fun ipodTickTasks(list: List<DownloadTask>, on: Boolean) { val keys = list.map { ipodKey(it) }.toSet(); ipodUnticked = if (on) ipodUnticked - keys else ipodUnticked + keys }
     fun ipodToggle(t: DownloadTask) { val k = ipodKey(t); ipodUnticked = if (k in ipodUnticked) ipodUnticked - k else ipodUnticked + k }
     fun ipodTickShown(on: Boolean) { val keys = ipodShown.map { ipodKey(it) }.toSet(); ipodUnticked = if (on) ipodUnticked - keys else ipodUnticked + keys }
     fun ipodIsTicked(t: DownloadTask) = ipodKey(t) !in ipodUnticked
@@ -854,11 +1022,78 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun updateIpodGuid(text: String) { ipodGuidText = text; prefs.edit().putString("ipod_guid", text).apply() }
 
-    /** Looks at the chosen iPod (off the main thread): is it usable, and which songs does it already have? */
+    /** (free bytes, total bytes) of the iPod's storage, or null when Android won't say. */
+    var ipodSpace by mutableStateOf<Pair<Long, Long>?>(null); private set
+    private fun statOf(path: String?): Pair<Long, Long>? = path?.let {
+        runCatching { android.os.StatFs(it).let { st -> st.availableBytes to st.totalBytes } }.getOrNull()?.takeIf { p -> p.second > 0 }
+    }
+    /** Space through the folder permission the app already holds (what file managers use): fstatvfs on the root document's descriptor, no paths needed. */
+    private fun statViaSaf(uri: android.net.Uri): Pair<Long, Long>? = runCatching {
+        val root = android.provider.DocumentsContract.buildDocumentUriUsingTree(uri, android.provider.DocumentsContract.getTreeDocumentId(uri))
+        context.contentResolver.openFileDescriptor(root, "r")?.use { pfd ->
+            val st = android.system.Os.fstatvfs(pfd.fileDescriptor)
+            (st.f_bavail * st.f_frsize) to (st.f_blocks * st.f_frsize)
+        }
+    }.getOrNull()?.takeIf { it.second > 0 }
+
+    private fun readIpodSpace(uri: android.net.Uri): Pair<Long, Long>? {
+        statViaSaf(uri)?.let { return it }
+        val volId = runCatching { android.provider.DocumentsContract.getTreeDocumentId(uri).substringBefore(':') }.getOrNull() ?: return null
+        val paths = mutableListOf<String?>()
+        runCatching {
+            val sm = context.getSystemService(android.os.storage.StorageManager::class.java)
+            val vol = sm.storageVolumes.firstOrNull { it.uuid.equals(volId, ignoreCase = true) || (volId == "primary" && it.isPrimary) }
+            if (android.os.Build.VERSION.SDK_INT >= 30) paths += vol?.directory?.path
+            paths += vol?.uuid?.let { "/storage/$it" }
+        }
+        paths += "/storage/$volId"
+        paths += "/mnt/media_rw/$volId"
+        runCatching { context.getExternalFilesDirs(null).forEach { d -> if (d != null && (volId == "primary" || d.path.contains(volId, true))) paths += d.path } }
+        if (volId == "primary") paths += android.os.Environment.getExternalStorageDirectory().path
+        return paths.firstNotNullOfOrNull { statOf(it) }
+    }
+
+    var ipodPlaylists by mutableStateOf<List<com.qbdlx.mobile.ipod.IpodPlaylist>>(emptyList()); private set
+    var ipodOpenPlaylist by mutableStateOf<Long?>(null)
+    /** Library view of the songs on the iPod: artists → albums → songs. */
+    var ipodLibMode by mutableStateOf(false)
+    /** Library view as a cover grid (true) or as rows (false). */
+    private var ipodGridState by mutableStateOf(prefs.getBoolean("ipod_grid", true))
+    var ipodGrid: Boolean
+        get() = ipodGridState
+        set(v) { ipodGridState = v; prefs.edit().putBoolean("ipod_grid", v).apply() }
+    class LibAlbum(val name: String, val tracks: List<com.qbdlx.mobile.ipod.IpodTrack>, val cover: String?) { val pids = tracks.map { it.pid } }
+    class LibArtist(val name: String, val albums: List<LibAlbum>) {
+        val songCount = albums.sumOf { it.tracks.size }
+        val cover = albums.firstNotNullOfOrNull { it.cover }
+        val pids = albums.flatMap { it.pids }
+    }
+    /** The iPod's songs grouped artist → album with covers, built once (not on every frame) so the library view scrolls smoothly. */
+    var ipodLibrary by mutableStateOf<List<LibArtist>>(emptyList()); private set
+    var ipodSortedTracks by mutableStateOf<List<com.qbdlx.mobile.ipod.IpodTrack>>(emptyList()); private set
+
+    /** Covers come from the same album in the app's downloads (the iPod doesn't give them to the app); small versions, to keep scrolling light. */
+    private fun buildIpodLibrary(tracks: List<com.qbdlx.mobile.ipod.IpodTrack>) {
+        val covers = HashMap<String, String>()
+        downloads.tasks.toList().forEach { t -> t.album.coverUrl?.let { covers.putIfAbsent(com.qbdlx.mobile.ipod.trackKey("", t.track.artist, t.album.title), it) } }
+        val sorted = tracks.sortedWith(compareBy({ it.artist.lowercase() }, { it.album.lowercase() }, { it.trackNumber }, { it.title.lowercase() }))
+        ipodSortedTracks = sorted
+        ipodLibrary = sorted.groupBy { it.artist }.map { (artist, ts) ->
+            LibArtist(artist, ts.groupBy { it.album }.map { (album, at) ->
+                LibAlbum(album, at, covers[com.qbdlx.mobile.ipod.trackKey("", artist, album)]?.replace("_600", "_230"))
+            })
+        }
+    }
+    fun ipodRebuildLibrary() { val t = ipodTracks; viewModelScope.launch { withContext(Dispatchers.Default) { buildIpodLibrary(t) } } }
+    var ipodLibArtist by mutableStateOf<String?>(null)
+    var ipodLibAlbum by mutableStateOf<String?>(null)
+
     fun ipodRefresh() {
         val uri = ipodUri ?: return
         viewModelScope.launch {
             ipodChecking = true
+            // Space is read on its own: a slow USB answer must never hold up the song list.
+            launch { ipodSpace = withContext(Dispatchers.IO) { readIpodSpace(uri) } }
             val device = com.qbdlx.mobile.ipod.IpodDevice(context, uri)
             val insp = withContext(Dispatchers.IO) { device.inspect() }
             ipodInspection = insp
@@ -867,6 +1102,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 ipodOnDevice = tracks?.map { com.qbdlx.mobile.ipod.trackKey(it.title, it.artist, it.album) }?.toSet().orEmpty()
                 ipodSongCount = tracks?.size ?: -1
                 ipodTracks = tracks.orEmpty()
+                withContext(Dispatchers.Default) { buildIpodLibrary(tracks.orEmpty()) }
+                ipodPlaylists = withContext(Dispatchers.IO) { runCatching { device.listPlaylists() }.getOrNull() }.orEmpty()
                 if (insp.guid == null && !ipodGuidKnown) ipodReadUsbGuid() // the serial number is the identifier: no need to ask the person
             }
             ipodChecking = false
@@ -966,10 +1203,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             ipodProgress = null; ipodStopping = false
             val text = if (error != null) strings.ipodInterrupted(remaining.size, error) else if (stopped) strings.ipodStoppedSend(sent, remaining.size) else strings.ipodDone(sent, failed)
             ipodNotify(if (error != null || stopped) text else strings.ipodNotifDone(sent, failed), 0, 0, ongoing = false)
-            if (error != null || stopped) playlistAfterSend = null
+            if (stopped) playlistAfterSend = null // an error (e.g. the iPod is full) still builds the playlists from the songs that are there
             ipodMessage = (if (error == null && (covers > 0 || artworkNote != null)) text + " " + strings.ipodCovers(covers, artworkNote) else text) +
                 (if (ipodLyrics) " " + strings.ipodLyricsDone(lyricsAdded) else "")
-            if (error == null && !stopped) finishIpodPlaylist() else { playlistAfterSend = null; ipodRefresh() }
+            if (error == null && !stopped) ipodDone++
+            if (!stopped) finishIpodPlaylist() else { playlistAfterSend = null; ipodRefresh() }
         }
     }
 
@@ -988,33 +1226,78 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Sends a Qobuz playlist to the iPod: its downloaded MP3s that are not there yet are sent, then the playlist is created with every one of its songs found on the iPod. */
-    fun ipodSendPlaylist(p: Playlist) {
+    fun ipodSendPlaylists(selected: List<Playlist>) {
+        if (selected.isEmpty()) return
         val uri = ipodUri ?: return
-        if (ipodProgress != null || ipodLyricsStatus != null) { notice = strings.ipodBusy; return }
+        if (ipodProgress != null || ipodLyricsStatus != null || ipodTask != null) { notice = strings.ipodBusy; return }
         if (ipodGuid() == null) { ipodReadUsbGuid(); return }
         ipodPlaylistPicker = false
         viewModelScope.launch {
             ipodMessage = null
-            val detail = withContext(Dispatchers.IO) { runCatching { api.getPlaylist(p.id) }.getOrNull() }
-            if (detail == null) { ipodMessage = strings.ipodPlaylistLoadFailed; return@launch }
-            val keys = detail.tracks.map { (al, t) -> com.qbdlx.mobile.ipod.trackKey(t.displayTitle, t.artist, al.title) }
+            val loaded = ArrayList<Pair<String, List<Pair<Album, Track>>>>()
+            for ((i, p) in selected.withIndex()) {
+                ipodLyricsStatus = strings.ipodPlaylistLoading(p.name, i, selected.size); ipodLyricsProgress = i to selected.size
+                val detail = withContext(Dispatchers.IO) { runCatching { api.getPlaylist(p.id) }.getOrNull() }
+                if (detail == null) { ipodLyricsStatus = null; ipodLyricsProgress = null; ipodMessage = strings.ipodPlaylistLoadFailed; return@launch }
+                loaded.add(p.name to detail.tracks)
+            }
+            ipodLyricsStatus = null; ipodLyricsProgress = null
+            val allTracks = loaded.flatMap { it.second }
+            val keyLists = loaded.map { (name, tr) -> name to tr.map { (al, t) -> com.qbdlx.mobile.ipod.trackKey(t.displayTitle, t.artist, al.title) } }
+            val keys = keyLists.flatMap { it.second }
+            // Songs that are neither on the iPod nor downloaded as MP3 yet are downloaded first (with progress and a Stop button), then sent.
+            val have = ipodCandidates.map { ipodKey(it) }.toSet()
+            val missing = allTracks.filter { (al, t) ->
+                val k = com.qbdlx.mobile.ipod.trackKey(t.displayTitle, t.artist, al.title); k !in ipodOnDevice && k !in have && t.streamable
+            }.distinctBy { (al, t) -> com.qbdlx.mobile.ipod.trackKey(t.displayTitle, t.artist, al.title) }
+            if (missing.isNotEmpty()) {
+                ipodStopping = false
+                askNotifications = true
+                downloads.enqueue(missing, Quality.MP3)
+                val ids = missing.map { "${it.second.id}:${Quality.MP3.formatId}" }.toSet()
+                while (true) {
+                    val mine = downloads.tasks.filter { it.key in ids }
+                    val done = mine.count { !it.status.isOpen }
+                    ipodLyricsStatus = strings.ipodPlaylistDownloading(done, missing.size)
+                    ipodLyricsProgress = done to missing.size
+                    if (ipodStopping) break
+                    if (mine.none { it.status.isOpen }) break
+                    kotlinx.coroutines.delay(700)
+                }
+                val stopped = ipodStopping
+                ipodLyricsStatus = null; ipodLyricsProgress = null; ipodStopping = false
+                if (stopped) {
+                    downloads.tasks.filter { it.key in ids && it.status.isOpen }.forEach { downloads.cancel(it) }
+                    ipodMessage = strings.ipodPlaylistDownloadStopped; return@launch
+                }
+            }
             val candidates = ipodCandidates.associateBy { ipodKey(it) }
             val toSend = keys.distinct().filter { it !in ipodOnDevice }.mapNotNull { candidates[it] }
-            playlistAfterSend = p.name to keys
+            playlistAfterSend = keyLists
             if (toSend.isEmpty()) finishIpodPlaylist() else ipodSend(toSend)
         }
     }
 
+    /** Bumped when a send or a playlist build finishes well; the iPod screen plays its check animation. */
+    var ipodDone by mutableStateOf(0)
     private fun finishIpodPlaylist() {
         val pending = playlistAfterSend
         if (pending == null) { ipodRefresh(); return }
-        val (name, keys) = pending
         playlistAfterSend = null
         val uri = ipodUri; val guid = ipodGuid()
         if (uri == null || guid == null) { ipodRefresh(); return }
         viewModelScope.launch {
-            val r = withContext(Dispatchers.IO) { com.qbdlx.mobile.ipod.IpodDevice(context, uri).makePlaylist(name, keys, guid) }
-            ipodMessage = listOfNotNull(ipodMessage, strings.ipodPlaylistDone(name, r.added, r.missing, r.error)).joinToString(" ")
+            val msgs = ArrayList<String>()
+            ipodMessage?.let { msgs.add(it) }
+            for ((i, pl) in pending.withIndex()) {
+                val (name, keys) = pl
+                ipodLyricsStatus = strings.ipodPlaylistMaking(name, i, pending.size); ipodLyricsProgress = i to pending.size
+                val r = withContext(Dispatchers.IO) { com.qbdlx.mobile.ipod.IpodDevice(context, uri).makePlaylist(name, keys, guid) }
+                msgs.add(strings.ipodPlaylistDone(name, r.added, r.missing, r.error))
+            }
+            ipodLyricsStatus = null; ipodLyricsProgress = null
+            ipodMessage = msgs.joinToString(" ")
+            ipodDone++
             ipodRefresh()
         }
     }
@@ -1176,20 +1459,49 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** Set when the notification-access screen must open (the Activity does it and clears the flag). */
     var openListenerSettings by mutableStateOf(false)
 
-    /** Finds what the official Qobuz app is playing and downloads it. */
-    fun downloadNowPlaying() {
-        if (!QobuzNowPlaying.accessGranted(context)) { notice = strings.nowAccess; openListenerSettings = true; return }
+    var showListen by mutableStateOf(false); private set
+    /** The song the Qobuz app has on, and the Qobuz track it was matched to (null while looking or when none). */
+    var listenSong by mutableStateOf<PlayingNow?>(null); private set
+    var listenMatch by mutableStateOf<ImportItem?>(null); private set
+    var listenSearching by mutableStateOf(false); private set
+    var listenAccess by mutableStateOf(true); private set
+    private var listenKey: String? = null
+
+    /** "Sonando": shows the identified song; nothing is downloaded until the round button is pressed. */
+    fun openListening() {
+        closeAlbum(); closePlaylist(); closeDiagnostics(); closeIpod(); closeImport(); closeArtist()
+        showListen = true
+        refreshListening()
+    }
+
+    /** Reads what Qobuz is playing; looks the song up on Qobuz only when it changed. Called every couple of seconds while the screen is open. */
+    fun refreshListening() {
+        listenAccess = QobuzNowPlaying.accessGranted(context)
+        if (!listenAccess) { listenSong = null; listenMatch = null; listenKey = null; return }
         val playing = QobuzNowPlaying.read(context)
-        if (playing == null) { notice = strings.nowNothing; return }
-        notice = strings.nowSearching(playing.title)
+        listenSong = playing
+        val key = playing?.let { "${it.title}|${it.artist}|${it.album}" }
+        if (key == listenKey) return
+        listenKey = key; listenMatch = null
+        if (playing == null) return
         viewModelScope.launch {
-            val song = ImportedSong(playing.title, playing.artist, playing.album, playing.durationSec, "")
-            val item = withContext(Dispatchers.IO) { searchSong(applyAliases(song)) }
-            val pick = item.candidates.firstOrNull()
-            if (item.level == MatchLevel.Missing || pick == null) { notice = strings.nowNotFound(playing.title); return@launch }
-            requestDownload(DownloadRequest.Tracks(listOf(pick)))
-            notice = strings.nowDownloading(pick.second.displayTitle, pick.second.artist, item.level == MatchLevel.Sure)
+            listenSearching = true
+            try {
+                val item = withContext(Dispatchers.IO) { searchSong(applyAliases(ImportedSong(playing.title, playing.artist, playing.album, playing.durationSec, ""))) }
+                if (listenKey == key) listenMatch = item
+            } catch (e: Exception) { if (listenKey == key) listenKey = null } finally { listenSearching = false }
         }
+    }
+
+    fun askListenAccess() { notice = strings.nowAccess; openListenerSettings = true }
+
+    /** The round button of "Sonando": downloads the identified song. */
+    fun downloadListening() {
+        val song = listenSong ?: return
+        val item = listenMatch; val pick = item?.candidates?.firstOrNull()
+        if (item == null || item.level == MatchLevel.Missing || pick == null) { notice = strings.nowNotFound(song.title); return }
+        requestDownload(DownloadRequest.Tracks(listOf(pick)))
+        notice = strings.nowDownloading(pick.second.displayTitle, pick.second.artist, item.level == MatchLevel.Sure)
     }
 
     fun ipodRestore() {
@@ -1204,30 +1516,43 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun closeDiagnostics() { showDiagnostics = false }
 
     fun updateAmoled(v: Boolean) { amoled = v; prefs.edit().putBoolean("amoled", v).apply() }
-    fun updateCustomSecret(secret: String) {
-        customSecret = secret.trim()
-        prefs.edit().putString("custom_app_secret", customSecret).apply()
-        // The custom value always wins; clearing it restores the base secret
-        // associated with the currently saved App ID.
-        api.appSecret = customSecret.ifBlank { savedAppSecret }
-        api.secretSource = if (customSecret.isNotBlank()) "personalizado (Ajustes)" else "reproductor web / guardado"
-        notice = strings.secretSaved
-    }
 
+    private val libraryCache by lazy { LibraryCache(java.io.File(context.filesDir, "library.json")) }
+    private var libraryRefreshed = false
+
+    /**
+     * Opens at once with what was saved last time, then refreshes in the background: each list shows as soon as it arrives,
+     * and favorites only fetch the newest pages (the old ones are kept). [force] (the refresh button) re-reads everything.
+     */
     fun loadLibrary(force: Boolean = false) {
-        if (libraryLoading || (!force && myPlaylists != null)) return
+        if (libraryLoading || (!force && libraryRefreshed && myPlaylists != null)) return
         viewModelScope.launch {
             libraryLoading = true
             try {
-                // Each list on its own, so one failing doesn't hide the others.
+                if (myPlaylists == null) {
+                    withContext(Dispatchers.IO) { libraryCache.load() }?.let {
+                        myPlaylists = it.playlists; favAlbums = it.albums; favTracks = it.tracks; favArtists = it.artists
+                    }
+                }
+                val oldAlbums = if (force) null else favAlbums?.map { it.id }?.toSet()?.takeIf { it.isNotEmpty() }
+                val oldTracks = if (force) null else favTracks?.map { it.second.id }?.toSet()?.takeIf { it.isNotEmpty() }
+                // Each list on its own, so one failing doesn't hide the others; each shows when it is ready.
                 val pl = async(Dispatchers.IO) { runCatching { api.userPlaylists() } }
-                val al = async(Dispatchers.IO) { runCatching { api.favoriteAlbums() } }
-                val tr = async(Dispatchers.IO) { runCatching { api.favoriteTracks() } }
+                val al = async(Dispatchers.IO) { runCatching { api.favoriteAlbums(oldAlbums) } }
+                val tr = async(Dispatchers.IO) { runCatching { api.favoriteTracks(oldTracks) } }
                 val ar = async(Dispatchers.IO) { runCatching { api.favoriteArtists() } }
-                myPlaylists = pl.await().getOrElse { error = it.message; emptyList() }
-                favAlbums = al.await().getOrElse { error = it.message; emptyList() }
-                favTracks = tr.await().getOrElse { error = it.message; emptyList() }
-                favArtists = ar.await().getOrElse { emptyList() }
+                val old = favAlbums; val oldT = favTracks
+                pl.await().onSuccess { myPlaylists = it }.onFailure { if (myPlaylists == null) { error = it.message; myPlaylists = emptyList() } }
+                al.await().onSuccess { fresh ->
+                    favAlbums = if (oldAlbums == null || old == null) fresh else fresh + old.filter { o -> fresh.none { it.id == o.id } }
+                }.onFailure { if (favAlbums == null) { error = it.message; favAlbums = emptyList() } }
+                tr.await().onSuccess { fresh ->
+                    favTracks = if (oldTracks == null || oldT == null) fresh else fresh + oldT.filter { o -> fresh.none { it.second.id == o.second.id } }
+                }.onFailure { if (favTracks == null) { error = it.message; favTracks = emptyList() } }
+                ar.await().onSuccess { favArtists = it }.onFailure { if (favArtists == null) favArtists = emptyList() }
+                libraryRefreshed = true
+                val snap = LibrarySnapshot(myPlaylists.orEmpty(), favAlbums.orEmpty(), favTracks.orEmpty(), favArtists.orEmpty())
+                withContext(Dispatchers.IO) { libraryCache.save(snap) }
             } finally {
                 libraryLoading = false
             }
@@ -1242,26 +1567,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
     /** "Preguntar siempre": the stored quality is kept (playback and the dialog's highlight still use it). */
     fun chooseAskAlways() { askQuality = true; prefs.edit().putBoolean("ask_quality", true).apply() }
-
-    fun login(appId: String, appSecret: String, tokenMode: Boolean, a: String, b: String) {
-        // A previously saved custom secret can be used when the base secret
-        // field is empty. The App ID and the login credentials remain required.
-        if (appId.isBlank() || (appSecret.isBlank() && customSecret.isBlank()) || a.isBlank() || b.isBlank()) {
-            error = strings.fillAllFields; return
-        }
-        run {
-            if (tokenMode) tokenLogin(appId.trim(), appSecret.trim(), a.trim(), b.trim(), "manual (login con token)")
-            else {
-                val baseSecret = appSecret.trim()
-                api.appId = appId.trim()
-                api.appSecret = customSecret.ifBlank { baseSecret }
-                api.secretSource = if (customSecret.isNotBlank()) "personalizado (Ajustes)" else "manual (login)"
-                userName = api.loginWithPassword(a.trim(), b)
-                prefs.edit().putString("app_id", api.appId).putString("app_secret", baseSecret).apply()
-                onLoggedIn()
-            }
-        }
-    }
 
     fun startWebLogin() { error = null; webLogin = true }
     fun cancelWebLogin() { webLogin = false }
@@ -1307,14 +1612,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private fun tokenLogin(appId: String, appSecret: String, userId: String, token: String, source: String) {
         val effectiveAppId = appId.trim()
         val baseSecret = appSecret.trim()
-        val effectiveSecret = customSecret.ifBlank { baseSecret }
+        val effectiveSecret = baseSecret
         if (effectiveAppId.isBlank() || effectiveSecret.isBlank() || userId.isBlank() || token.isBlank()) {
             throw IllegalArgumentException("Missing App ID, App Secret, user ID, or session token")
         }
 
         api.appId = effectiveAppId
         api.appSecret = effectiveSecret
-        api.secretSource = if (customSecret.isNotBlank()) "personalizado (Ajustes)" else source
+        api.secretSource = source
         userName = api.loginWithToken(userId, token)
         prefs.edit().putString("app_id", effectiveAppId).putString("app_secret", baseSecret)
             .putString("user_id", userId).putString("token", token).apply()
@@ -1377,8 +1682,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         prefs.edit().remove("user_id").remove("token").apply()
         WebStorage.getInstance().deleteAllData()
         CookieManager.getInstance().removeAllCookies(null)
-        loggedIn = false; results = emptyList(); discover = null; detail = null; playlistDetail = null
+        loggedIn = false; results = emptyList(); discover = null; detail = null; playlistDetail = null; artistPage = null
         myPlaylists = null; favAlbums = null; favTracks = null; favArtists = null
+        libraryRefreshed = false; libraryCache.clear()
     }
 
     fun search(query: String) {
@@ -1409,17 +1715,28 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** The search screen, opened from the search button in the page headers. */
     fun openSearch() {
-        closeAlbum(); closePlaylist(); closeDiagnostics(); closeIpod(); closeImport()
+        closeAlbum(); closePlaylist(); closeDiagnostics(); closeIpod(); closeImport(); closeArtist()
         tab = Tab.Search
     }
 
-    /** An artist's name opens the search for it (the app has no artist pages of its own). */
+    /** An artist's name opens their page (picture and albums). If Qobuz can't find them, it falls back to a search for the name. */
     fun openArtist(name: String) {
-        searchQuery = name
-        closeAlbum(); closePlaylist(); closeDiagnostics(); closeIpod(); closeImport()
-        tab = Tab.Search
-        search(name)
+        viewModelScope.launch {
+            busy = true; error = null
+            try {
+                val found = withContext(Dispatchers.IO) { api.findArtist(name)?.let { (id, n) -> api.artistPage(id, n) } }
+                if (found != null && found.albums.isNotEmpty()) {
+                    closeAlbum(); closePlaylist(); closeDiagnostics(); closeIpod(); closeImport()
+                    artistPage = found
+                } else {
+                    searchQuery = name
+                    closeAlbum(); closePlaylist(); closeDiagnostics(); closeIpod(); closeImport(); closeArtist()
+                    tab = Tab.Search; search(name)
+                }
+            } catch (e: Exception) { error = e.message ?: e.javaClass.simpleName } finally { busy = false }
+        }
     }
+    fun closeArtist() { artistPage = null }
     fun closeAlbum() { detail = null }
 
     /** Every download button ends up here: ask for the quality only when the user chose "Preguntar siempre". */
@@ -1594,8 +1911,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val sel = chosen
             ?: throw ApiException("Ningún App Secret reconstruido fue aceptado por Qobuz (request_sig). Puede que Qobuz haya cambiado el método.")
 
-        // Save the matching pair together; clear any custom override so it can't reintroduce a mismatch.
-        customSecret = ""
+        // Save the matching pair together.
         prefs.edit()
             .putString("app_id", creds.appId)
             .putString("app_secret", sel.secret)
@@ -1727,6 +2043,67 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun play(album: Album, track: Track) = playList(listOf(album to track), 0)
 
+    /** "Play next": right after the current track (starts playing when nothing is). */
+    fun playNext(album: Album, track: Track) {
+        if (!track.streamable) return
+        if (playQueue.current == null) { play(album, track); return }
+        playQueue.insertNext(album to track); refreshQueue(); resetNext(); notice = strings.addedNext
+    }
+
+    fun addToQueue(album: Album, track: Track) {
+        if (!track.streamable) return
+        if (playQueue.current == null) { play(album, track); return }
+        playQueue.append(album to track); refreshQueue(); resetNext(); notice = strings.addedToQueue
+    }
+
+    fun addTrackToPlaylist(pl: Playlist, track: Track) {
+        viewModelScope.launch {
+            try { withContext(Dispatchers.IO) { api.addTrackToPlaylist(pl.id, track.id) }; notice = strings.addedToPlaylist(pl.name) }
+            catch (e: Exception) { error = e.message }
+        }
+    }
+
+    private fun enqueueAll(items: List<Pair<Album, Track>>, next: Boolean) {
+        val list = items.filter { it.second.streamable }
+        if (list.isEmpty()) return
+        if (playQueue.current == null) { playList(list, 0); return }
+        if (next) list.asReversed().forEach { playQueue.insertNext(it) } else list.forEach { playQueue.append(it) }
+        refreshQueue(); resetNext(); notice = strings.queuedAll(list.size)
+    }
+
+    /** What an album's or playlist's menu does with its songs: play now, play next, or add to the end of the queue. */
+    fun playCollection(album: Album?, playlist: Playlist?, mode: Int) {
+        viewModelScope.launch {
+            try {
+                val items = withContext(Dispatchers.IO) { if (album != null) albumTracks(album.id) else api.getPlaylist(playlist!!.id).tracks }
+                when (mode) { 0 -> playList(items, 0); 1 -> enqueueAll(items, true); else -> enqueueAll(items, false) }
+            } catch (e: Exception) { error = e.message }
+        }
+    }
+
+    /** Ticks only the downloaded songs of [album] in "Para enviar" and opens the iPod screen. */
+    fun sendAlbumToIpod(album: Album) {
+        val done = downloads.tasks.filter { it.status == TaskStatus.COMPLETED && it.album.id == album.id }
+        if (done.isEmpty()) { notice = strings.noneDownloaded; return }
+        ipodTickShown(false); ipodTickTasks(done, true)
+        ipodTab = 0; openIpod()
+    }
+
+    /** Marks only this downloaded song as "to send" and opens the iPod screen on that tab. */
+    fun sendToIpod(task: DownloadTask) {
+        ipodTickShown(false); ipodTickTasks(listOf(task), true)
+        ipodTab = 0; openIpod()
+    }
+
+    /** Deletes the saved audio file and forgets the download entry. */
+    fun removeDownload(task: DownloadTask) {
+        val uri = task.savedUri
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { runCatching { if (uri != null) getApplication<Application>().contentResolver.delete(android.net.Uri.parse(uri), null, null) } }
+            downloads.delete(task)
+        }
+    }
+
     private fun playCurrent(resumeMs: Long = 0L) {
         val item = playQueue.current ?: return
         restoredPosMs = -1L
@@ -1817,6 +2194,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         resetNext(); syncNotification()
     }
     fun removeUpcoming(k: Int) { playQueue.removeUpcoming(k); refreshQueue(); resetNext(); saveQueue() }
+    fun moveUpcoming(from: Int, to: Int) { playQueue.moveUpcoming(from, to); refreshQueue(); resetNext(); saveQueue() }
     fun clearUpcoming() { playQueue.clearUpcoming(); refreshQueue(); resetNext(); saveQueue() }
 
     fun updateCrossfade(ms: Int) {

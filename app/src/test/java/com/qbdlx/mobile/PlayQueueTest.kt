@@ -23,6 +23,15 @@ class PlayQueueTest {
         assertEquals("the last track stays current", "t3", q.current)
     }
 
+    @Test fun movingAnUpcomingTrackKeepsTheCurrentOne() {
+        val q = queue(5, start = 1) // t1 played, t2 current, upcoming t3 t4 t5
+        q.moveUpcoming(2, 0)
+        assertEquals("t2", q.current)
+        assertEquals(listOf("t5", "t3", "t4"), q.state().upcoming)
+        q.moveUpcoming(0, 9) // out of range: nothing changes
+        assertEquals(listOf("t5", "t3", "t4"), q.state().upcoming)
+    }
+
     @Test fun startsWhereTheUserTapped() {
         val q = queue(5, start = 3)
         assertEquals("t4", q.current)
@@ -418,5 +427,19 @@ class CreditsTest {
     @Test fun albumLengthReadsLikeQobuzs() {
         assertEquals("1h 01m", albumDuration(3660)); assertEquals("1h 00m", albumDuration(3600))
         assertEquals("45m", albumDuration(2700)); assertEquals("1m", albumDuration(20)); assertEquals("", albumDuration(0))
+    }
+
+    @Test fun insertNextGoesRightAfterTheCurrentTrack() {
+        val q = PlayQueue<String>(); q.set(listOf("a", "b", "c"), 0)
+        q.insertNext("x")
+        assertEquals(listOf("x", "b", "c"), q.state().upcoming)
+        q.append("z")
+        assertEquals(listOf("x", "b", "c", "z"), q.state().upcoming)
+        assertEquals("a", q.current)
+    }
+
+    @Test fun insertNextOnAnEmptyQueueStartsIt() {
+        val q = PlayQueue<String>(); q.insertNext("x")
+        assertEquals("x", q.current)
     }
 }

@@ -113,6 +113,29 @@ class PlayQueue<T>(private val random: Random = Random()) {
         original = original.filter { it !== gone }
     }
 
+    /** Moves the [from]-th upcoming track to the [to]-th place (0 = the very next one). */
+    fun moveUpcoming(from: Int, to: Int) {
+        val a = pos + 1 + from; val b = pos + 1 + to
+        if (pos < 0 || from < 0 || to < 0 || a !in order.indices || b !in order.indices || a == b) return
+        order.add(b, order.removeAt(a))
+        if (!shuffle) original = order.toList()
+    }
+
+    /** Puts [item] right after the track that is playing; starts the queue with it when nothing is playing. */
+    fun insertNext(item: T) {
+        val e = Entry(item)
+        if (pos < 0) { original = listOf(e); order = arrayListOf(e); pos = 0; return }
+        order.add(pos + 1, e)
+        original = if (shuffle) original + e else order.toList()
+    }
+
+    /** Puts [item] at the very end of the queue. */
+    fun append(item: T) {
+        val e = Entry(item)
+        order.add(e); original = original + e
+        if (pos < 0) pos = 0
+    }
+
     /** Keeps only the track that is playing. */
     fun clearUpcoming() {
         if (pos < 0) return

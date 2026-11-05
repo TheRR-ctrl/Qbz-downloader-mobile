@@ -19,6 +19,8 @@
             android:resource="@xml/automotive_app_desc" />
         <activity
             android:name=".MainActivity"
+            android:supportsPictureInPicture="true"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -46,6 +48,8 @@
         <!-- The small floating window with the current line. -->
         <service android:name=".FloatingService" android:exported="false" />
         <service android:name=".PrefetchService" android:exported="false" android:foregroundServiceType="dataSync" />
+
+        <provider android:name=".CoverProvider" android:authorities="com.qbdlx.lyrics.cover" android:exported="true" />
 
         <!-- The list Android Auto shows: the song and its lyrics. -->
         <service

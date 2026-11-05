@@ -8,6 +8,9 @@ import android.os.IBinder
 
 /** Keeps the lyrics download running with the screen off, with a progress notification. */
 class PrefetchService : Service() {
+    /** Android 15 cuts dataSync services after ~6 h a day; without this callback the app crashes instead of stopping. */
+    override fun onTimeout(startId: Int, fgsType: Int) { stopSelf() }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -15,7 +18,9 @@ class PrefetchService : Service() {
         nm.createNotificationChannel(NotificationChannel(CHANNEL, "Descarga de letras", NotificationManager.IMPORTANCE_LOW))
         val n = notification(this, 0, 0)
         if (android.os.Build.VERSION.SDK_INT >= 29) startForeground(ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC) else startForeground(ID, n)
-        return START_NOT_STICKY
+        // After Android kills the process the system restarts the service with a null intent: carry on with the saved list.
+        if (intent == null && !Prefetch.resume(this)) { stopSelf(); return START_NOT_STICKY }
+        return START_STICKY
     }
 
     companion object {

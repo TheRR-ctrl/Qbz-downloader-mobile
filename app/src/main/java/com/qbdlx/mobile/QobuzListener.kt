@@ -14,7 +14,7 @@ import androidx.core.app.NotificationManagerCompat
 class QobuzListener : NotificationListenerService()
 
 /** What another app is playing right now. */
-class PlayingNow(val title: String, val artist: String, val album: String, val durationSec: Int, val app: String)
+class PlayingNow(val title: String, val artist: String, val album: String, val durationSec: Int, val app: String, val positionMs: Long = 0, val playing: Boolean = false)
 
 object QobuzNowPlaying {
     private const val QOBUZ = "com.qobuz.music"
@@ -35,6 +35,12 @@ object QobuzNowPlaying {
             m.getString(MediaMetadata.METADATA_KEY_ALBUM).orEmpty().trim(),
             (m.getLong(MediaMetadata.METADATA_KEY_DURATION) / 1000).toInt(),
             s.packageName,
+            run {
+                val st = s.playbackState ?: return@run 0L
+                val advance = if (st.state == android.media.session.PlaybackState.STATE_PLAYING) ((android.os.SystemClock.elapsedRealtime() - st.lastPositionUpdateTime) * st.playbackSpeed).toLong() else 0L
+                (st.position + advance).coerceAtLeast(0)
+            },
+            s.playbackState?.state == android.media.session.PlaybackState.STATE_PLAYING,
         )
     }.getOrNull()
 }
