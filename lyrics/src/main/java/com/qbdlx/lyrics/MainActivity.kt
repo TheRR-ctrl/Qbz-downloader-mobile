@@ -355,6 +355,10 @@ class MainActivity : ComponentActivity() {
                             TextButton({ setOffset((offset - 250).coerceIn(-10_000, 10_000)) }) { Text("−", fontSize = 20.sp) }
                             TextButton({ setOffset((offset + 250).coerceIn(-10_000, 10_000)) }) { Text("+", fontSize = 20.sp) }
                         }
+                        if (kotlin.math.abs(offset) >= 1500) Row(Modifier.padding(top = 4.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                            Text("⚠ La sincronía manual está en ${offset / 1000.0} s: toda letra irá desfasada esa cantidad, también los puntos de la introducción. Suele quedar así al mantener pulsada una línea que no era la que sonaba.", Modifier.weight(1f), fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                            TextButton({ setOffset(0) }) { Text("Poner a 0") }
+                        }
                         Text("Si la letra va adelantada o atrasada, ajústala aquí (pasos de 250 ms). Más rápido: en la pestaña Letra, mantén pulsada la línea que está sonando.", style = small)
                         Row(Modifier.padding(top = 10.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                             Text("Relleno tipo karaoke", Modifier.weight(1f))

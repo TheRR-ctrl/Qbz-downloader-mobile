@@ -63,7 +63,7 @@ object Tracker {
             val outcome: Pair<SyncVerdict?, String?> = withContext(Dispatchers.Default) {
                 if (!Whisper.available(ctx)) return@withContext null to "Whisper no está en esta versión de la app."
                 val uri = AudioTiming.findOrBorrow(ctx, t.title, t.artist, t.durationMs) ?: return@withContext null to "No encuentro esta canción como archivo en el teléfono (o falta el permiso de audio)."
-                val asr = Whisper.listen(ctx, t.storeKey, uri, { !isActive }) { m -> timing.value = m } ?: return@withContext null to (if (!isActive) "Cancelado." else "Whisper no pudo con esta canción.")
+                val asr = Whisper.listen(ctx, t.storeKey, uri, { !isActive }, t.durationMs) { m -> timing.value = m } ?: return@withContext null to (if (!isActive) "Cancelado." else "Whisper no pudo con esta canción.")
                 val sung = lines.filter { it.text.isNotBlank() }
                 val ref = WhisperAlign.align(sung.map { it.text }, asr.words)
                 if (ref == null || WhisperAlign.approximate) SyncVerdict("unk", 0, 0, sung.size, null) to null else SyncCheck.judge(sung, ref) to null
@@ -158,8 +158,9 @@ object Tracker {
                 if (!Whisper.available(ctx)) return@withContext "Whisper no está en esta versión de la app."
                 val uri = AudioTiming.findOrBorrow(ctx, t.title, t.artist, t.durationMs)
                     ?: return@withContext "No encuentro esta canción como archivo en el teléfono (o falta el permiso de audio)."
-                val asr = Whisper.listen(ctx, t.storeKey, uri, { !isActive }) { m -> timing.value = m } ?: return@withContext if (!isActive) "Cancelado." else "Whisper no pudo con esta canción."
+                val asr = Whisper.listen(ctx, t.storeKey, uri, { !isActive }, t.durationMs) { m -> timing.value = m } ?: return@withContext if (!isActive) "Cancelado." else "Whisper no pudo con esta canción."
                 var timed = WhisperAlign.align(lines, asr.words)
+                diag = Whisper.describe(asr, t.durationMs, lines.firstOrNull()?.let { _state.value.lines.firstOrNull { l -> l.text.isNotBlank() }?.timeMs }, WhisperAlign.lastMatched)
                 ytWhy = ""; var offer: String? = null
                 // The lyric and the voice use different alphabets: YouTube Music often writes the same song in the alphabet Whisper heard.
                 // Its lines only serve to find the times; they are moved onto the user's lines by position.
@@ -193,8 +194,8 @@ object Tracker {
                 withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key) saveTimed(done); if (!WhisperAlign.approximate) SyncCheck.markVerified(t.storeKey) }
                 offer
             }
-            timing.value = result ?: if (WhisperAlign.approximate) "Listo, aproximado: la letra y la voz están en alfabetos distintos, así que se repartió por cantidad de palabras." else "Listo: letra sincronizada con la voz."
-            if (result == null && WhisperAlign.approximate && ytWhy.isNotEmpty()) timing.value = "Listo, aproximado. Antes probé YouTube Music y $ytWhy."
+            timing.value = (result ?: if (WhisperAlign.approximate) "Listo, aproximado: la letra y la voz están en alfabetos distintos, así que se repartió por cantidad de palabras." else "Listo: letra sincronizada con la voz.") + "\n" + diag
+            if (result == null && WhisperAlign.approximate && ytWhy.isNotEmpty()) timing.value = "Listo, aproximado. Antes probé YouTube Music y $ytWhy.\n$diag"
         }
     }
 
@@ -213,7 +214,7 @@ object Tracker {
                     return "Whisper no entendió la voz; la letra salió de YouTube Music."
                 }
                 val uri = AudioTiming.findOrBorrow(ctx, t.title, t.artist, t.durationMs) ?: return@withContext fromYoutube() ?: "No encuentro esta canción como archivo en el teléfono (o falta el permiso de audio)."
-                val asr = Whisper.listen(ctx, t.storeKey, uri, { !isActive }) { m -> timing.value = m } ?: return@withContext if (!isActive) "Cancelado." else (fromYoutube() ?: "Whisper no pudo con esta canción.")
+                val asr = Whisper.listen(ctx, t.storeKey, uri, { !isActive }, t.durationMs) { m -> timing.value = m } ?: return@withContext if (!isActive) "Cancelado." else (fromYoutube() ?: "Whisper no pudo con esta canción.")
                 val heard = WhisperAlign.linesFromHeard(asr.words)
                 if (asr.words.size < 8 || heard.size < 2) return@withContext fromYoutube() ?: "Whisper entendió muy poco (${asr.words.size} palabras) y YouTube Music no tiene esta letra."
                 withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key) saveTimed(heard, "Whisper (lo que se oyó)") }
@@ -224,6 +225,8 @@ object Tracker {
     }
 
     /** True while a song is being timed by hand: the background check waits. */
+    private var diag = ""
+
     fun busy() = timingJob?.isActive == true
 
     /** Saved lyrics were changed behind the screen's back: the next refresh reads them again. */

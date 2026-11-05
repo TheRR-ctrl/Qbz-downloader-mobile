@@ -117,7 +117,7 @@ object SyncCheck {
         val uri = AudioTiming.findOrBorrow(context, t.title, t.artist, t.durationSec * 1000L) ?: return null
         val lines = Lrc.parse(synced).filter { it.text.isNotBlank() }
         if (lines.size < 4) return null
-        val asr = Whisper.listen(context, Prefetch.storeKey(t.title, t.artist), uri, cancelled) ?: return null
+        val asr = Whisper.listen(context, Prefetch.storeKey(t.title, t.artist), uri, cancelled, t.durationSec * 1000L) ?: return null
         val ref = WhisperAlign.align(lines.map { it.text }, asr.words)
         if (ref == null || WhisperAlign.approximate) return SyncVerdict("unk", 0, 0, lines.size, null) // another alphabet: nothing to compare
         return judge(lines, ref)

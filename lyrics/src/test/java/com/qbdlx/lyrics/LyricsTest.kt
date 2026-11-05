@@ -261,3 +261,19 @@ class LyricEditTest {
         org.junit.Assert.assertTrue(LyricEdit.isEdited("x · editada"))
     }
 }
+
+class WhisperFitTest {
+    private fun asr(ms: Long) = Asr("es", listOf(AsrWord(10_000, 10_400, "hola"), AsrWord(100_000, 100_400, "adios")), ms)
+    @Test fun shortDecodeIsRescaledToTheSongLength() {
+        val a = Whisper.fit(asr(180_000), 200_000)
+        assertTrue(kotlin.math.abs(a.words[0].startMs - 11_111L) <= 2)
+        assertTrue(kotlin.math.abs(a.words[1].startMs - 111_111L) <= 2)
+    }
+    @Test fun smallDifferenceIsLeftAlone() { assertEquals(10_000L, Whisper.fit(asr(198_000), 200_000).words[0].startMs) }
+    @Test fun aCutOffDecodeIsNotRescaled() { assertEquals(10_000L, Whisper.fit(asr(100_000), 400_000).words[0].startMs) }
+    @Test fun cacheKeepsTheAudioLength() { assertEquals(123_000L, Whisper.parse("lang=es\nms=123000\n0\t100\thola")!!.audioMs) }
+    @Test fun describeSaysWhatWasHeard() {
+        val t = Whisper.describe(asr(180_000), 200_000, 12_000, 5 to 20)
+        assertTrue(t, t.contains("coincidieron 5 de 20") && t.contains("primera voz a los 10s") && t.contains("180s de 200s"))
+    }
+}
