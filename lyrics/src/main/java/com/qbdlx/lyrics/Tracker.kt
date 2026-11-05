@@ -152,6 +152,12 @@ object Tracker {
         }
     }
 
+    /** True while a song is being timed by hand: the background check waits. */
+    fun busy() = timingJob?.isActive == true
+
+    /** Saved lyrics were changed behind the screen's back: the next refresh reads them again. */
+    fun lyricsChanged() { cache.clear(); loadedKey = null }
+
     fun cancelTiming() { Whisper.cancel(); timingJob?.cancel(); timing.value = "Cancelado." }
 
     /** The playing app's colour (ARGB, 0 when unknown): its notification's colour, else the cover's main colour. */
@@ -173,12 +179,13 @@ object Tracker {
         started = true
         val app = context.applicationContext
         this.app = app
-        LyricsStore.init(app)
+        LyricsStore.init(app); SyncCheck.init(app)
         // The sync settings must be read here and not only when the screen opens: the car can start the service without the app ever being opened.
         app.getSharedPreferences("lyrics", Context.MODE_PRIVATE).let { p ->
             offsetMs = p.getLong("offset", 0); carLeadMs = p.getLong("car_lead", 1000); karaoke = p.getBoolean("karaoke", true); autoWhisper = p.getBoolean("auto_whisper", true)
         }
-        scope.launch { while (isActive) { runCatching { refresh(app) }; delay(400) } }
+        scope.launch { var tick = 0
+            while (isActive) { runCatching { refresh(app) }; if (++tick % 150 == 0) runCatching { SyncCheck.autoTick(app) }; delay(400) } }
     }
 
     /** The playback position now, in ms: the session's last report plus the time that has passed since, plus the user's offset. */
@@ -264,7 +271,7 @@ object Tracker {
             }
             if (found == null) found = withContext(Dispatchers.IO) { runCatching { YtMusic.find(track.title, track.artist, (track.durationMs / 1000).toInt()) }.getOrNull() }
             cache[track.key] = found
-            found?.let { LyricsStore.put(track.storeKey, it); _saved.value = LyricsStore.count() }
+            found?.let { LyricsStore.put(track.storeKey, it); _saved.value = LyricsStore.count(); SyncCheck.enqueue(track.storeKey, it) }
             publish(track, found, playing)
         }
     }

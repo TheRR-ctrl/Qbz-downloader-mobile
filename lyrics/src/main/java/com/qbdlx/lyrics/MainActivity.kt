@@ -85,6 +85,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) // the screen stays on while the app is open
         Tracker.start(this)
         LyricsStore.init(this)
         if (savedInstanceState == null) handleShared(intent)
@@ -222,6 +223,30 @@ class MainActivity : ComponentActivity() {
                             androidx.compose.material3.Switch(karaoke, { karaoke = it; Tracker.karaoke = it; sp.edit().putBoolean("karaoke", it).apply() })
                         }
                         Text("Pinta la línea palabra por palabra mientras se canta (aproximado).", style = small)
+                    }
+                    QCard(Modifier.fillMaxWidth()) {
+                        Text("Verificar sincronía", fontWeight = FontWeight.Bold)
+                        val sc by SyncCheck.state.collectAsState(); val pend by SyncCheck.pending.collectAsState(); val toFix by SyncCheck.toFix.collectAsState()
+                        var syncAuto by remember { mutableStateOf(SyncCheck.autoOnWifi) }
+                        Text("Whisper escucha cada canción que tengas en el teléfono y comprueba que su letra guardada va a tiempo. Si va adelantada o atrasada por igual, la mueve; si se va desfasando, usa los tiempos de Whisper.", style = small)
+                        Row(Modifier.padding(top = 4.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                            Text("Verificar cada letra nueva con wifi", Modifier.weight(1f))
+                            androidx.compose.material3.Switch(syncAuto, { syncAuto = it; SyncCheck.setAuto(this@MainActivity, it) })
+                        }
+                        if (pend > 0) Text("$pend letras nuevas esperando el wifi.", style = small)
+                        if (sc.running) {
+                            Text("Revisando ${sc.done} de ${sc.total}" + (if (sc.current.isNotBlank()) " · ${sc.current}" else "") + " · ${sc.ok} bien · ${sc.off} desfasadas · ${sc.unknown} sin poder juzgar", style = small)
+                            LinearProgressIndicator(progress = { if (sc.total > 0) sc.done / sc.total.toFloat() else 0f }, modifier = Modifier.fillMaxWidth())
+                            sc.message?.let { Text(it, style = small) }
+                            TextButton({ SyncCheck.cancel() }) { Text("Cancelar") }
+                        } else {
+                            if (sc.total > 0 || sc.message != null) Text(sc.message ?: "Última revisión: ${sc.total} canciones · ${sc.ok} bien · ${sc.off} desfasadas (${sc.fixed} corregidas) · ${sc.unknown} sin poder juzgar", style = small)
+                            if (whisperOk) {
+                                PillTonal({ SyncCheck.scan(this@MainActivity, fix = false) }, Modifier.fillMaxWidth()) { Text("Escanear las letras guardadas", fontSize = 12.sp) }
+                                if (toFix > 0) PillButton({ val n = SyncCheck.fixAll(this@MainActivity); android.widget.Toast.makeText(this@MainActivity, "$n letras corregidas", android.widget.Toast.LENGTH_SHORT).show() }, Modifier.fillMaxWidth()) { Text("Corregir las $toFix desfasadas", fontSize = 12.sp) }
+                            } else Text("Whisper no está en esta versión.", style = small)
+                        }
+                        Text("Tarda unos minutos por canción y gasta batería: déjalo cargando. Solo se pueden revisar las canciones que estén como archivo en el teléfono.", style = small)
                     }
                     QCard(Modifier.fillMaxWidth()) {
                         Text("Android Auto", fontWeight = FontWeight.Bold)

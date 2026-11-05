@@ -81,7 +81,7 @@ object Prefetch {
     /** Starts (or replaces) the download of [tracks] and the foreground service that keeps it alive. */
     fun start(context: Context, tracks: List<PrefetchTrack>) {
         val app = context.applicationContext
-        LyricsStore.init(app)
+        LyricsStore.init(app); SyncCheck.init(app)
         job?.cancel()
         val list = tracks.distinctBy { storeKey(it.title, it.artist) }
         val mine = Any(); owner = mine
@@ -137,7 +137,7 @@ object Prefetch {
                                     else {
                                         failures.set(0)
                                         if (streak.incrementAndGet() >= 20) { streak.set(0); limit.updateAndGet { (it + 2).coerceAtMost(PARALLEL) } }
-                                        if (result != null) { LyricsStore.put(key, result, flush = false); found.incrementAndGet() } else { LyricsStore.markMissing(key); missing.incrementAndGet() }
+                                        if (result != null) { LyricsStore.put(key, result, flush = false); SyncCheck.enqueue(key, result); found.incrementAndGet() } else { LyricsStore.markMissing(key); missing.incrementAndGet() }
                                     }
                                 }
                                 val n = done.incrementAndGet()
