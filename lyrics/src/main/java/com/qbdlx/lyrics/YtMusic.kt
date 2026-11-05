@@ -15,13 +15,22 @@ object YtMusic {
     private const val KEY = "AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX30"
 
     /** The song's lyrics (timed when YouTube Music has them, else plain), or null when it cannot be found or is not the same song. */
+    /** Why the last [find] came back empty, in words, so the screen can say it instead of failing silently. */
+    @Volatile var lastFail = ""
+
     fun find(title: String, artist: String, durationSec: Int): Lyrics? {
+        lastFail = ""
+        return try { findInner(title, artist, durationSec) } catch (e: java.io.IOException) { lastFail = "sin conexión o rechazó la petición (${e.message})"; null }
+            catch (e: org.json.JSONException) { lastFail = "contestó algo que la app no entiende"; null }
+    }
+
+    private fun findInner(title: String, artist: String, durationSec: Int): Lyrics? {
         val q = "${TrackText.clean(title)} ${artist.split(',', '&', ';', '/').first().trim()}".trim()
-        val hit = pickSong(JSONObject(post("search", JSONObject().put("query", q), web = true)), title, artist, durationSec) ?: return null
-        val id = lyricsBrowseId(JSONObject(post("next", JSONObject().put("videoId", hit), web = true))) ?: return null
+        val hit = pickSong(JSONObject(post("search", JSONObject().put("query", q), web = true)), title, artist, durationSec) ?: run { lastFail = "no encontró esta canción en su búsqueda"; return null }
+        val id = lyricsBrowseId(JSONObject(post("next", JSONObject().put("videoId", hit), web = true))) ?: run { lastFail = "la canción no tiene letra allí"; return null }
         val timed = runCatching { parseTimed(JSONObject(post("browse", JSONObject().put("browseId", id), web = false))) }.getOrNull()
         if (timed != null) return Lyrics(Lrc.toLrc(timed), timed.joinToString("\n") { it.text }, SOURCE)
-        val plain = parsePlain(JSONObject(post("browse", JSONObject().put("browseId", id), web = true))) ?: return null
+        val plain = parsePlain(JSONObject(post("browse", JSONObject().put("browseId", id), web = true))) ?: run { lastFail = "la página de letra vino vacía"; return null }
         return Lyrics(null, plain, SOURCE)
     }
 

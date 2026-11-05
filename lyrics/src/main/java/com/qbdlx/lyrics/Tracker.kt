@@ -69,6 +69,8 @@ object Tracker {
     }
 
     /** Whisper: listens to the song's audio file, matches the words it hears to the lyric and times every line. Works on synced or unsynced lyrics. */
+    @Volatile private var ytWhy = ""
+
     fun timeFromWhisper() {
         val ctx = app ?: return
         val t = _state.value.track ?: return
@@ -85,13 +87,16 @@ object Tracker {
                 withContext(Dispatchers.Main) { timing.value = "Whisper está escuchando la canción… puede tardar unos minutos." }
                 val asr = Whisper.transcribe(ctx, pcm) ?: return@withContext if (!isActive) "Cancelado." else "Whisper no pudo con esta canción."
                 var timed = WhisperAlign.align(lines, asr.words)
+                ytWhy = ""
                 // The lyric and the voice use different alphabets: YouTube Music often writes the same song in the alphabet Whisper heard.
                 // Its lines only serve to find the times; they are moved onto the user's lines by position.
                 if ((timed == null || WhisperAlign.approximate) && _state.value.source != YtMusic.SOURCE) {
                     withContext(Dispatchers.Main) { timing.value = "Buscando la letra en otro alfabeto…" }
                     val other = runCatching { YtMusic.find(t.title, t.artist, (t.durationMs / 1000).toInt()) }.getOrNull()
                     val otherLines = (other?.plain ?: other?.synced?.let { Lrc.parse(it).map { l -> l.text }.joinToString("\n") })?.lines()?.map { it.trim() }?.filter { it.isNotEmpty() }
+                    if (other == null) ytWhy = YtMusic.lastFail
                     val better = otherLines?.let { WhisperAlign.align(it, asr.words) }?.takeIf { !WhisperAlign.approximate }
+                    if (other != null && better == null) ytWhy = "encontró la letra, pero tampoco coincidía con lo que oyó Whisper"
                     if (better != null && lines.isNotEmpty()) timed = lines.mapIndexed { i, text -> LyricLine(better[(i.toLong() * (better.size - 1) / (lines.size - 1).coerceAtLeast(1)).toInt()].timeMs, text) }
                     else if (timed != null) WhisperAlign.markApproximate()
                 }
@@ -105,6 +110,7 @@ object Tracker {
                 null
             }
             timing.value = result ?: if (WhisperAlign.approximate) "Listo, aproximado: la letra y la voz están en alfabetos distintos, así que se repartió por cantidad de palabras." else "Listo: letra sincronizada con la voz."
+            if (result == null && WhisperAlign.approximate && ytWhy.isNotEmpty()) timing.value = "Listo, aproximado. Antes probé YouTube Music y $ytWhy."
         }
     }
 
