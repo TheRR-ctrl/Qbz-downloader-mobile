@@ -165,7 +165,7 @@ class MainActivity : ComponentActivity() {
                     ?: Text("Pon una canción en tu app de música.")
                 val savedCount by Tracker.saved.collectAsState()
                 val isSaved = state.track?.let { (LyricsStore.has(it.storeKey) || LyricsStore.has(it.key)) } == true && savedCount >= 0
-                if (isSaved) Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (tools && isSaved) Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Letra guardada en el teléfono: no se vuelve a buscar.", Modifier.weight(1f), fontSize = 12.sp)
                     TextButton({ Tracker.forgetAndSearch() }) { Text("Buscar de nuevo") }
                 }
@@ -200,11 +200,12 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 // Same control as in QBDLX Mobile's lyrics page: "Sincronía: N ms" with − / + in steps of 250 ms, limited to ±10 s.
-                if (!tools && state.status == Status.SYNCED) Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                if (tools && state.status == Status.SYNCED) Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                     Text("Sincronía: ${offset} ms", Modifier.weight(1f), fontSize = 12.sp)
                     TextButton({ setOffset((offset - 250).coerceIn(-10_000, 10_000)) }) { Text("−", fontSize = 20.sp) }
                     TextButton({ setOffset((offset + 250).coerceIn(-10_000, 10_000)) }) { Text("+", fontSize = 20.sp) }
                 }
+                if (tools && state.status == Status.SYNCED) Text("Para sincronizar: en la pestaña Letra, mantén pulsada la línea que está sonando.", fontSize = 11.sp)
                 if (tools) {
                     val sp = getSharedPreferences("lyrics", MODE_PRIVATE)
                     var karaoke by remember { mutableStateOf(Tracker.karaoke) }
@@ -229,7 +230,6 @@ class MainActivity : ComponentActivity() {
                 if (!tools && state.status == Status.SYNCED) Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     // Follow the audio again after browsing; while following it shows the state instead.
                     if (browsing) PillButton({ browsing = false }) { Text("Seguir audio") } else PillTonal({ browsing = true }) { Text("Siguiendo el audio ✓") }
-                    Text("Mantén pulsada la línea que suena para sincronizar.", Modifier.weight(1f), fontSize = 11.sp)
                 }
                 if (!tools) BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                     // a third of the height as padding above, so the line being sung sits in the first third however many lines fit
