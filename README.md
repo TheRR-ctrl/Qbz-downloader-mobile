@@ -1,11 +1,7 @@
-<p align="center">
-  <img src="assets/qbdlx-mobile-logo.png" alt="QBDLX Mobile" width="160" height="160"/>
-</p>
-
-<h1 align="center">QBDLX Mobile</h1>
+<h1 align="center">QBDLX</h1>
 
 <p align="center">
-  Stream and download Hi-Res music from Qobuz on Android, find your songs on the phone, and sync them to an iPod.
+  Three Android apps: stream and download Hi-Res music from Qobuz, find the songs on your phone, and see synced lyrics, with experimental iPod nano 6G sync.
 </p>
 
 <p align="center">
@@ -24,6 +20,26 @@
   <a href="#documentation">Docs</a> ·
   <a href="#credits">Credits</a>
 </p>
+
+<table align="center">
+  <tr>
+    <td align="center" width="260">
+      <img src="assets/qbdlx-mobile-logo.png" alt="QBDLX Mobile" width="110" height="110"/><br/>
+      <b>QBDLX Mobile</b><br/>
+      <sub>Stream, download and manage your Qobuz library</sub>
+    </td>
+    <td align="center" width="260">
+      <img src="scanner/src/main/res/drawable-nodpi/ic_launcher.png" alt="QBDLX Scanner" width="110" height="110"/><br/>
+      <b>QBDLX Scanner</b><br/>
+      <sub>Find and identify the songs on your phone</sub>
+    </td>
+    <td align="center" width="260">
+      <img src="lyrics/src/main/res/drawable-nodpi/ic_launcher.png" alt="QBDLX Lyrics" width="110" height="110"/><br/>
+      <b>QBDLX Lyrics</b><br/>
+      <sub>Synced lyrics for any music app, plus Android Auto</sub>
+    </td>
+  </tr>
+</table>
 
 <!-- Add screenshots here: place images in assets/ and uncomment
 <p align="center">
@@ -55,7 +71,7 @@ This repository is a multi-module Gradle project.
 |---|---|
 | `:app` | **QBDLX Mobile**: the main player and downloader. |
 | `:scanner` | **QBDLX Scanner**: finds the songs on your phone and reads their tags. Untagged or generically named files are identified by sound with AcoustID (Chromaprint fingerprint). Call and voice recordings and uncommon folders are skipped. It exports `qbdlx-songs.json` through the share menu, which QBDLX Mobile imports. |
-| `:lyrics` | Lyrics module. |
+| `:lyrics` | **QBDLX Lyrics**: shows the lyrics of the song playing in any music app on the phone and, as a list that follows the current line, on Android Auto. It reads the playing song through Android media sessions (needs "Notification access") and gets synced lyrics from [LRCLIB](https://lrclib.net). Sideloaded apps only appear in Android Auto with its developer mode and "Unknown sources" turned on. Experimental: not tested in a car. |
 
 > AcoustID needs a free *Application* API key from [acoustid.org](https://acoustid.org/).
 
@@ -73,15 +89,15 @@ Music/QobuzDownloaderX/<Artist>/<Album>/
 
 ## Build from source
 
-Requirements: JDK 17 or newer and the Android SDK (compile SDK 35).
+Requirements: JDK 17 and the Android SDK (platform 35).
 
 ```bash
 git clone https://github.com/TheRR-ctrl/Qbz-downloader-mobile.git
 cd Qbz-downloader-mobile
-./gradlew :app:assembleDebug
+./gradlew assembleDebug testDebugUnitTest :scanner:testDebugUnitTest :lyrics:testDebugUnitTest
 ```
 
-The APK is generated under `app/build/outputs/apk/`.
+APKs are generated in `app/build/outputs/apk/debug/`, `scanner/build/outputs/apk/debug/` and `lyrics/build/outputs/apk/debug/`.
 
 ## iPod nano 6G support
 
@@ -99,7 +115,7 @@ QBDLX Mobile includes a dock to copy music to an iPod, including artwork and lyr
 
 ## Disclaimer
 
-This project is not affiliated with or endorsed by Qobuz. A valid Qobuz account and subscription are required. Use it for personal purposes only and respect the Qobuz Terms of Service and the rights of artists and labels. You are responsible for how you use this software.
+QBDLX uses the Qobuz API but is neither endorsed, certified, nor approved by Qobuz. By using it you agree to the [Qobuz API Terms of Use](http://static.qobuz.com/apps/api/QobuzAPI-TermsofUse.pdf). A valid Qobuz account and subscription are required. Use it for personal purposes only and respect the Qobuz Terms of Service and the rights of artists and labels. You are responsible for how you use this software.
 
 ## Credits
 
@@ -108,4 +124,4 @@ This project is not affiliated with or endorsed by Qobuz. A valid Qobuz account 
 
 ## License
 
-Released under the [GNU General Public License v3.0](LICENSE).
+Released under the [GNU General Public License v3.0 or later](LICENSE). Bundled and ported third-party code keeps its own licence; see [THIRD_PARTY.md](THIRD_PARTY.md).
