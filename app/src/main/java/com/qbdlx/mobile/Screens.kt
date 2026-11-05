@@ -653,6 +653,15 @@ fun SettingsScreen(vm: MainViewModel) {
                     QChip(vm.crossfadeMs == ms, { vm.updateCrossfade(ms) }, label = { Text(if (ms == 0) s.crossfadeOff else s.seconds(ms / 1000)) })
                 }
             }
+            LaunchedEffect(Unit) { vm.refreshBitPerfect() }
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(s.bitPerfectTitle, fontWeight = FontWeight.Medium)
+                    Text(s.bitPerfectDesc, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (vm.bitPerfect) Text(s.bitPerfectStatus(vm.bitPerfectState), fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                }
+                Switch(vm.bitPerfect, { vm.updateBitPerfect(it) })
+            }
         }
 
         // ── Biblioteca y herramientas ──
