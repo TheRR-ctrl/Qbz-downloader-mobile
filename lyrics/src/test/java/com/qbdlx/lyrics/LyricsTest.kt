@@ -289,3 +289,22 @@ class LrcTagsTest {
     }
     @Test fun noOffsetLeavesTimesAlone() { assertEquals(10_000L, Lrc.parse("[00:10.00]hola")[0].timeMs) }
 }
+
+class LyricDisplayTest {
+    private val lines = listOf(LyricLine(12_000, "primera linea"), LyricLine(20_000, "segunda"), LyricLine(40_000, "tercera"))
+    @Test fun beforeTheFirstLineNothingIsSelected() { assertEquals(-1, Lrc.indexAt(lines, 11_999)) }
+    @Test fun lineStartsExactlyOnItsStamp() { assertEquals(0, Lrc.indexAt(lines, 12_000)); assertEquals(1, Lrc.indexAt(lines, 20_000)) }
+    @Test fun afterTheLastLineStaysOnIt() { assertEquals(2, Lrc.indexAt(lines, 999_000)) }
+    @Test fun karaokeFillIsZeroBeforeAndFullAfter() {
+        assertEquals(0, Lrc.litChars("hola mundo", 1000, 9000, 500))
+        assertEquals(10, Lrc.litChars("hola mundo", 1000, 9000, 9000))
+    }
+    @Test fun karaokeFillFollowsTheRealEnd() {
+        // sung in 1 s although the next line is 20 s away: it is fully lit after that second, not after 20
+        assertEquals(10, Lrc.litChars("hola mundo", 0, 20_000, 1_100, 1_000))
+    }
+    @Test fun karaokeFillAdvancesWordByWord() {
+        val a = Lrc.litChars("uno dos tres", 0, 10_000, 500, 3_000); val b = Lrc.litChars("uno dos tres", 0, 10_000, 2_500, 3_000)
+        assertTrue("$a<$b", a in 3..7 && b > a)
+    }
+}
