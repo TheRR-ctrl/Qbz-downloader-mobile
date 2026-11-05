@@ -361,6 +361,7 @@ class MainActivity : ComponentActivity() {
                                 addStyle(androidx.compose.ui.text.SpanStyle(color = MaterialTheme.colorScheme.primary), 0, lit)
                                 addStyle(androidx.compose.ui.text.SpanStyle(color = MaterialTheme.colorScheme.onSurface), lit, l.text.length)
                             } else androidx.compose.ui.text.AnnotatedString(l.text.ifBlank { "♪" })
+                            androidx.compose.foundation.layout.Column {
                             Text(shown, fontSize = 22.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal, color = color,
                                 modifier = Modifier.fillMaxWidth(.83f)
                                     .graphicsLayer { scaleX = scale; scaleY = scale; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, .5f) }
@@ -373,6 +374,14 @@ class MainActivity : ComponentActivity() {
                                         setOffset((l.timeMs - (Tracker.positionMs() - Tracker.offsetMs)).coerceIn(-10_000, 10_000))
                                         browsing = false
                                     }).padding(vertical = 6.dp))
+                            // A pause of 5 s or more after a sung line (the line is taken as sung at ~100 ms a character, at least 2.5 s): the same three dots as before the first line.
+                            val nextT = state.lines.getOrNull(i + 1)?.timeMs
+                            if (state.status == Status.SYNCED && nextT != null && l.text.isNotBlank()) {
+                                val gapStart = l.timeMs + (l.text.length * 100L).coerceAtLeast(2500L).coerceAtMost(span)
+                                val gap = nextT - gapStart
+                                if (gap >= 5000) BreathDots(if (pos >= gapStart) ((pos - gapStart).toFloat() / gap).coerceIn(0f, 1f) else 0f, pos in gapStart until nextT, Modifier.padding(vertical = 10.dp))
+                            }
+                            }
                         }
                     }
                 }
