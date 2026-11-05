@@ -208,13 +208,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             override fun onPlayingChanged(playing: Boolean) { isPlaying = playing; if (!playing) saveQueue(); syncNotification() }
             override fun onAdvanced() = advancedByEngine()
             override fun onEnded() { playQueue.next(auto = true)?.let { playCurrent() } }
+            override fun onBitPerfect(state: BitPerfectState) { bitPerfectState = state }
             override fun onError(e: Exception) {
                 // A prepared track's signed address can expire (a long pause near the end): load the track again, once.
                 val item = playQueue.current
                 if (item != null && errorRetriedFor !== item) { errorRetriedFor = item; playCurrent() }
                 else error = e.message ?: e.javaClass.simpleName
             }
-        }).also { it.fadeMs = crossfadeMs }
+        }).also { it.fadeMs = crossfadeMs; it.bitPerfect = bitPerfect }
     }
     val engine: PlayerEngine by engineDelegate
     var nowPlaying by mutableStateOf<Pair<Album, Track>?>(null); private set
@@ -2196,6 +2197,25 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun removeUpcoming(k: Int) { playQueue.removeUpcoming(k); refreshQueue(); resetNext(); saveQueue() }
     fun moveUpcoming(from: Int, to: Int) { playQueue.moveUpcoming(from, to); refreshQueue(); resetNext(); saveQueue() }
     fun clearUpcoming() { playQueue.clearUpcoming(); refreshQueue(); resetNext(); saveQueue() }
+
+    /** Bit-perfect USB output (Android 14+), see [BitPerfectOutput]. */
+    var bitPerfect by mutableStateOf(prefs.getBoolean("bit_perfect", false)); private set
+    var bitPerfectState by mutableStateOf(BitPerfectState(BitPerfectKind.OFF)); private set
+    private val bitPerfectProbe by lazy { BitPerfectOutput(context) }
+
+    /** What the Settings line says before anything plays: is it possible, is a DAC connected? */
+    fun refreshBitPerfect() {
+        if (!bitPerfect) { bitPerfectState = BitPerfectState(BitPerfectKind.OFF); return }
+        if (bitPerfectState.kind == BitPerfectKind.OFF || bitPerfectState.kind == BitPerfectKind.NO_USB || bitPerfectState.kind == BitPerfectKind.WAITING) bitPerfectState = bitPerfectProbe.probe()
+    }
+
+    fun updateBitPerfect(on: Boolean) {
+        bitPerfect = on; prefs.edit().putBoolean("bit_perfect", on).apply()
+        bitPerfectState = if (on) bitPerfectProbe.probe() else BitPerfectState(BitPerfectKind.OFF)
+        if (engineDelegate.isInitialized()) { engine.bitPerfect = on; resetNext() }
+        // The song that is playing was made under the old setting: start it again at the same spot.
+        if (playQueue.current != null && restoredPosMs < 0 && isPlaying) playCurrent(if (engineDelegate.isInitialized()) engine.position else 0L)
+    }
 
     fun updateCrossfade(ms: Int) {
         crossfadeMs = ms; prefs.edit().putInt("crossfade_ms", ms).apply()

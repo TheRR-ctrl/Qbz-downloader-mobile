@@ -12,7 +12,10 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.analytics.AnalyticsListener
+import androidx.media3.exoplayer.audio.AudioSink
 
 /**
  * Plays one track after another without a gap, and fades between them when a fade length is set. Everything runs on
@@ -32,9 +35,28 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
         /** The track ended and no next track was prepared. */
         fun onEnded()
         fun onError(e: Exception)
+        /** Bit-perfect output changed state (only while the mode is on). */
+        fun onBitPerfect(state: BitPerfectState) {}
     }
 
     private val main = Handler(Looper.getMainLooper())
+    private val output = BitPerfectOutput(context)
+    private var restartedItem = false // the track was already re-created once for this song
+
+    /**
+     * Bit-perfect USB output (Android 14+). Needs the stream untouched, so there is no fade, and the phone's equalizer
+     * apps are not told about the audio session (they would attach effects). Turning it off hands the mixer back.
+     */
+    var bitPerfect = false
+        set(v) {
+            if (v == field) return
+            field = v
+            if (!v) output.clear()
+            announceSession(active.audioSessionId, !v)
+            clearNext()
+            listener.onBitPerfect(if (v) output.probe() else BitPerfectState(BitPerfectKind.OFF))
+        }
+
     private var active: ExoPlayer = build()
     private var idle: ExoPlayer? = null
     private var nextUrl: String? = null
@@ -56,7 +78,7 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
     val hasNext: Boolean get() = nextUrl != null
     /** A fade is running: the prepared track is already playing, so the queue must not be changed under it. */
     val isFading: Boolean get() = fading
-    private val crossfading: Boolean get() = fadeMs > 0 && !repeatOne
+    private val crossfading: Boolean get() = fadeMs > 0 && !repeatOne && !bitPerfect
 
     private val ticker = object : Runnable {
         override fun run() { tick(); main.postDelayed(this, TICK_MS) }
@@ -103,7 +125,24 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
         .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), false)
         .setHandleAudioBecomingNoisy(true) // unplugging headphones pauses
         .build()
-        .also { p -> p.addListener(Events(p)); announceSession(p.audioSessionId, true) }
+        .also { p -> p.addListener(Events(p)); watchOutput(p); if (!bitPerfect) announceSession(p.audioSessionId, true) }
+
+    /** Once the player has created its AudioTrack we know the real format: match the USB mixer to it. */
+    @androidx.annotation.OptIn(UnstableApi::class)
+    private fun watchOutput(p: ExoPlayer) {
+        p.addAnalyticsListener(object : AnalyticsListener {
+            override fun onAudioTrackInitialized(eventTime: AnalyticsListener.EventTime, audioTrackConfig: AudioSink.AudioTrackConfig) {
+                if (!bitPerfect || p !== active) return
+                val r = output.prepare(audioTrackConfig.sampleRate, audioTrackConfig.encoding, audioTrackConfig.channelConfig)
+                main.post { listener.onBitPerfect(r.state) }
+                if (r.changed && !restartedItem) {
+                    restartedItem = true
+                    // The track was made under the old mixer: make it again under the new one, at the same spot.
+                    main.post { val pos = p.currentPosition; p.stop(); p.prepare(); p.seekTo(pos) }
+                }
+            }
+        })
+    }
 
     private inner class Events(private val player: ExoPlayer) : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) { listener.onPlayingChanged(this@PlayerEngine.isPlaying) }
@@ -112,6 +151,7 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
             if (player !== active || reason != Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) return
             // Gapless: the player moved on to the item that was added behind the finished one.
             nextUrl = null
+            restartedItem = false
             main.post { if (active.currentMediaItemIndex > 0) active.removeMediaItems(0, active.currentMediaItemIndex) }
             listener.onAdvanced()
         }
@@ -131,6 +171,7 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
     /** Replaces everything with [url] and plays it from the start. */
     fun start(url: String) {
         resetAll()
+        restartedItem = false
         active.repeatMode = if (repeatOne) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
         active.setMediaItem(MediaItem.fromUri(url))
         active.prepare()
@@ -168,13 +209,13 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
     /** Ignored while a fade is running (it lasts a few seconds at most). */
     fun seekTo(ms: Long) { if (!fading) active.seekTo(ms.coerceAtLeast(0)) }
 
-    fun stop() { resetAll(); dropFocus() }
+    fun stop() { resetAll(); dropFocus(); output.clear() }
 
     fun release() {
         main.removeCallbacks(ticker)
         announceSession(active.audioSessionId, false); idle?.let { announceSession(it.audioSessionId, false) }
         active.release(); idle?.release(); idle = null
-        dropFocus()
+        dropFocus(); output.clear()
     }
 
     private fun resetAll() {

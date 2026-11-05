@@ -281,6 +281,9 @@ interface Strings {
     val crossfadeTitle: String
     val crossfadeDesc: String
     val crossfadeOff: String
+    val bitPerfectTitle: String
+    val bitPerfectDesc: String
+    fun bitPerfectStatus(st: BitPerfectState): String
     fun seconds(n: Int): String
     val importEntry: String
     val importTitle: String
@@ -759,6 +762,20 @@ object English : Strings {
     override val crossfadeTitle = "Fade between songs"
     override val crossfadeDesc = "Songs always follow each other without a gap. With a fade, the end of one song fades out while the next fades in. Off by default; very short songs fade less."
     override val crossfadeOff = "Off"
+    override val bitPerfectTitle = "Bit-perfect USB output"
+    override val bitPerfectDesc = "Sends each song to a USB DAC at its own sample rate and bit depth, without Android resampling it. Needs Android 14 or newer and a USB DAC. Turns off the fade and gapless changes of sample rate; for 24-bit pick a Hi-Res quality in the player. Equalizers and sound effects must be off."
+    override fun bitPerfectStatus(st: BitPerfectState): String {
+        val fmt = "${st.bits}-bit / ${st.sampleRate / 1000.0} kHz"
+        return when (st.kind) {
+            BitPerfectKind.OFF -> ""
+            BitPerfectKind.UNSUPPORTED -> "This phone has Android 13 or older: Android cannot do bit-perfect output."
+            BitPerfectKind.NO_USB -> "No USB DAC connected."
+            BitPerfectKind.WAITING -> "${st.device} connected. Play a song to check."
+            BitPerfectKind.ACTIVE -> "Bit-perfect active: $fmt → ${st.device}"
+            BitPerfectKind.NO_MATCH -> "${st.device} does not offer bit-perfect for $fmt: Android resamples this song."
+            BitPerfectKind.REFUSED -> "Android refused bit-perfect for $fmt on ${st.device}."
+        }
+    }
     override fun seconds(n: Int) = "$n s"
     override val importEntry = "Import a song list (QBDLX Scanner)"
     override val importTitle = "Import songs"
@@ -1251,6 +1268,20 @@ object Spanish : Strings {
     override val crossfadeTitle = "Fundido entre canciones"
     override val crossfadeDesc = "Las canciones siempre se encadenan sin pausa. Con fundido, el final de una baja de volumen mientras sube la siguiente. Apagado por defecto; las canciones muy cortas se funden menos."
     override val crossfadeOff = "Desactivado"
+    override val bitPerfectTitle = "Salida USB bit-perfect"
+    override val bitPerfectDesc = "Envía cada canción a un DAC USB con su propia frecuencia y profundidad de bits, sin que Android la remuestree. Necesita Android 14 o superior y un DAC USB. Quita el fundido y el cambio de frecuencia sin pausa; para 24 bits elige una calidad Hi-Res en el reproductor. Ecualizadores y efectos de sonido deben estar apagados."
+    override fun bitPerfectStatus(st: BitPerfectState): String {
+        val fmt = "${st.bits} bits / ${st.sampleRate / 1000.0} kHz"
+        return when (st.kind) {
+            BitPerfectKind.OFF -> ""
+            BitPerfectKind.UNSUPPORTED -> "Este teléfono tiene Android 13 o anterior: Android no puede hacer salida bit-perfect."
+            BitPerfectKind.NO_USB -> "No hay un DAC USB conectado."
+            BitPerfectKind.WAITING -> "${st.device} conectado. Reproduce una canción para comprobarlo."
+            BitPerfectKind.ACTIVE -> "Bit-perfect activo: $fmt → ${st.device}"
+            BitPerfectKind.NO_MATCH -> "${st.device} no ofrece bit-perfect para $fmt: Android remuestrea esta canción."
+            BitPerfectKind.REFUSED -> "Android rechazó el bit-perfect para $fmt en ${st.device}."
+        }
+    }
     override fun seconds(n: Int) = "$n s"
     override val importEntry = "Importar lista de canciones (QBDLX Scanner)"
     override val importTitle = "Importar canciones"
