@@ -85,6 +85,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) // the screen stays on while the app is open
         Tracker.start(this)
         LyricsStore.init(this)
         if (savedInstanceState == null) handleShared(intent)
@@ -169,11 +170,13 @@ class MainActivity : ComponentActivity() {
             else if (tagging && state.lines.isNotEmpty()) marks.size.coerceAtMost(state.lines.size - 1) else -1
         val listState = androidx.compose.foundation.lazy.rememberLazyListState()
         // Dragging the list lets the reader browse without being pulled back; "Resincronizar" returns to the line being sung.
+        val translations by Tracker.translations.collectAsState()
         var browsing by remember { mutableStateOf(false) }
         val dragged by listState.interactionSource.collectIsDraggedAsState()
         LaunchedEffect(dragged) { if (dragged) browsing = true }
         LaunchedEffect(state.track?.key) { browsing = false }
-        LaunchedEffect(idx, browsing) { if (!browsing && idx >= 0) listState.animateScrollToItem(idx) } // the list padding puts that item in the first third
+        val hasIntro = state.status == Status.SYNCED && (state.lines.firstOrNull()?.timeMs ?: 0L) >= 5000 // the dots are item 0, so every line sits one place later
+        LaunchedEffect(idx, browsing) { if (!browsing && idx >= 0) listState.animateScrollToItem(idx + if (hasIntro) 1 else 0) } // the list padding puts that item in the first third
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Q Lyrics", fontSize = 28.sp, fontWeight = FontWeight.Bold)
             val pre by Prefetch.state.collectAsState()
@@ -222,6 +225,36 @@ class MainActivity : ComponentActivity() {
                             androidx.compose.material3.Switch(karaoke, { karaoke = it; Tracker.karaoke = it; sp.edit().putBoolean("karaoke", it).apply() })
                         }
                         Text("Pinta la línea palabra por palabra mientras se canta (aproximado).", style = small)
+                        var trOn by remember { mutableStateOf(Tracker.translate) }
+                        Row(Modifier.padding(top = 10.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                            Text("Traducir al español", Modifier.weight(1f))
+                            androidx.compose.material3.Switch(trOn, { trOn = it; Tracker.translate = it; sp.edit().putBoolean("translate", it).apply(); Tracker.translateLines() })
+                        }
+                        Text("Pone la traducción bajo las líneas que no están en español (en el coche y en la ventana flotante también). Usa internet.", style = small)
+                    }
+                    QCard(Modifier.fillMaxWidth()) {
+                        Text("Verificar sincronía", fontWeight = FontWeight.Bold)
+                        val sc by SyncCheck.state.collectAsState(); val pend by SyncCheck.pending.collectAsState(); val toFix by SyncCheck.toFix.collectAsState()
+                        var syncAuto by remember { mutableStateOf(SyncCheck.autoOnWifi) }
+                        Text("Whisper escucha cada canción que tengas en el teléfono y comprueba que su letra guardada va a tiempo. Si va adelantada o atrasada por igual, la mueve; si se va desfasando, usa los tiempos de Whisper.", style = small)
+                        Row(Modifier.padding(top = 4.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                            Text("Verificar cada letra nueva con wifi", Modifier.weight(1f))
+                            androidx.compose.material3.Switch(syncAuto, { syncAuto = it; SyncCheck.setAuto(this@MainActivity, it) })
+                        }
+                        if (pend > 0) Text("$pend letras nuevas esperando el wifi.", style = small)
+                        if (sc.running) {
+                            Text("Revisando ${sc.done} de ${sc.total}" + (if (sc.current.isNotBlank()) " · ${sc.current}" else "") + " · ${sc.ok} bien · ${sc.off} desfasadas · ${sc.unknown} sin poder juzgar", style = small)
+                            LinearProgressIndicator(progress = { if (sc.total > 0) sc.done / sc.total.toFloat() else 0f }, modifier = Modifier.fillMaxWidth())
+                            sc.message?.let { Text(it, style = small) }
+                            TextButton({ SyncCheck.cancel() }) { Text("Cancelar") }
+                        } else {
+                            if (sc.total > 0 || sc.message != null) Text(sc.message ?: "Última revisión: ${sc.total} canciones · ${sc.ok} bien · ${sc.off} desfasadas (${sc.fixed} corregidas) · ${sc.unknown} sin poder juzgar", style = small)
+                            if (whisperOk) {
+                                PillTonal({ SyncCheck.scan(this@MainActivity, fix = false) }, Modifier.fillMaxWidth()) { Text("Escanear las letras guardadas", fontSize = 12.sp) }
+                                if (toFix > 0) PillButton({ val n = SyncCheck.fixAll(this@MainActivity); android.widget.Toast.makeText(this@MainActivity, "$n letras corregidas", android.widget.Toast.LENGTH_SHORT).show() }, Modifier.fillMaxWidth()) { Text("Corregir las $toFix desfasadas", fontSize = 12.sp) }
+                            } else Text("Whisper no está en esta versión.", style = small)
+                        }
+                        Text("Tarda unos minutos por canción y gasta batería: déjalo cargando. Solo se pueden revisar las canciones que estén como archivo en el teléfono.", style = small)
                     }
                     QCard(Modifier.fillMaxWidth()) {
                         Text("Android Auto", fontWeight = FontWeight.Bold)
@@ -244,6 +277,40 @@ class MainActivity : ComponentActivity() {
                                 startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:$packageName"))) // then tap the button again
                             else { FloatingService.toggle(this@MainActivity); floating = !floating }
                         }) { Text(if (floating) "Cerrar el botón con barra" else "Botón con barra sobre otras apps", fontSize = 12.sp) }
+                        // look of the floating window: saved at once, the window follows by itself
+                        var fAlpha by remember { mutableFloatStateOf(sp.getInt("float_alpha", 100).toFloat()) }
+                        var fScale by remember { mutableFloatStateOf(sp.getFloat("float_scale", 1f)) }
+                        var fWidth by remember { mutableFloatStateOf(sp.getInt("float_w", (resources.displayMetrics.widthPixels * 0.86f).toInt()).toFloat()) }
+                        var fBubble by remember { mutableFloatStateOf(sp.getInt("float_bubble_dp", 46).toFloat()) }
+                        var fShowBubble by remember { mutableStateOf(sp.getBoolean("float_bubble", true)) }
+                        var fFolded by remember { mutableStateOf(sp.getBoolean("float_min", false)) }
+                        var fNext by remember { mutableStateOf(sp.getBoolean("float_next", true)) }
+                        var fSnap by remember { mutableStateOf(sp.getBoolean("float_snap", false)) }
+                        var fBar by remember { mutableStateOf(sp.getBoolean("float_bar", true)) }
+                        val maxW = resources.displayMetrics.widthPixels.toFloat(); val minW = 160 * resources.displayMetrics.density
+                        @Composable fun slider(label: String, value: Float, range: ClosedFloatingPointRange<Float>, onChange: (Float) -> Unit) {
+                            Text(label, Modifier.padding(top = 6.dp), fontSize = 13.sp)
+                            androidx.compose.material3.Slider(value, onChange, valueRange = range)
+                        }
+                        Text("Aspecto de la ventana", Modifier.padding(top = 10.dp), fontWeight = FontWeight.SemiBold)
+                        slider("Transparencia del fondo: ${100 - fAlpha.toInt()} %", fAlpha, 20f..100f) { fAlpha = it; sp.edit().putInt("float_alpha", it.toInt()).apply() }
+                        slider("Tamaño del texto: ${(fScale * 100).toInt()} %", fScale, 0.6f..2.2f) { fScale = it; sp.edit().putFloat("float_scale", it).apply() }
+                        slider("Ancho: ${(fWidth / resources.displayMetrics.density).toInt()} dp", fWidth.coerceIn(minW, maxW), minW..maxW) { fWidth = it; sp.edit().putInt("float_w", it.toInt()).apply() }
+                        slider("Tamaño de la burbuja: ${fBubble.toInt()} dp", fBubble, 28f..80f) { fBubble = it; sp.edit().putInt("float_bubble_dp", it.toInt()).apply() }
+                        @Composable fun toggle(label: String, on: Boolean, key: String, set: (Boolean) -> Unit) = Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                            Text(label, Modifier.weight(1f), fontSize = 13.sp)
+                            androidx.compose.material3.Switch(on, { set(it); sp.edit().putBoolean(key, it).apply() })
+                        }
+                        toggle("Mostrar la burbuja con la portada", fShowBubble, "float_bubble") { fShowBubble = it }
+                        toggle("Plegar a solo la burbuja (tócala para abrir)", fFolded, "float_min") { fFolded = it }
+                        toggle("Barra compacta (una línea)", fBar, "float_bar") { fBar = it }
+                        toggle("Mostrar la línea siguiente (modo grande)", fNext, "float_next") { fNext = it }
+                        toggle("Pegarse al borde al soltarla", fSnap, "float_snap") { fSnap = it }
+                        Text("En la ventana, arrastra ⤡ para cambiar el ancho (izquierda/derecha) y el texto (arriba/abajo).", style = small)
+                        TextButton({
+                            sp.edit().remove("float_alpha").remove("float_scale").remove("float_w").remove("float_bubble_dp").remove("float_bubble").remove("float_min").remove("float_bar").remove("float_next").remove("float_snap").apply()
+                            fAlpha = 100f; fScale = 1f; fWidth = resources.displayMetrics.widthPixels * 0.86f; fBubble = 46f; fShowBubble = true; fFolded = false; fBar = true; fNext = true; fSnap = false
+                        }) { Text("Restablecer el aspecto") }
                     }
                     QCard(Modifier.fillMaxWidth()) {
                         Text("Esta canción", fontWeight = FontWeight.Bold)
@@ -283,6 +350,8 @@ class MainActivity : ComponentActivity() {
                 if (state.status == Status.PLAIN) Text(
                     if (tagging) "Pulsa el botón justo cuando empiece a cantarse la línea resaltada." else "Solo hay letra sin sincronizar.", fontSize = 12.sp)
                 val timingMsg by Tracker.timing.collectAsState()
+                val trMsg by Tracker.translating.collectAsState()
+                trMsg?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 val whisperOk = remember { Whisper.available(this@MainActivity) }
                 LaunchedEffect(state.track?.key) { Tracker.timing.value = null }
                 timingMsg?.let { m ->
@@ -374,6 +443,8 @@ class MainActivity : ComponentActivity() {
                                         setOffset((l.timeMs - (Tracker.positionMs() - Tracker.offsetMs)).coerceIn(-10_000, 10_000))
                                         browsing = false
                                     }).padding(vertical = 6.dp))
+                            val trLine = if (Tracker.translate) translations[i] else null
+                            if (trLine != null) Text(trLine, fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (on) 1f else .7f), modifier = Modifier.fillMaxWidth(.83f).padding(bottom = 4.dp))
                             // A pause of 5 s or more after a sung line (the line is taken as sung at ~100 ms a character, at least 2.5 s): the same three dots as before the first line.
                             val nextT = state.lines.getOrNull(i + 1)?.timeMs
                             if (state.status == Status.SYNCED && nextT != null && l.text.isNotBlank()) {

@@ -38,6 +38,14 @@ object Tracker {
     @Volatile var karaoke = true
     /** Lyrics without times are timed by Whisper on their own the first time they play (once per song). */
     @Volatile var autoWhisper = true
+    /** Spanish translation under the lines that are in another language. */
+    @Volatile var translate = true
+    /** Translation by line index of the lyric on screen (only lines not in Spanish). */
+    val translations = MutableStateFlow<Map<Int, String>>(emptyMap())
+    /** What the translation is doing, for the screen (null when idle or off). */
+    val translating = MutableStateFlow<String?>(null)
+    private var trJob: Job? = null
+    private var trFor = ""
     private val triedAuto = HashSet<String>()
     @Volatile var lastError = ""
 
@@ -55,7 +63,7 @@ object Tracker {
         timingJob = scope.launch {
             timing.value = "Buscando el archivo de la canción…"
             val result = withContext(Dispatchers.IO) {
-                val uri = AudioTiming.find(ctx, t.title, t.artist, t.durationMs)
+                val uri = AudioTiming.findOrBorrow(ctx, t.title, t.artist, t.durationMs)
                     ?: return@withContext "No encuentro esta canción como archivo en el teléfono (o falta el permiso de audio). Prueba con «Estimar» o «Marcar mientras suena»."
                 withContext(Dispatchers.Main) { timing.value = "Analizando el audio…" }
                 val env = AudioTiming.envelope(ctx, uri, cancelled = { !isActive })
@@ -80,12 +88,9 @@ object Tracker {
             timing.value = "Buscando el archivo de la canción…"
             val result = withContext(Dispatchers.Default) {
                 if (!Whisper.available(ctx)) return@withContext "Whisper no está en esta versión de la app."
-                val uri = AudioTiming.find(ctx, t.title, t.artist, t.durationMs)
+                val uri = AudioTiming.findOrBorrow(ctx, t.title, t.artist, t.durationMs)
                     ?: return@withContext "No encuentro esta canción como archivo en el teléfono (o falta el permiso de audio)."
-                withContext(Dispatchers.Main) { timing.value = "Preparando el audio…" }
-                val pcm = Whisper.pcm16k(ctx, uri, cancelled = { !isActive }) ?: return@withContext "No se pudo leer el audio de ese archivo."
-                withContext(Dispatchers.Main) { timing.value = "Whisper está escuchando la canción… puede tardar unos minutos." }
-                val asr = Whisper.transcribe(ctx, pcm) ?: return@withContext if (!isActive) "Cancelado." else "Whisper no pudo con esta canción."
+                val asr = Whisper.listen(ctx, t.storeKey, uri, { !isActive }) { m -> timing.value = m } ?: return@withContext if (!isActive) "Cancelado." else "Whisper no pudo con esta canción."
                 var timed = WhisperAlign.align(lines, asr.words)
                 ytWhy = ""
                 // The lyric and the voice use different alphabets: YouTube Music often writes the same song in the alphabet Whisper heard.
@@ -116,7 +121,7 @@ object Tracker {
                     if (heard.size >= 2) { withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key) saveTimed(heard, "Whisper (lo que se oyó)") }; return@withContext "Listo: no coincidía con la letra, así que se escribió lo que Whisper oyó. Puede tener errores." }
                 }
                 val done = timed ?: return@withContext "Whisper entendió muy poco de la voz (${asr.words.size} palabras, idioma ${asr.lang}). Prueba «Detectar con el audio»."
-                withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key) saveTimed(done) }
+                withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key) saveTimed(done); if (!WhisperAlign.approximate) SyncCheck.markVerified(t.storeKey) }
                 null
             }
             timing.value = result ?: if (WhisperAlign.approximate) "Listo, aproximado: la letra y la voz están en alfabetos distintos, así que se repartió por cantidad de palabras." else "Listo: letra sincronizada con la voz."
@@ -138,11 +143,8 @@ object Tracker {
                     scope.launch(Dispatchers.Main) { if (_state.value.track?.key == t.key) { _saved.value = LyricsStore.count(); publish(t, yt, _state.value.playing) } }
                     return "Whisper no entendió la voz; la letra salió de YouTube Music."
                 }
-                val uri = AudioTiming.find(ctx, t.title, t.artist, t.durationMs) ?: return@withContext fromYoutube() ?: "No encuentro esta canción como archivo en el teléfono (o falta el permiso de audio)."
-                withContext(Dispatchers.Main) { timing.value = "Preparando el audio…" }
-                val pcm = Whisper.pcm16k(ctx, uri, cancelled = { !isActive }) ?: return@withContext fromYoutube() ?: "No se pudo leer el audio de ese archivo."
-                withContext(Dispatchers.Main) { timing.value = "Whisper está escuchando la canción… puede tardar unos minutos." }
-                val asr = Whisper.transcribe(ctx, pcm) ?: return@withContext if (!isActive) "Cancelado." else (fromYoutube() ?: "Whisper no pudo con esta canción.")
+                val uri = AudioTiming.findOrBorrow(ctx, t.title, t.artist, t.durationMs) ?: return@withContext fromYoutube() ?: "No encuentro esta canción como archivo en el teléfono (o falta el permiso de audio)."
+                val asr = Whisper.listen(ctx, t.storeKey, uri, { !isActive }) { m -> timing.value = m } ?: return@withContext if (!isActive) "Cancelado." else (fromYoutube() ?: "Whisper no pudo con esta canción.")
                 val heard = WhisperAlign.linesFromHeard(asr.words)
                 if (asr.words.size < 8 || heard.size < 2) return@withContext fromYoutube() ?: "Whisper entendió muy poco (${asr.words.size} palabras) y YouTube Music no tiene esta letra."
                 withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key) saveTimed(heard, "Whisper (lo que se oyó)") }
@@ -151,6 +153,12 @@ object Tracker {
             timing.value = result
         }
     }
+
+    /** True while a song is being timed by hand: the background check waits. */
+    fun busy() = timingJob?.isActive == true
+
+    /** Saved lyrics were changed behind the screen's back: the next refresh reads them again. */
+    fun lyricsChanged() { cache.clear(); loadedKey = null }
 
     fun cancelTiming() { Whisper.cancel(); timingJob?.cancel(); timing.value = "Cancelado." }
 
@@ -173,12 +181,13 @@ object Tracker {
         started = true
         val app = context.applicationContext
         this.app = app
-        LyricsStore.init(app)
+        LyricsStore.init(app); SyncCheck.init(app)
         // The sync settings must be read here and not only when the screen opens: the car can start the service without the app ever being opened.
         app.getSharedPreferences("lyrics", Context.MODE_PRIVATE).let { p ->
-            offsetMs = p.getLong("offset", 0); carLeadMs = p.getLong("car_lead", 1000); karaoke = p.getBoolean("karaoke", true); autoWhisper = p.getBoolean("auto_whisper", true)
+            offsetMs = p.getLong("offset", 0); carLeadMs = p.getLong("car_lead", 1000); karaoke = p.getBoolean("karaoke", true); translate = p.getBoolean("translate", true); autoWhisper = p.getBoolean("auto_whisper", true)
         }
-        scope.launch { while (isActive) { runCatching { refresh(app) }; delay(400) } }
+        scope.launch { var tick = 0
+            while (isActive) { runCatching { refresh(app) }; if (++tick % 150 == 0) runCatching { SyncCheck.autoTick(app) }; delay(400) } }
     }
 
     /** The playback position now, in ms: the session's last report plus the time that has passed since, plus the user's offset. */
@@ -264,7 +273,7 @@ object Tracker {
             }
             if (found == null) found = withContext(Dispatchers.IO) { runCatching { YtMusic.find(track.title, track.artist, (track.durationMs / 1000).toInt()) }.getOrNull() }
             cache[track.key] = found
-            found?.let { LyricsStore.put(track.storeKey, it); _saved.value = LyricsStore.count() }
+            found?.let { LyricsStore.put(track.storeKey, it); _saved.value = LyricsStore.count(); SyncCheck.enqueue(track.storeKey, it, PrefetchTrack(track.title, track.artist, track.album, (track.durationMs / 1000).toInt())) }
             publish(track, found, playing)
         }
     }
@@ -275,8 +284,30 @@ object Tracker {
             l?.plain != null -> LyricsState(Status.PLAIN, track, Lrc.plain(l.plain), playing, l.source)
             else -> LyricsState(Status.NOT_FOUND, track, playing = playing)
         }
+        translateLines(track)
         val ctx = app
         if (autoWhisper && _state.value.status == Status.PLAIN && ctx != null && playing && triedAuto.add(track.key) && Whisper.available(ctx)) timeFromWhisper()
+    }
+
+    fun translateLines(track: TrackInfo? = _state.value.track) {
+        val ctx = app ?: return
+        val lines = _state.value.lines.map { it.text }
+        val sig = (track?.storeKey ?: "") + "|" + lines.hashCode() + "|" + translate
+        if (sig == trFor) return
+        trFor = sig; trJob?.cancel(); translations.value = emptyMap()
+        if (!translate || track == null || lines.none { it.isNotBlank() }) return
+        trJob = scope.launch(Dispatchers.IO) {
+            translating.value = "Traduciendo…"
+            val r = Translator.translate(ctx, track.storeKey, lines) { !isActive }
+            if (!isActive) return@launch
+            if (_state.value.track?.key == track.key) translations.value = r
+            translating.value = when {
+                r.isNotEmpty() -> null
+                Translator.lastError.isNotEmpty() -> "No se pudo traducir: ${Translator.lastError}"
+                else -> null // nothing in another language
+            }
+            if (Translator.lastError.isNotEmpty() && r.isEmpty()) { delay(60_000); if (isActive) { trFor = ""; translateLines(track) } } // try again in a minute
+        }
     }
 
     /** The song's own clock, without the user's sync offset: what a tap-made timing is saved against. */

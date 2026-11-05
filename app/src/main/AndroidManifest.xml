@@ -55,6 +55,12 @@
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
         </provider>
 
+        <!-- Lends Q Lyrics a temporary MP3 of a song that is not on the phone (checked by calling package). -->
+        <provider
+            android:name=".LyricsAudioProvider"
+            android:authorities="${applicationId}.lyricsaudio"
+            android:exported="true" />
+
         <!-- Enabled by the user under "Notification access": lets the app see what the official Qobuz app is playing. -->
         <service android:name=".IpodSyncService" android:exported="false" android:foregroundServiceType="dataSync" />
 

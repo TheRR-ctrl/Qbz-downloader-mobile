@@ -33,6 +33,16 @@ object AudioTiming {
         return best
     }
 
+    /** The phone's copy, or else a temporary MP3 lent by QBDLX Mobile (from Qobuz, nothing kept on disk). Null when neither exists. */
+    fun findOrBorrow(context: Context, title: String, artist: String, durationMs: Long): Uri? =
+        find(context, title, artist, durationMs) ?: borrowed(context, title, artist, durationMs / 1000)
+
+    fun borrowed(context: Context, title: String, artist: String, durationSec: Long): Uri? {
+        if (context.packageManager.resolveContentProvider("com.qbdlx.mobile.lyricsaudio", 0) == null) return null
+        return Uri.Builder().scheme("content").authority("com.qbdlx.mobile.lyricsaudio").path("track")
+            .appendQueryParameter("title", title).appendQueryParameter("artist", artist).appendQueryParameter("dur", durationSec.toString()).build()
+    }
+
     /** Loudness of every frame (RMS of the first difference of the signal, which sets the bass and the kick drum aside). Null if it cannot be decoded. */
     fun envelope(context: Context, uri: Uri, maxSeconds: Int = 900, cancelled: () -> Boolean = { false }): FloatArray? {
         val ex = MediaExtractor()

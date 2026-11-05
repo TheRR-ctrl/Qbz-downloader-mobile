@@ -207,3 +207,27 @@ class LineEndTest {
         assertTrue(Lrc.litChars("uno dos tres", 10_000, 20_000, 12_100, null) < "uno dos tres".length || true)
     }
 }
+
+class SyncCheckTest {
+    private fun ls(vararg t: Long) = t.mapIndexed { i, x -> LyricLine(x, "linea $i") }
+    @Test fun inTimeIsOk() = assertEquals("ok", SyncCheck.judge(ls(1000, 5000, 9000, 13000, 17000), ls(1200, 4800, 9100, 13200, 16900)).kind)
+    @Test fun steadyShiftIsOff() {
+        val v = SyncCheck.judge(ls(6000, 10000, 14000, 18000, 22000), ls(1000, 5000, 9000, 13000, 17000))
+        assertEquals("off", v.kind); assertEquals(1000L, v.fix!![0].timeMs)
+    }
+    @Test fun growingErrorIsDrift() = assertEquals("drift", SyncCheck.judge(ls(1000, 6000, 12000, 20000, 30000, 42000), ls(1000, 5000, 9000, 13000, 17000, 21000)).kind)
+    @Test fun tooFewLinesUnknown() = assertEquals("unk", SyncCheck.judge(ls(1000, 2000), ls(1000, 2000)).kind)
+
+}
+
+class CarTranslationTest {
+    private val st = LyricsState(Status.SYNCED, null, listOf(LyricLine(0, "Hello world"), LyricLine(4000, "Hola mundo"), LyricLine(8000, "Tres")))
+    @org.junit.Test fun foreignLineShowsTranslationInsteadOfNext() {
+        val rows = CarView.rows(st, 1000, mapOf(0 to "Hola mundo"))
+        org.junit.Assert.assertEquals(listOf("▶ Hello world", "↳ Hola mundo"), rows.map { it.title })
+    }
+    @org.junit.Test fun spanishLineKeepsNext() {
+        val rows = CarView.rows(st, 5000, mapOf(0 to "x"))
+        org.junit.Assert.assertEquals(listOf("▶ Hola mundo", "Tres"), rows.map { it.title })
+    }
+}

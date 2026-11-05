@@ -100,6 +100,22 @@ object Whisper {
 
     fun cancel() { if (WhisperNative.loaded) WhisperNative.cancel() }
 
+    private fun cacheFile(context: Context, key: String) = File(File(context.applicationContext.filesDir, "asr").apply { mkdirs() }, key.hashCode().toUInt().toString(16) + "-" + key.length + ".tsv")
+
+    /** What Whisper heard in this song if it was listened to before (kept on the phone, so no song is listened to twice). */
+    fun heardBefore(context: Context, key: String): Asr? = runCatching { cacheFile(context, key).takeIf { it.exists() }?.readText()?.let { parse(it) }?.takeIf { it.words.isNotEmpty() } }.getOrNull()
+
+    /** Listens to [uri] (or reuses the saved result for [key]). [status] tells the screen what is happening. Null if it failed or was cancelled. */
+    fun listen(context: Context, key: String, uri: Uri, cancelled: () -> Boolean, status: (String) -> Unit = {}): Asr? {
+        heardBefore(context, key)?.let { return it }
+        status("Preparando el audio…")
+        val pcm = pcm16k(context, uri, cancelled = cancelled) ?: return null
+        status("Whisper está escuchando la canción… puede tardar unos minutos.")
+        val asr = transcribe(context, pcm) ?: return null
+        if (asr.words.isNotEmpty()) runCatching { cacheFile(context, key).writeText("lang=${asr.lang}\n" + asr.words.joinToString("\n") { "${it.startMs}\t${it.endMs}\t${it.text}" }) }
+        return asr
+    }
+
     /** "lang=es\n" then "<start>\t<end>\t<word>" lines. */
     fun parse(raw: String): Asr? {
         if (raw.isBlank()) return null
