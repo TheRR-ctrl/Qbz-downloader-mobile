@@ -15,6 +15,8 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -153,22 +155,78 @@ class MainActivity : ComponentActivity() {
                 Tab(tab == 0, { tab = 0 }, text = { Text("Letra") })
                 Tab(tab == 1, { tab = 1 }, text = { Text("Ajustes") })
             }
-            if (!pre.running && tools) {
-                PillTonal({ fromPhone() }, Modifier.fillMaxWidth()) { Text("Bajar letras de la música del teléfono", fontSize = 12.sp) }
-                Text("Para tu biblioteca de Qobuz: en QBDLX Mobile → Ajustes → «Enviar lista de canciones a Q Lyrics».", fontSize = 11.sp)
-            }
-            if (state.status == Status.NO_ACCESS) {
+            if (tools) {
+                val sp = getSharedPreferences("lyrics", MODE_PRIVATE)
+                val savedCount by Tracker.saved.collectAsState()
+                val isSaved = state.track?.let { (LyricsStore.has(it.storeKey) || LyricsStore.has(it.key)) } == true && savedCount >= 0
+                var karaoke by remember { mutableStateOf(Tracker.karaoke) }
+                var lead by remember { mutableLongStateOf(Tracker.carLeadMs) }
+                var floating by remember { mutableStateOf(FloatingService.running) }
+                val small = MaterialTheme.typography.bodySmall
+                Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    QCard(Modifier.fillMaxWidth()) {
+                        Text("Esta canción", fontWeight = FontWeight.Bold)
+                        Text(state.track?.let { "${it.title} — ${it.artist}" } ?: "Pon una canción en tu app de música.", Modifier.padding(top = 4.dp))
+                        Text(when (state.status) {
+                            Status.NO_ACCESS -> "Falta el acceso a notificaciones para saber qué suena."
+                            Status.LOADING -> "Buscando la letra…"
+                            Status.NOT_FOUND -> "No hay letra para esta canción."
+                            Status.ERROR -> "No se pudo cargar la letra (${Tracker.lastError}). Se reintenta sola."
+                            Status.PLAIN -> "Solo hay letra sin sincronizar."
+                            Status.SYNCED -> "Letra sincronizada."
+                            else -> ""
+                        }, Modifier.padding(top = 4.dp), style = small)
+                        if (state.status == Status.NO_ACCESS) PillButton({ startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }, Modifier.padding(top = 8.dp)) { Text("Dar acceso") }
+                        if (isSaved) Row(Modifier.padding(top = 4.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                            Text("Letra guardada en el teléfono: no se vuelve a buscar.", Modifier.weight(1f), style = small)
+                            TextButton({ Tracker.forgetAndSearch() }) { Text("Buscar de nuevo") }
+                        }
+                    }
+                    QCard(Modifier.fillMaxWidth()) {
+                        Text("Letras del teléfono", fontWeight = FontWeight.Bold)
+                        Text("Baja de una vez las letras de toda tu música. Para tu biblioteca de Qobuz: en QBDLX Mobile → Ajustes → «Enviar lista de canciones a Q Lyrics».", Modifier.padding(vertical = 6.dp), style = small)
+                        if (!pre.running) PillTonal({ fromPhone() }, Modifier.fillMaxWidth()) { Text("Bajar letras de la música del teléfono", fontSize = 12.sp) }
+                        else Text("Descargando… mira el avance arriba.", style = small)
+                    }
+                    QCard(Modifier.fillMaxWidth()) {
+                        Text("Sincronía y karaoke", fontWeight = FontWeight.Bold)
+                        Row(Modifier.padding(top = 6.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                            Text("Sincronía: $offset ms", Modifier.weight(1f))
+                            TextButton({ setOffset((offset - 250).coerceIn(-10_000, 10_000)) }) { Text("−", fontSize = 20.sp) }
+                            TextButton({ setOffset((offset + 250).coerceIn(-10_000, 10_000)) }) { Text("+", fontSize = 20.sp) }
+                        }
+                        Text("Si la letra va adelantada o atrasada, ajústala aquí (pasos de 250 ms). Más rápido: en la pestaña Letra, mantén pulsada la línea que está sonando.", style = small)
+                        Row(Modifier.padding(top = 10.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                            Text("Relleno tipo karaoke", Modifier.weight(1f))
+                            androidx.compose.material3.Switch(karaoke, { karaoke = it; Tracker.karaoke = it; sp.edit().putBoolean("karaoke", it).apply() })
+                        }
+                        Text("Pinta la línea palabra por palabra mientras se canta (aproximado).", style = small)
+                    }
+                    QCard(Modifier.fillMaxWidth()) {
+                        Text("Android Auto", fontWeight = FontWeight.Bold)
+                        Row(Modifier.padding(top = 6.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                            Text("Adelanto: $lead ms", Modifier.weight(1f))
+                            TextButton({ lead = (lead - 250).coerceIn(0, 4000); Tracker.carLeadMs = lead; sp.edit().putLong("car_lead", lead).apply() }) { Text("−", fontSize = 20.sp) }
+                            TextButton({ lead = (lead + 250).coerceIn(0, 4000); Tracker.carLeadMs = lead; sp.edit().putLong("car_lead", lead).apply() }) { Text("+", fontSize = 20.sp) }
+                        }
+                        Text("Si en el coche la letra llega tarde, sube el adelanto; si llega antes de tiempo, bájalo. La sincronía de arriba también cuenta en el coche.", style = small)
+                    }
+                    QCard(Modifier.fillMaxWidth()) {
+                        Text("Ventana flotante", fontWeight = FontWeight.Bold)
+                        Text("Muestra la línea actual encima de otras apps.", Modifier.padding(vertical = 6.dp), style = small)
+                        PillTonal({
+                            if (!Settings.canDrawOverlays(this@MainActivity))
+                                startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:$packageName"))) // then tap the button again
+                            else { FloatingService.toggle(this@MainActivity); floating = !floating }
+                        }) { Text(if (floating) "Cerrar ventana flotante" else "Abrir ventana flotante") }
+                    }
+                }
+            } else if (state.status == Status.NO_ACCESS) {
                 Text("Para saber qué canción suena, la app necesita «Acceso a notificaciones». Actívalo para Q Lyrics (no lee tus notificaciones, solo la canción en reproducción).")
                 Button({ startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }) { Text("Dar acceso") }
             } else {
                 state.track?.let { Text("${it.title} — ${it.artist}", fontWeight = FontWeight.SemiBold, maxLines = 1, modifier = Modifier.basicMarquee()) }
                     ?: Text("Pon una canción en tu app de música.")
-                val savedCount by Tracker.saved.collectAsState()
-                val isSaved = state.track?.let { (LyricsStore.has(it.storeKey) || LyricsStore.has(it.key)) } == true && savedCount >= 0
-                if (tools && isSaved) Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Letra guardada en el teléfono: no se vuelve a buscar.", Modifier.weight(1f), fontSize = 12.sp)
-                    TextButton({ Tracker.forgetAndSearch() }) { Text("Buscar de nuevo") }
-                }
                 if (state.status == Status.LOADING) Text("Buscando la letra…")
                 if (state.status == Status.NOT_FOUND) Text("No hay letra para esta canción.")
                 if (state.status == Status.ERROR) Text("No se pudo cargar la letra (${Tracker.lastError}). Se reintenta sola.")
@@ -199,34 +257,6 @@ class MainActivity : ComponentActivity() {
                         TextButton({ if (marks.isNotEmpty()) finish() else tagging = false }) { Text(if (marks.isNotEmpty()) "Guardar" else "Cancelar") }
                     }
                 }
-                // Same control as in QBDLX Mobile's lyrics page: "Sincronía: N ms" with − / + in steps of 250 ms, limited to ±10 s.
-                if (tools && state.status == Status.SYNCED) Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    Text("Sincronía: ${offset} ms", Modifier.weight(1f), fontSize = 12.sp)
-                    TextButton({ setOffset((offset - 250).coerceIn(-10_000, 10_000)) }) { Text("−", fontSize = 20.sp) }
-                    TextButton({ setOffset((offset + 250).coerceIn(-10_000, 10_000)) }) { Text("+", fontSize = 20.sp) }
-                }
-                if (tools && state.status == Status.SYNCED) Text("Para sincronizar: en la pestaña Letra, mantén pulsada la línea que está sonando.", fontSize = 11.sp)
-                if (tools) {
-                    val sp = getSharedPreferences("lyrics", MODE_PRIVATE)
-                    var karaoke by remember { mutableStateOf(Tracker.karaoke) }
-                    var lead by remember { mutableLongStateOf(Tracker.carLeadMs) }
-                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                        Text("Relleno tipo karaoke (palabra por palabra, aproximado)", Modifier.weight(1f), fontSize = 13.sp)
-                        androidx.compose.material3.Switch(karaoke, { karaoke = it; Tracker.karaoke = it; sp.edit().putBoolean("karaoke", it).apply() })
-                    }
-                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                        Text("Adelanto en Android Auto: $lead ms", Modifier.weight(1f), fontSize = 13.sp)
-                        TextButton({ lead = (lead - 250).coerceIn(0, 4000); Tracker.carLeadMs = lead; sp.edit().putLong("car_lead", lead).apply() }) { Text("−", fontSize = 20.sp) }
-                        TextButton({ lead = (lead + 250).coerceIn(0, 4000); Tracker.carLeadMs = lead; sp.edit().putLong("car_lead", lead).apply() }) { Text("+", fontSize = 20.sp) }
-                    }
-                    Text("Si en el coche la letra llega tarde, sube el adelanto; si llega antes de tiempo, bájalo. La sincronía de arriba también cuenta en el coche.", fontSize = 11.sp)
-                }
-                var floating by remember { mutableStateOf(FloatingService.running) }
-                if (tools) PillTonal({
-                    if (!Settings.canDrawOverlays(this@MainActivity))
-                        startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:$packageName"))) // then tap the button again
-                    else { FloatingService.toggle(this@MainActivity); floating = !floating }
-                }) { Text(if (floating) "Cerrar ventana flotante" else "Ventana flotante con la letra") }
                 if (!tools && state.status == Status.SYNCED) Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     // Follow the audio again after browsing; while following it shows the state instead.
                     if (browsing) PillButton({ browsing = false }) { Text("Seguir audio") } else PillTonal({ browsing = true }) { Text("Siguiendo el audio ✓") }
