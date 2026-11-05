@@ -13,27 +13,36 @@ import java.net.URLEncoder
  * an English phrase stays as it is and only really foreign lines get a translation. The result is kept per lyric on the phone.
  */
 object Translator {
-    private fun cacheFile(context: Context, key: String) = File(File(context.applicationContext.filesDir, "tr").apply { mkdirs() }, key.hashCode().toUInt().toString(16) + ".json")
-
-    /** Translation (by line index) of the lines not in Spanish. Empty when nothing needs it or there is no connection. */
     @Volatile var lastError = ""
 
+    /** Every line ever asked (text -> [detected language, Spanish text]), kept on the phone: a repeated chorus, a song heard again or a retry after a cut connection never asks Google twice. */
+    private var memo: JSONObject? = null
+    private var unsaved = 0
+    private fun memoFile(context: Context) = File(context.applicationContext.filesDir, "tr-lines.json")
+    @Synchronized private fun memo(context: Context): JSONObject = memo ?: (runCatching { JSONObject(memoFile(context).readText()) }.getOrNull() ?: JSONObject()).also { memo = it }
+    @Synchronized private fun flush(context: Context) { runCatching { memoFile(context).writeText(memo(context).toString()) }; unsaved = 0 }
+
+    /** Translation (by line index) of the lines not in Spanish. Empty when nothing needs it or there is no connection; what was already translated is kept, so a retry only asks for the rest. */
     fun translate(context: Context, songKey: String, lines: List<String>, cancelled: () -> Boolean): Map<Int, String> {
         lastError = ""
-        val key = songKey + "|" + lines.joinToString("\n").hashCode()
-        val f = cacheFile(context, key)
-        runCatching { if (f.exists()) JSONObject(f.readText()).let { o -> if (o.optString("k") == key) return o.optJSONObject("t")?.let { t -> t.keys().asSequence().associate { it.toInt() to t.getString(it) } }.orEmpty() } }
+        val m = memo(context)
         val out = HashMap<Int, String>(); var failed = 0
-        for ((i, raw) in lines.withIndex()) {
-            if (cancelled()) return out
-            val text = raw.trim()
-            if (text.count { it.isLetter() } < 3) continue
-            val r = runCatching { one(text) }.onFailure { lastError = it.message ?: it.javaClass.simpleName }.getOrNull()
-            if (r == null) { if (++failed >= 3) return out; continue } // offline: try again another time, nothing saved
-            val (lang, tr) = r
-            if (!lang.startsWith("es") && tr.isNotBlank() && norm(tr) != norm(text)) out[i] = tr
-        }
-        runCatching { f.writeText(JSONObject().put("k", key).put("t", JSONObject().also { t -> out.forEach { (i, s) -> t.put(i.toString(), s) } }).toString()) }
+        try {
+            for ((i, raw) in lines.withIndex()) {
+                if (cancelled()) return out
+                val text = raw.trim()
+                if (text.count { it.isLetter() } < 3) continue
+                var e = synchronized(this) { m.optJSONArray(text) }
+                if (e == null) {
+                    val r = runCatching { one(text) }.onFailure { lastError = it.message ?: it.javaClass.simpleName }.getOrNull()
+                    if (r == null) { if (++failed >= 3) return out; continue } // offline: nothing saved for this line, asked again next time
+                    e = org.json.JSONArray().put(r.first).put(r.second)
+                    synchronized(this) { m.put(text, e); if (++unsaved >= 10) flush(context) }
+                }
+                val lang = e.optString(0); val tr = e.optString(1)
+                if (!lang.startsWith("es") && tr.isNotBlank() && norm(tr) != norm(text)) out[i] = tr
+            }
+        } finally { if (unsaved > 0) flush(context) }
         return out
     }
 
