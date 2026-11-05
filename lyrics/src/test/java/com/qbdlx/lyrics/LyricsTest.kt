@@ -107,3 +107,40 @@ class PrefetchTest {
         for (k in 0..3) assertTrue("line $k at ${out[k].timeMs} vs ${starts[k] + 0L}", kotlin.math.abs(out[k].timeMs - (starts[k] + 0)) < 900)
     }
 }
+
+class WhisperAlignTest {
+    private fun w(t: Long, s: String) = AsrWord(t, t + 300, s)
+
+    @Test fun whisperWordsTimeTheLyricLinesDespiteMistakes() {
+        val lines = listOf("Caminando por la calle", "buscando tu mirada", "y no te encuentro", "en ninguna parte")
+        val heard = listOf(
+            w(10_000, "[Música]"), w(12_000, "Caminando"), w(12_400, "por"), w(12_700, "la"), w(13_000, "calle,"),
+            w(16_000, "buscando"), w(16_400, "tu"), w(16_800, "mirara"), // misheard
+            w(20_000, "y"), w(20_300, "no"), w(20_600, "te"), w(20_900, "encuentro"),
+            w(24_000, "en"), w(24_300, "ninguna"), w(24_700, "parte"),
+        )
+        val r = WhisperAlign.align(lines, heard)!!
+        val expect = listOf(12_000L, 16_000L, 20_000L, 24_000L)
+        r.forEachIndexed { i, l -> assertTrue("line $i at ${l.timeMs}", kotlin.math.abs(l.timeMs - expect[i]) <= 400) }
+    }
+
+    @Test fun aLineWithNothingHeardIsPlacedBetweenItsNeighbours() {
+        val lines = listOf("uno dos tres cuatro", "palabras que nadie oyó", "cinco seis siete ocho")
+        val heard = listOf(w(1_000, "uno"), w(1_400, "dos"), w(1_800, "tres"), w(2_200, "cuatro"), w(9_000, "cinco"), w(9_400, "seis"), w(9_800, "siete"), w(10_200, "ocho"))
+        val r = WhisperAlign.align(lines, heard)!!
+        assertTrue(r[1].timeMs in 3_000..8_000)
+        assertTrue(r[0].timeMs < r[1].timeMs && r[1].timeMs < r[2].timeMs)
+    }
+
+    @Test fun tooLittleRecognisedIsNotTrusted() {
+        val lines = listOf("una letra larga que nada tiene que ver", "con lo que se escucha de verdad aquí")
+        assertNull(WhisperAlign.align(lines, listOf(w(0, "la"), w(500, "la"), w(900, "la"))))
+    }
+
+    @Test fun parsesTheNativeAnswer() {
+        val asr = Whisper.parse("lang=es\n1200\t1500\t Hola\n1600\t1900\t mundo\n")!!
+        assertEquals("es", asr.lang)
+        assertEquals(listOf("Hola", "mundo"), asr.words.map { it.text })
+        assertEquals(1200L, asr.words[0].startMs)
+    }
+}

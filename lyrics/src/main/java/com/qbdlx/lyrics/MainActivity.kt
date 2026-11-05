@@ -199,6 +199,7 @@ class MainActivity : ComponentActivity() {
                 var karaoke by remember { mutableStateOf(Tracker.karaoke) }
                 var lead by remember { mutableLongStateOf(Tracker.carLeadMs) }
                 var floating by remember { mutableStateOf(FloatingService.running) }
+                val whisperOk = remember { Whisper.available(this@MainActivity) }
                 var pipAuto by remember { mutableStateOf(pipOn()) }
                 val small = MaterialTheme.typography.bodySmall
                 Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -251,6 +252,7 @@ class MainActivity : ComponentActivity() {
                             else -> ""
                         }, Modifier.padding(top = 4.dp), style = small)
                         if (state.status == Status.NO_ACCESS) PillButton({ startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }, Modifier.padding(top = 8.dp)) { Text("Dar acceso") }
+                        if (whisperOk && (state.status == Status.SYNCED || state.status == Status.PLAIN)) PillTonal({ Tracker.timeFromWhisper() }, Modifier.padding(top = 8.dp)) { Text("Resincronizar con la voz (Whisper)", fontSize = 12.sp) }
                         if (isSaved) Row(Modifier.padding(top = 4.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                             Text("Letra guardada en el teléfono: no se vuelve a buscar.", Modifier.weight(1f), style = small)
                             TextButton({ Tracker.forgetAndSearch() }) { Text("Buscar de nuevo") }
@@ -275,8 +277,14 @@ class MainActivity : ComponentActivity() {
                 if (state.status == Status.PLAIN) Text(
                     if (tagging) "Pulsa el botón justo cuando empiece a cantarse la línea resaltada." else "Solo hay letra sin sincronizar.", fontSize = 12.sp)
                 val timingMsg by Tracker.timing.collectAsState()
+                val whisperOk = remember { Whisper.available(this@MainActivity) }
                 LaunchedEffect(state.track?.key) { Tracker.timing.value = null }
-                if (state.status == Status.PLAIN) timingMsg?.let { Text(it, fontSize = 12.sp) }
+                timingMsg?.let { m ->
+                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        Text(m, Modifier.weight(1f), fontSize = 12.sp)
+                        if (m.endsWith("…") || m.endsWith("minutos.")) TextButton({ Tracker.cancelTiming() }) { Text("Cancelar") }
+                    }
+                }
                 if (!tools && state.status == Status.PLAIN) {
                     fun finish() {
                         // lines left unmarked follow the last mark, three seconds apart
@@ -286,6 +294,7 @@ class MainActivity : ComponentActivity() {
                     }
                     if (!tagging) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         PillButton({ Tracker.timeFromAudio() }, enabled = timingMsg == null || !timingMsg!!.endsWith("…")) { Text("Detectar con el audio") }
+                        if (whisperOk) PillButton({ Tracker.timeFromWhisper() }, enabled = timingMsg == null || !(timingMsg!!.endsWith("…") || timingMsg!!.endsWith("minutos."))) { Text("Alinear con la voz (Whisper)") }
                         PillTonal({ Tracker.saveTimed(Lrc.estimate(state.lines, state.track?.durationMs ?: 0L)) }) { Text("Estimar tiempos solo") }
                         PillButton({ marks.clear(); tagging = true }) { Text("Marcar mientras suena") }
                     }

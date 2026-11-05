@@ -65,6 +65,33 @@ object Tracker {
         }
     }
 
+    /** Whisper: listens to the song's audio file, matches the words it hears to the lyric and times every line. Works on synced or unsynced lyrics. */
+    fun timeFromWhisper() {
+        val ctx = app ?: return
+        val t = _state.value.track ?: return
+        val lines = _state.value.lines.map { it.text }
+        if ((_state.value.status != Status.PLAIN && _state.value.status != Status.SYNCED) || timingJob?.isActive == true) return
+        timingJob = scope.launch {
+            timing.value = "Buscando el archivo de la canción…"
+            val result = withContext(Dispatchers.Default) {
+                if (!Whisper.available(ctx)) return@withContext "Whisper no está en esta versión de la app."
+                val uri = AudioTiming.find(ctx, t.title, t.artist, t.durationMs)
+                    ?: return@withContext "No encuentro esta canción como archivo en el teléfono (o falta el permiso de audio)."
+                withContext(Dispatchers.Main) { timing.value = "Preparando el audio…" }
+                val pcm = Whisper.pcm16k(ctx, uri, cancelled = { !isActive }) ?: return@withContext "No se pudo leer el audio de ese archivo."
+                withContext(Dispatchers.Main) { timing.value = "Whisper está escuchando la canción… puede tardar unos minutos." }
+                val asr = Whisper.transcribe(ctx, pcm) ?: return@withContext if (!isActive) "Cancelado." else "Whisper no pudo con esta canción."
+                val timed = WhisperAlign.align(lines, asr.words)
+                    ?: return@withContext "Whisper entendió muy poco de la voz (${asr.words.size} palabras, idioma ${asr.lang}). Prueba «Detectar con el audio»."
+                withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key) saveTimed(timed) }
+                null
+            }
+            timing.value = result ?: "Listo: letra sincronizada con la voz."
+        }
+    }
+
+    fun cancelTiming() { Whisper.cancel(); timingJob?.cancel(); timing.value = "Cancelado." }
+
     /** The playing app's colour (ARGB, 0 when unknown): its notification's colour, else the cover's main colour. */
     val accent = MutableStateFlow(0)
     private var accentKey: String? = null
