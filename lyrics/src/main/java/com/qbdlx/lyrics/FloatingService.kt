@@ -16,7 +16,8 @@ import android.widget.TextView
 import kotlinx.coroutines.*
 
 /**
- * A small window over any app that shows the line being sung and the next one. Drag it to move it, ↔ resizes it, A+/A− change the text size; the ✕ closes it.
+ * A small window over any app. Like Shazam's: a round cover button with the line being sung in a bar beside it (tap the button to fold it to just the button);
+ * the ▭/⤢ handle switches to the bigger panel with the next line too. Drag it to move it, ↔ resizes it, A+/A− change the text size; the ✕ closes it.
  * Needs Android's "Display over other apps" permission, which the person gives in Settings.
  */
 class FloatingService : Service() {
@@ -44,7 +45,7 @@ class FloatingService : Service() {
         val next = TextView(this).apply { setTextColor(Color.argb(180, 255, 255, 255)); textSize = 14f; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
         val close = TextView(this).apply { text = "✕"; setTextColor(Color.argb(200, 255, 255, 255)); textSize = 16f; setPadding((10 * dp).toInt(), (6 * dp).toInt(), (10 * dp).toInt(), (6 * dp).toInt()); setOnClickListener { stopSelf() } }
         var scale = prefs.getFloat("float_scale", 1f)
-        fun applyScale() { now.textSize = 18f * scale; next.textSize = 14f * scale }
+        fun applyScale() { now.textSize = (if (prefs.getBoolean("float_bar", true)) 15f else 18f) * scale; next.textSize = 14f * scale }
         applyScale()
         fun tool(label: String) = TextView(this).apply { text = label; setTextColor(Color.argb(220, 255, 255, 255)); textSize = 16f; gravity = Gravity.CENTER; setPadding((10 * dp).toInt(), (6 * dp).toInt(), (10 * dp).toInt(), (6 * dp).toInt()) }
         fun relayout() { runCatching { wm.updateViewLayout(view, params) } }
@@ -65,40 +66,74 @@ class FloatingService : Service() {
                 true
             }
         }
-        val tools = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.END; addView(close); addView(bigger); addView(smaller); addView(resize) }
-        val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; addView(now); addView(next) }
+        var bar = prefs.getBoolean("float_bar", true)
+        var folded = prefs.getBoolean("float_min", false)
+        val bubble = android.widget.ImageView(this).apply {
+            scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.argb(255, 40, 40, 40)) }
+            clipToOutline = true; outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
+        }
+        val modeBtn = tool("▭")
+        val tools = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.END; addView(close); addView(modeBtn); addView(bigger); addView(smaller); addView(resize) }
+        val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL; addView(now); addView(next) }
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding((16 * dp).toInt(), (12 * dp).toInt(), (12 * dp).toInt(), (12 * dp).toInt())
-            addView(texts, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            gravity = Gravity.CENTER_VERTICAL
+            addView(bubble, LinearLayout.LayoutParams((46 * dp).toInt(), (46 * dp).toInt()))
+            addView(texts, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = (10 * dp).toInt() })
             addView(tools)
         }
-        val bg = CoverBackground(18 * dp)
-        root.background = bg
+        val bg = CoverBackground(if (bar) 30 * dp else 18 * dp)
+        fun applyLayout() {
+            val full = !folded
+            texts.visibility = if (full) View.VISIBLE else View.GONE
+            tools.visibility = if (full) View.VISIBLE else View.GONE
+            modeBtn.text = if (bar) "⤢" else "▭"
+            bigger.visibility = if (bar) View.GONE else View.VISIBLE
+            smaller.visibility = bigger.visibility; resize.visibility = bigger.visibility
+            now.maxLines = if (bar) 1 else 2
+            now.ellipsize = if (bar) android.text.TextUtils.TruncateAt.END else null
+            now.textSize = (if (bar) 15f else 18f) * scale
+            root.background = if (full) bg else null
+            val pad = if (full) 8 else 0
+            val vp = (if (bar) pad else 12) * dp
+            root.setPadding((pad * dp).toInt(), vp.toInt(), ((if (bar) 4 else 12) * dp).toInt(), vp.toInt())
+            params.width = if (full) prefs.getInt("float_w", (resources.displayMetrics.widthPixels * 0.86f).toInt()) else WindowManager.LayoutParams.WRAP_CONTENT
+            relayout()
+        }
+        modeBtn.setOnClickListener { bar = !bar; prefs.edit().putBoolean("float_bar", bar).apply(); applyLayout() }
 
         var downX = 0f; var downY = 0f; var startX = 0; var startY = 0
         root.setOnTouchListener { _, e ->
             when (e.action) {
                 MotionEvent.ACTION_DOWN -> { downX = e.rawX; downY = e.rawY; startX = params.x; startY = params.y }
                 MotionEvent.ACTION_MOVE -> { params.x = startX + (e.rawX - downX).toInt(); params.y = startY + (e.rawY - downY).toInt(); runCatching { wm.updateViewLayout(root, params) } }
-                MotionEvent.ACTION_UP -> prefs.edit().putInt("float_x", params.x).putInt("float_y", params.y).apply()
+                MotionEvent.ACTION_UP -> {
+                    prefs.edit().putInt("float_x", params.x).putInt("float_y", params.y).apply()
+                    // a tap (no drag) on the round button folds the bar to just the button, and opens it again
+                    val tap = Math.abs(e.rawX - downX) < 8 * dp && Math.abs(e.rawY - downY) < 8 * dp
+                    if (tap && e.x <= bubble.right + 6 * dp) { folded = !folded; prefs.edit().putBoolean("float_min", folded).apply(); applyLayout() }
+                }
             }
             true
         }
         wm.addView(root, params)
         view = root
+        applyLayout()
 
         var litNow = 0; var litShown = -1
+        var bubbleCover: android.graphics.Bitmap? = null
         scope.launch {
             while (isActive) {
                 val state = Tracker.state.value
                 val color = Tracker.accent.value.takeIf { it != 0 } ?: 0xFF455A64.toInt()
                 // the notification's colour, darkened so white text stays readable
                 bg.update(Color.argb(255, (Color.red(color) * 0.55f).toInt(), (Color.green(color) * 0.55f).toInt(), (Color.blue(color) * 0.55f).toInt()), Tracker.cover)
+                if (bubbleCover !== Tracker.cover) { bubbleCover = Tracker.cover; bubble.setImageBitmap(bubbleCover) }
                 val fg = if (bg.light) Color.rgb(20, 20, 20) else Color.WHITE
                 if (now.currentTextColor != fg) {
                     now.setTextColor(fg); next.setTextColor(Color.argb(190, Color.red(fg), Color.green(fg), Color.blue(fg)))
-                    close.setTextColor(fg); bigger.setTextColor(fg); smaller.setTextColor(fg); resize.setTextColor(fg)
+                    close.setTextColor(fg); modeBtn.setTextColor(fg); bigger.setTextColor(fg); smaller.setTextColor(fg); resize.setTextColor(fg)
                 }
                 val (a, b) = when (state.status) {
                     Status.SYNCED -> {
@@ -122,7 +157,7 @@ class FloatingService : Service() {
                     } else a
                 }
                 if (next.text.toString() != b) next.text = b
-                next.visibility = if (b.isBlank()) View.GONE else View.VISIBLE
+                next.visibility = if (b.isBlank() || bar) View.GONE else View.VISIBLE
                 delay(250)
             }
         }

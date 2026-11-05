@@ -236,7 +236,7 @@ class MainActivity : ComponentActivity() {
                             if (!Settings.canDrawOverlays(this@MainActivity))
                                 startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:$packageName"))) // then tap the button again
                             else { FloatingService.toggle(this@MainActivity); floating = !floating }
-                        }) { Text(if (floating) "Cerrar la ventana sobre otras apps" else "Ventana sobre otras apps (modo antiguo)", fontSize = 12.sp) }
+                        }) { Text(if (floating) "Cerrar el botón con barra" else "Botón con barra sobre otras apps", fontSize = 12.sp) }
                     }
                     QCard(Modifier.fillMaxWidth()) {
                         Text("Esta canción", fontWeight = FontWeight.Bold)
