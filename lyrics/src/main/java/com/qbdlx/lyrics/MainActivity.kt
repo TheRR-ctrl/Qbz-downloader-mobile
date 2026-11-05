@@ -32,6 +32,8 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.delay
 
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
@@ -156,6 +158,68 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /** Asks before another lyric (found by listening to the song) replaces the one the user has. */
+    @Composable
+    private fun SuggestionBanner(track: TrackInfo?) {
+        val sg by Tracker.suggestion.collectAsState()
+        val s = sg ?: return
+        if (track == null || s.trackKey != track.key) return
+        QCard(Modifier.fillMaxWidth()) {
+            Text("¿Cambiar la letra?", fontWeight = FontWeight.Bold)
+            Text("Encontré otra letra en ${s.source} que coincide mejor con lo que se oye en la canción que la que tienes. Empieza así:", style = MaterialTheme.typography.bodySmall)
+            Text(s.lines.map { it.text }.filter { it.isNotBlank() }.take(2).joinToString("\n"), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                PillButton({ Tracker.acceptSuggestion() }) { Text("Cambiarla", maxLines = 1, softWrap = false) }
+                TextButton({ Tracker.declineSuggestion() }) { Text("Dejar la mía") }
+            }
+        }
+    }
+
+    private class EditRow(val line: LyricLine, text: String) { var text by mutableStateOf(text) }
+
+    /** Full-screen editor: fix the words of any line, delete a line, or change a misheard word everywhere. Times are kept. */
+    @Composable
+    private fun LyricsEditor(state: LyricsState, onClose: () -> Unit) {
+        val synced = state.status == Status.SYNCED
+        val rows = remember { mutableStateListOf<EditRow>().also { l -> state.lines.forEach { l.add(EditRow(it, it.text)) } } }
+        var from by remember { mutableStateOf("") }
+        var to by remember { mutableStateOf("") }
+        var note by remember { mutableStateOf<String?>(null) }
+        fun current() = rows.map { LyricLine(it.line.timeMs, it.text, it.line.endMs) }
+        Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+            Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Editar la letra", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                    Text(state.track?.let { "${it.title} — ${it.artist}" }.orEmpty(), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                    Text("Corrige las palabras de cualquier línea; los tiempos no cambian. Si una palabra salió mal varias veces, cámbiala en toda la letra:", style = MaterialTheme.typography.bodySmall)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        OutlinedTextField(from, { from = it }, Modifier.weight(1f), singleLine = true, label = { Text("Palabra") })
+                        OutlinedTextField(to, { to = it }, Modifier.weight(1f), singleLine = true, label = { Text("Por") })
+                        TextButton({
+                            val (out, n) = LyricEdit.replaceWord(current(), from, to)
+                            out.forEachIndexed { i, l -> rows[i].text = l.text }
+                            note = if (n == 0) "No encontré «${from.trim()}»." else "Cambiadas $n veces."
+                        }, enabled = from.isNotBlank()) { Text("Cambiar") }
+                    }
+                    note?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary) }
+                    LazyColumn(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        itemsIndexed(rows, key = { _, r -> System.identityHashCode(r) }) { _, r ->
+                            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                if (synced) Text("%d:%02d".format(r.line.timeMs / 60000, r.line.timeMs / 1000 % 60), Modifier.width(40.dp), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                OutlinedTextField(r.text, { r.text = it }, Modifier.weight(1f), textStyle = androidx.compose.ui.text.TextStyle(fontSize = 15.sp), placeholder = { Text("♪ (pausa)") })
+                                TextButton({ rows.remove(r) }) { Text("✕") }
+                            }
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        PillButton({ Tracker.saveEdited(current()); onClose() }, Modifier.weight(1f), enabled = rows.isNotEmpty()) { Text("Guardar", maxLines = 1, softWrap = false) }
+                        TextButton(onClose) { Text("Cancelar") }
+                    }
+                }
+            }
+        }
+    }
+
     @Composable
     @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
     private fun Screen(offset: Long, setOffset: (Long) -> Unit) {
@@ -164,6 +228,9 @@ class MainActivity : ComponentActivity() {
         LaunchedEffect(Unit) { while (true) { pos = Tracker.positionMs(); delay(200) } }
         // Tap-timing of a lyric that has no times: one tap per line as it starts to be sung.
         var tagging by remember { mutableStateOf(false) }
+        var editing by remember { mutableStateOf(false) }
+        LaunchedEffect(state.track?.key) { editing = false }
+        if (editing && (state.status == Status.SYNCED || state.status == Status.PLAIN)) LyricsEditor(state) { editing = false }
         val marks = remember { androidx.compose.runtime.mutableStateListOf<Long>() }
         LaunchedEffect(state.track?.key, state.status) { tagging = false; marks.clear() }
         val idx = if (state.status == Status.SYNCED) Lrc.indexAt(state.lines, pos)
@@ -325,6 +392,8 @@ class MainActivity : ComponentActivity() {
                             else -> ""
                         }, Modifier.padding(top = 4.dp), style = small)
                         if (state.status == Status.NO_ACCESS) PillButton({ startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }, Modifier.padding(top = 8.dp)) { Text("Dar acceso") }
+                        SuggestionBanner(state.track)
+                        if (state.status == Status.SYNCED || state.status == Status.PLAIN) PillTonal({ editing = true }, Modifier.padding(top = 8.dp)) { Text("Editar la letra (palabras)", fontSize = 12.sp) }
                         if (whisperOk && (state.status == Status.SYNCED || state.status == Status.PLAIN)) PillTonal({ Tracker.timeFromWhisper() }, Modifier.padding(top = 8.dp)) { Text("Resincronizar con la voz (Whisper)", fontSize = 12.sp) }
                         if (isSaved) Row(Modifier.padding(top = 4.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                             Text("Letra guardada en el teléfono: no se vuelve a buscar.", Modifier.weight(1f), style = small)
@@ -345,7 +414,10 @@ class MainActivity : ComponentActivity() {
                 state.track?.let { Text("${it.title} — ${it.artist}", fontWeight = FontWeight.SemiBold, maxLines = 1, modifier = Modifier.basicMarquee()) }
                     ?: Text("Pon una canción en tu app de música.")
                 if (state.status == Status.LOADING) Text("Buscando la letra…")
-                if (state.status == Status.NOT_FOUND) Text("No hay letra para esta canción.")
+                if (state.status == Status.NOT_FOUND) Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    Text("No hay letra para esta canción (no se vuelve a buscar en 2 días).", Modifier.weight(1f))
+                    TextButton({ Tracker.forgetAndSearch() }) { Text("Buscar de nuevo") }
+                }
                 if (state.status == Status.ERROR) Text("No se pudo cargar la letra (${Tracker.lastError}). Se reintenta sola.")
                 if (state.status == Status.PLAIN) Text(
                     if (tagging) "Pulsa el botón justo cuando empiece a cantarse la línea resaltada." else "Solo hay letra sin sincronizar.", fontSize = 12.sp)
@@ -360,6 +432,7 @@ class MainActivity : ComponentActivity() {
                         if (m.endsWith("…") || m.endsWith("minutos.")) TextButton({ Tracker.cancelTiming() }) { Text("Cancelar") }
                     }
                 }
+                SuggestionBanner(state.track)
                 if (state.status == Status.NOT_FOUND && whisperOk && state.track != null && timingMsg?.let { it.endsWith("…") || it.endsWith("minutos.") } != true)
                     PillButton({ Tracker.writeWithWhisper() }, Modifier.padding(top = 8.dp)) { Text("Escribir la letra con Whisper", maxLines = 1, softWrap = false) }
                 if (!tools && state.status == Status.PLAIN) {
@@ -389,6 +462,7 @@ class MainActivity : ComponentActivity() {
                     // Follow the audio again after browsing; while following it shows the state instead.
                     if (state.status == Status.SYNCED && whisperOk) PillTonal({ Tracker.timeFromWhisper() }, enabled = timingMsg == null || !(timingMsg!!.endsWith("…") || timingMsg!!.endsWith("minutos."))) { Text("Resincronizar con la voz", maxLines = 1, softWrap = false) }
                     if (state.status == Status.SYNCED) { if (browsing) PillButton({ browsing = false }) { Text("Seguir audio", maxLines = 1, softWrap = false) } else PillTonal({ browsing = true }) { Text("Siguiendo el audio ✓", maxLines = 1, softWrap = false) } }
+                    if (state.status == Status.SYNCED || state.status == Status.PLAIN) PillTonal({ editing = true }) { Text("Editar letra", maxLines = 1, softWrap = false) }
                     PillTonal({ enterPip() }) { Text("Ventana flotante", maxLines = 1, softWrap = false) }
                 }
                 if (!tools) BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {

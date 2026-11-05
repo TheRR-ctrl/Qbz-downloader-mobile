@@ -231,3 +231,21 @@ class CarTranslationTest {
         org.junit.Assert.assertEquals(listOf("▶ Hola mundo", "Tres"), rows.map { it.title })
     }
 }
+
+class LyricEditTest {
+    private val ls = listOf(LyricLine(1000, "Te quiero mucho, mucho", 3000), LyricLine(5000, "muchos besos"), LyricLine(9000, "Mucho más"))
+    @org.junit.Test fun replacesWholeWordsOnly() {
+        val (out, n) = LyricEdit.replaceWord(ls, "mucho", "tanto")
+        org.junit.Assert.assertEquals(3, n)
+        org.junit.Assert.assertEquals(listOf("Te quiero tanto, tanto", "muchos besos", "tanto más"), out.map { it.text })
+        org.junit.Assert.assertEquals(listOf(1000L, 5000L, 9000L), out.map { it.timeMs })
+        org.junit.Assert.assertEquals(3000L, out[0].endMs)
+    }
+    @org.junit.Test fun emptyWordChangesNothing() = org.junit.Assert.assertEquals(0, LyricEdit.replaceWord(ls, "  ", "x").second)
+    @org.junit.Test fun editedSourceLabel() {
+        org.junit.Assert.assertEquals("editada", LyricEdit.editedSource(null))
+        org.junit.Assert.assertEquals("LRCLIB · editada", LyricEdit.editedSource("LRCLIB"))
+        org.junit.Assert.assertEquals("LRCLIB · editada", LyricEdit.editedSource("LRCLIB · editada"))
+        org.junit.Assert.assertTrue(LyricEdit.isEdited("x · editada"))
+    }
+}

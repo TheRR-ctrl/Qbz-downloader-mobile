@@ -42,6 +42,8 @@ object LyricsStore {
     }
     @Synchronized fun missedRecently(key: String) = System.currentTimeMillis() - missing().optLong(key, 0L) < 2L * 24 * 3600 * 1000
     @Synchronized fun markMissing(key: String) { missing().put(key, System.currentTimeMillis()) }
+    /** The song may be searched again right away (the user asked for it). */
+    @Synchronized fun unmarkMissing(key: String) { if (missing().has(key)) { missing().remove(key); flushMissing() } }
     @Synchronized fun flushMissing() { runCatching { missFile?.writeText(miss.toString()) } }
 
     @Synchronized fun remove(key: String) {
