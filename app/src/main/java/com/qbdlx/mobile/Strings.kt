@@ -282,6 +282,9 @@ interface Strings {
     val crossfadeDesc: String
     val crossfadeOff: String
     val bitPerfectTitle: String
+    val usbDiagButton: String
+    val usbDiagCopy: String
+    val usbDiagClose: String
     val bitPerfectDesc: String
     fun bitPerfectStatus(st: BitPerfectState): String
     fun seconds(n: Int): String
@@ -763,6 +766,9 @@ object English : Strings {
     override val crossfadeDesc = "Songs always follow each other without a gap. With a fade, the end of one song fades out while the next fades in. Off by default; very short songs fade less."
     override val crossfadeOff = "Off"
     override val bitPerfectTitle = "Bit-perfect USB output"
+    override val usbDiagButton = "Diagnose USB output"
+    override val usbDiagCopy = "Copy"
+    override val usbDiagClose = "Close"
     override val bitPerfectDesc = "Sends each song to a USB DAC at its own sample rate and bit depth, without Android resampling it. Needs Android 14 or newer and a USB DAC. Turns off the fade and gapless changes of sample rate; for 24-bit pick a Hi-Res quality in the player. Equalizers and sound effects must be off."
     override fun bitPerfectStatus(st: BitPerfectState): String {
         val fmt = "${st.bits}-bit / ${st.sampleRate / 1000.0} kHz"
@@ -1269,6 +1275,9 @@ object Spanish : Strings {
     override val crossfadeDesc = "Las canciones siempre se encadenan sin pausa. Con fundido, el final de una baja de volumen mientras sube la siguiente. Apagado por defecto; las canciones muy cortas se funden menos."
     override val crossfadeOff = "Desactivado"
     override val bitPerfectTitle = "Salida USB bit-perfect"
+    override val usbDiagButton = "Diagnosticar salida USB"
+    override val usbDiagCopy = "Copiar"
+    override val usbDiagClose = "Cerrar"
     override val bitPerfectDesc = "Envía cada canción a un DAC USB con su propia frecuencia y profundidad de bits, sin que Android la remuestree. Necesita Android 14 o superior y un DAC USB. Quita el fundido y el cambio de frecuencia sin pausa; para 24 bits elige una calidad Hi-Res en el reproductor. Ecualizadores y efectos de sonido deben estar apagados."
     override fun bitPerfectStatus(st: BitPerfectState): String {
         val fmt = "${st.bits} bits / ${st.sampleRate / 1000.0} kHz"
