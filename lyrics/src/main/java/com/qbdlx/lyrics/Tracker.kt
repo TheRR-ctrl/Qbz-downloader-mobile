@@ -38,6 +38,33 @@ object Tracker {
     @Volatile var karaoke = true
     @Volatile var lastError = ""
 
+    /** What the audio timing is doing, for the screen: null when idle. */
+    val timing = MutableStateFlow<String?>(null)
+    private var timingJob: Job? = null
+    private var app: Context? = null
+
+    /** Times the current unsynced lyrics from the song's audio file on the phone; the result is saved like any synced lyric. */
+    fun timeFromAudio() {
+        val ctx = app ?: return
+        val t = _state.value.track ?: return
+        val lines = _state.value.lines.map { it.text }
+        if (_state.value.status != Status.PLAIN || timingJob?.isActive == true) return
+        timingJob = scope.launch {
+            timing.value = "Buscando el archivo de la canción…"
+            val result = withContext(Dispatchers.IO) {
+                val uri = AudioTiming.find(ctx, t.title, t.artist, t.durationMs)
+                    ?: return@withContext "No encuentro esta canción como archivo en el teléfono (o falta el permiso de audio). Prueba con «Estimar» o «Marcar mientras suena»."
+                withContext(Dispatchers.Main) { timing.value = "Analizando el audio…" }
+                val env = AudioTiming.envelope(ctx, uri, cancelled = { !isActive })
+                    ?: return@withContext "No se pudo leer el audio de ese archivo."
+                val timed = AudioTiming.align(env, lines)
+                withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key) saveTimed(timed) }
+                null
+            }
+            timing.value = result
+        }
+    }
+
     /** The playing app's colour (ARGB, 0 when unknown): its notification's colour, else the cover's main colour. */
     val accent = MutableStateFlow(0)
     private var accentKey: String? = null
@@ -56,6 +83,7 @@ object Tracker {
         if (started) return
         started = true
         val app = context.applicationContext
+        this.app = app
         LyricsStore.init(app)
         // The sync settings must be read here and not only when the screen opens: the car can start the service without the app ever being opened.
         app.getSharedPreferences("lyrics", Context.MODE_PRIVATE).let { p ->

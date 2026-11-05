@@ -95,4 +95,15 @@ class PrefetchTest {
         assertTrue(ls[0].timeMs < ls[1].timeMs && ls[1].timeMs < ls[2].timeMs && ls[2].timeMs < 180_000)
         assertEquals(ls.size, Lrc.parse(Lrc.toLrc(ls)).size)
     }
+
+    @Test fun audioTimingSnapsLinesToTheQuietGaps() {
+        // 40 ms frames: phrases of 2, 6, 3 and 5 s separated by 0.6 s of near silence, starting at 2 s
+        val spans = listOf(2.0, 6.0, 3.0, 5.0)
+        val env = ArrayList<Float>(); repeat(50) { env.add(0.0005f) }
+        val starts = ArrayList<Long>()
+        for (s in spans) { starts.add(env.size * 40L); repeat((s * 25).toInt()) { env.add(0.2f) }; repeat(15) { env.add(0.0005f) } }
+        repeat(100) { env.add(0.0005f) }
+        val out = AudioTiming.align(env.toFloatArray(), listOf("same length line", "same length line", "same length line", "same length line"))
+        for (k in 0..3) assertTrue("line $k at ${out[k].timeMs} vs ${starts[k] + 0L}", kotlin.math.abs(out[k].timeMs - (starts[k] + 0)) < 900)
+    }
 }

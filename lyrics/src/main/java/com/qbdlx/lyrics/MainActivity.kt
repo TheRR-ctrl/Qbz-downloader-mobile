@@ -174,6 +174,9 @@ class MainActivity : ComponentActivity() {
                 if (state.status == Status.ERROR) Text("No se pudo cargar la letra (${Tracker.lastError}). Se reintenta sola.")
                 if (state.status == Status.PLAIN) Text(
                     if (tagging) "Pulsa el botón justo cuando empiece a cantarse la línea resaltada." else "Solo hay letra sin sincronizar.", fontSize = 12.sp)
+                val timingMsg by Tracker.timing.collectAsState()
+                LaunchedEffect(state.track?.key) { Tracker.timing.value = null }
+                if (state.status == Status.PLAIN) timingMsg?.let { Text(it, fontSize = 12.sp) }
                 if (!tools && state.status == Status.PLAIN) {
                     fun finish() {
                         // lines left unmarked follow the last mark, three seconds apart
@@ -182,6 +185,7 @@ class MainActivity : ComponentActivity() {
                         Tracker.saveTimed(timed); tagging = false; marks.clear()
                     }
                     if (!tagging) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        PillButton({ Tracker.timeFromAudio() }, enabled = timingMsg == null || !timingMsg!!.endsWith("…")) { Text("Detectar con el audio") }
                         PillTonal({ Tracker.saveTimed(Lrc.estimate(state.lines, state.track?.durationMs ?: 0L)) }) { Text("Estimar tiempos solo") }
                         PillButton({ marks.clear(); tagging = true }) { Text("Marcar mientras suena") }
                     }
