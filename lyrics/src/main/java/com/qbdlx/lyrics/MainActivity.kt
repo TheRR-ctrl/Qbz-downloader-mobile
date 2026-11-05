@@ -253,8 +253,8 @@ class MainActivity : ComponentActivity() {
                             Status.LOADING -> "Buscando la letra…"
                             Status.NOT_FOUND -> "No hay letra para esta canción."
                             Status.ERROR -> "No se pudo cargar la letra (${Tracker.lastError}). Se reintenta sola."
-                            Status.PLAIN -> "Solo hay letra sin sincronizar."
-                            Status.SYNCED -> "Letra sincronizada."
+                            Status.PLAIN -> "Solo hay letra sin sincronizar." + (state.source?.let { " (de $it)" } ?: "")
+                            Status.SYNCED -> "Letra sincronizada." + (state.source?.let { " (de $it)" } ?: "")
                             else -> ""
                         }, Modifier.padding(top = 4.dp), style = small)
                         if (state.status == Status.NO_ACCESS) PillButton({ startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }, Modifier.padding(top = 8.dp)) { Text("Dar acceso") }

@@ -17,13 +17,14 @@ object LyricsStore {
 
     @Synchronized fun get(key: String): Lyrics? {
         val o = data.optJSONObject(key) ?: return null
-        return LrcLib.parseOne(o.let { JSONObject().put("syncedLyrics", it.optString("s")).put("plainLyrics", it.optString("p")) })
+        val l = LrcLib.parseOne(o.let { JSONObject().put("syncedLyrics", it.optString("s")).put("plainLyrics", it.optString("p")) }) ?: return null
+        return o.optString("src").takeIf { it.isNotBlank() }?.let { Lyrics(l.synced, l.plain, it) } ?: l
     }
 
     @Synchronized fun has(key: String) = data.has(key)
 
     @Synchronized fun put(key: String, l: Lyrics, flush: Boolean = true) {
-        data.put(key, JSONObject().put("s", l.synced ?: "").put("p", l.plain ?: ""))
+        data.put(key, JSONObject().put("s", l.synced ?: "").put("p", l.plain ?: "").put("src", l.source ?: ""))
         if (flush) flush()
     }
 

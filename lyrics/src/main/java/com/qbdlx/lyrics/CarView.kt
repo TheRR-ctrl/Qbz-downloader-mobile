@@ -13,6 +13,7 @@ class LyricsState(
     val track: TrackInfo? = null,
     val lines: List<LyricLine> = emptyList(),
     val playing: Boolean = false,
+    val source: String? = null,
 )
 
 /** What one row of the car's list shows. [current] marks the line being sung. */

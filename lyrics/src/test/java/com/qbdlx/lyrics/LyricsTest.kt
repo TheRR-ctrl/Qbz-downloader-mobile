@@ -155,3 +155,34 @@ class WhisperScriptTest {
         assertTrue(r[3].timeMs in 12_000..22_000)
     }
 }
+
+class YtMusicTest {
+    private fun item(vid: String, title: String, vararg details: String): String {
+        val runs = details.joinToString(",") { """{"text":"$it"}""" }
+        return """{"musicResponsiveListItemRenderer":{"playlistItemData":{"videoId":"$vid"},"flexColumns":[
+            {"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[{"text":"$title"}]}}},
+            {"musicResponsiveListItemFlexColumnRenderer":{"text":{"runs":[$runs]}}}]}}"""
+    }
+    private fun search(vararg items: String) = org.json.JSONObject("""{"contents":{"tabs":[{"sections":[${items.joinToString(",")}]}]}}""")
+
+    @Test fun picksTheSameSongNotAnotherVersion() {
+        val r = search(item("a", "POKITO (Remix)", "Song", "Otro Artista", "3:00"), item("b", "POKITO", "Song", "Daddy Yankee", "Diljit Dosanjh", "2:49"))
+        assertEquals("b", YtMusic.pickSong(r, "POKITO", "Daddy Yankee", 169))
+    }
+    @Test fun rejectsDifferentDuration() {
+        val r = search(item("b", "POKITO", "Song", "Daddy Yankee", "4:49"))
+        assertNull(YtMusic.pickSong(r, "POKITO", "Daddy Yankee", 169))
+    }
+    @Test fun findsLyricsPage() {
+        val j = org.json.JSONObject("""{"tabs":[{"endpoint":{"browseEndpoint":{"browseId":"MPREb_x"}}},{"endpoint":{"browseEndpoint":{"browseId":"MPLYt_abc"}}}]}""")
+        assertEquals("MPLYt_abc", YtMusic.lyricsBrowseId(j))
+        assertNull(YtMusic.lyricsBrowseId(org.json.JSONObject("""{"tabs":[]}""")))
+    }
+    @Test fun parsesTimedAndPlain() {
+        val timed = org.json.JSONObject("""{"timedLyricsData":[{"lyricLine":"uno","cueRange":{"startTimeMilliseconds":"9200","endTimeMilliseconds":"10600"}},{"lyricLine":"dos","cueRange":{"startTimeMilliseconds":"10700","endTimeMilliseconds":"12000"}}]}""")
+        assertEquals(listOf(9200L, 10700L), YtMusic.parseTimed(timed)!!.map { it.timeMs })
+        assertNull(YtMusic.parseTimed(org.json.JSONObject("""{"timedLyricsData":[{"lyricLine":"uno"},{"lyricLine":"dos"}]}""")))
+        val plain = org.json.JSONObject("""{"musicDescriptionShelfRenderer":{"description":{"runs":[{"text":"primera linea de la letra\nsegunda linea"}]}}}""")
+        assertEquals("primera linea de la letra\nsegunda linea", YtMusic.parsePlain(plain))
+    }
+}

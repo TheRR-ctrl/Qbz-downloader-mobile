@@ -8,7 +8,7 @@ import java.net.URLEncoder
 import kotlin.math.abs
 
 /** What LRCLIB (https://lrclib.net) has for a song: synced LRC text and/or plain text. */
-class Lyrics(val synced: String?, val plain: String?)
+class Lyrics(val synced: String?, val plain: String?, val source: String? = null)
 
 object LrcLib {
     private const val BASE = "https://lrclib.net/api"

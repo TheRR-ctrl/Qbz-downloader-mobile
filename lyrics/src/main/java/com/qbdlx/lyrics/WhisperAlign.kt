@@ -12,6 +12,8 @@ object WhisperAlign {
     /** True when the last result came from word counts only (the lyric and what was heard use different alphabets, so words cannot be compared). */
     @Volatile var approximate = false; private set
 
+    fun markApproximate() { approximate = true }
+
     private fun script(words: List<String>): Character.UnicodeScript? =
         words.joinToString("").filter { it.isLetter() }.groupBy { Character.UnicodeScript.of(it.code) }.maxByOrNull { it.value.size }?.key
 

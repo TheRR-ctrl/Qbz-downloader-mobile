@@ -84,9 +84,19 @@ object Tracker {
                 val pcm = Whisper.pcm16k(ctx, uri, cancelled = { !isActive }) ?: return@withContext "No se pudo leer el audio de ese archivo."
                 withContext(Dispatchers.Main) { timing.value = "Whisper está escuchando la canción… puede tardar unos minutos." }
                 val asr = Whisper.transcribe(ctx, pcm) ?: return@withContext if (!isActive) "Cancelado." else "Whisper no pudo con esta canción."
-                val timed = WhisperAlign.align(lines, asr.words)
-                    ?: return@withContext "Whisper entendió muy poco de la voz (${asr.words.size} palabras, idioma ${asr.lang}). Prueba «Detectar con el audio»."
-                withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key) saveTimed(timed) }
+                var timed = WhisperAlign.align(lines, asr.words)
+                // The lyric and the voice use different alphabets: YouTube Music often writes the same song in the alphabet Whisper heard.
+                // Its lines only serve to find the times; they are moved onto the user's lines by position.
+                if (WhisperAlign.approximate && _state.value.source != YtMusic.SOURCE) {
+                    withContext(Dispatchers.Main) { timing.value = "Buscando la letra en otro alfabeto…" }
+                    val other = runCatching { YtMusic.find(t.title, t.artist, (t.durationMs / 1000).toInt()) }.getOrNull()
+                    val otherLines = (other?.plain ?: other?.synced?.let { Lrc.parse(it).map { l -> l.text }.joinToString("\n") })?.lines()?.map { it.trim() }?.filter { it.isNotEmpty() }
+                    val better = otherLines?.let { WhisperAlign.align(it, asr.words) }?.takeIf { !WhisperAlign.approximate }
+                    if (better != null && lines.isNotEmpty()) timed = lines.mapIndexed { i, text -> LyricLine(better[(i.toLong() * (better.size - 1) / (lines.size - 1).coerceAtLeast(1)).toInt()].timeMs, text) }
+                    else WhisperAlign.markApproximate()
+                }
+                val done = timed ?: return@withContext "Whisper entendió muy poco de la voz (${asr.words.size} palabras, idioma ${asr.lang}). Prueba «Detectar con el audio»."
+                withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key) saveTimed(done) }
                 null
             }
             timing.value = result ?: if (WhisperAlign.approximate) "Listo, aproximado: la letra y la voz están en alfabetos distintos, así que se repartió por cantidad de palabras." else "Listo: letra sincronizada con la voz."
@@ -203,6 +213,7 @@ object Tracker {
                 loadedKey = null; retryAt = SystemClock.elapsedRealtime() + 8000 // keep trying in the background
                 return@launch
             }
+            if (found == null) found = withContext(Dispatchers.IO) { runCatching { YtMusic.find(track.title, track.artist, (track.durationMs / 1000).toInt()) }.getOrNull() }
             cache[track.key] = found
             found?.let { LyricsStore.put(track.storeKey, it); _saved.value = LyricsStore.count() }
             publish(track, found, playing)
@@ -211,8 +222,8 @@ object Tracker {
 
     private fun publish(track: TrackInfo, l: Lyrics?, playing: Boolean) {
         _state.value = when {
-            l?.synced != null -> LyricsState(Status.SYNCED, track, Lrc.parse(l.synced), playing)
-            l?.plain != null -> LyricsState(Status.PLAIN, track, Lrc.plain(l.plain), playing)
+            l?.synced != null -> LyricsState(Status.SYNCED, track, Lrc.parse(l.synced), playing, l.source)
+            l?.plain != null -> LyricsState(Status.PLAIN, track, Lrc.plain(l.plain), playing, l.source)
             else -> LyricsState(Status.NOT_FOUND, track, playing = playing)
         }
         val ctx = app
@@ -225,7 +236,7 @@ object Tracker {
     /** Saves lines timed by the user as this song's synced lyrics (kept on the phone like any found lyrics) and shows them at once. */
     fun saveTimed(lines: List<LyricLine>) {
         val t = _state.value.track ?: return
-        val l = Lyrics(Lrc.toLrc(lines), lines.joinToString("\n") { it.text })
+        val l = Lyrics(Lrc.toLrc(lines), lines.joinToString("\n") { it.text }, _state.value.source)
         LyricsStore.put(t.storeKey, l); cache[t.key] = l; _saved.value = LyricsStore.count()
         publish(t, l, _state.value.playing)
     }
