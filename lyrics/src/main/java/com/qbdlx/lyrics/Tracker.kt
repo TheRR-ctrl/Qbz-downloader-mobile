@@ -97,6 +97,16 @@ object Tracker {
                     if (other == null) ytWhy = YtMusic.lastFail
                     val better = otherLines?.let { WhisperAlign.align(it, asr.words, 0.12) }?.takeIf { !WhisperAlign.approximate }
                     if (other != null && better == null) ytWhy = "encontró la letra, pero solo coincidieron ${WhisperAlign.lastMatched.first} de ${WhisperAlign.lastMatched.second} palabras con lo que oyó Whisper"
+                    // The lyric did not match the voice but YouTube's is the same alphabet as what was heard: it replaces the user's one.
+                    if (better == null && other != null && otherLines != null && otherLines.size >= 2) {
+                        val replaced = other.synced?.let { Lrc.parse(it) }?.takeIf { it.size >= 2 }
+                            ?: WhisperAlign.align(otherLines, asr.words, 0.12)
+                        if (replaced != null) {
+                            val approx = other.synced == null && WhisperAlign.approximate
+                            withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key) saveTimed(replaced, YtMusic.SOURCE) }
+                            return@withContext "Listo: se usó la letra de YouTube Music" + (if (other.synced != null) " con sus propios tiempos." else if (approx) ", repartida por cantidad de palabras (aproximado)." else ", sincronizada con la voz.")
+                        }
+                    }
                     if (better != null && lines.isNotEmpty()) timed = lines.mapIndexed { i, text -> LyricLine(better[(i.toLong() * (better.size - 1) / (lines.size - 1).coerceAtLeast(1)).toInt()].timeMs, text) }
                     else if (timed != null) WhisperAlign.markApproximate()
                 }
