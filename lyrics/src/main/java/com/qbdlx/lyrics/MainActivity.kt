@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 class MainActivity : ComponentActivity() {
     private val audioPermission = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { ok ->
         if (ok) startLocalPrefetch() else android.widget.Toast.makeText(this, "Sin permiso de audio no puedo leer la música del teléfono.", android.widget.Toast.LENGTH_LONG).show()
@@ -297,11 +298,11 @@ class MainActivity : ComponentActivity() {
                         val timed = state.lines.mapIndexed { i, l -> LyricLine(marks.getOrNull(i) ?: (last + 3000L * (i - marks.size + 1)), l.text) }
                         Tracker.saveTimed(timed); tagging = false; marks.clear()
                     }
-                    if (!tagging) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        PillButton({ Tracker.timeFromAudio() }, enabled = timingMsg == null || !timingMsg!!.endsWith("…")) { Text("Detectar con el audio") }
-                        if (whisperOk) PillButton({ Tracker.timeFromWhisper() }, enabled = timingMsg == null || !(timingMsg!!.endsWith("…") || timingMsg!!.endsWith("minutos."))) { Text("Alinear con la voz (Whisper)") }
-                        PillTonal({ Tracker.saveTimed(Lrc.estimate(state.lines, state.track?.durationMs ?: 0L)) }) { Text("Estimar tiempos solo") }
-                        PillButton({ marks.clear(); tagging = true }) { Text("Marcar mientras suena") }
+                    if (!tagging) androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        PillButton({ Tracker.timeFromAudio() }, enabled = timingMsg == null || !timingMsg!!.endsWith("…")) { Text("Detectar con el audio", maxLines = 1, softWrap = false) }
+                        if (whisperOk) PillButton({ Tracker.timeFromWhisper() }, enabled = timingMsg == null || !(timingMsg!!.endsWith("…") || timingMsg!!.endsWith("minutos."))) { Text("Alinear con la voz (Whisper)", maxLines = 1, softWrap = false) }
+                        PillTonal({ Tracker.saveTimed(Lrc.estimate(state.lines, state.track?.durationMs ?: 0L)) }) { Text("Estimar tiempos solo", maxLines = 1, softWrap = false) }
+                        PillButton({ marks.clear(); tagging = true }) { Text("Marcar mientras suena", maxLines = 1, softWrap = false) }
                     }
                     else Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         PillButton({
@@ -313,11 +314,11 @@ class MainActivity : ComponentActivity() {
                         TextButton({ if (marks.isNotEmpty()) finish() else tagging = false }) { Text(if (marks.isNotEmpty()) "Guardar" else "Cancelar") }
                     }
                 }
-                if (!tools && state.track != null) Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (!tools && state.track != null) androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     // Follow the audio again after browsing; while following it shows the state instead.
-                    if (state.status == Status.SYNCED && whisperOk) PillTonal({ Tracker.timeFromWhisper() }, enabled = timingMsg == null || !(timingMsg!!.endsWith("…") || timingMsg!!.endsWith("minutos."))) { Text("Resincronizar con la voz") }
-                    if (state.status == Status.SYNCED) { if (browsing) PillButton({ browsing = false }) { Text("Seguir audio") } else PillTonal({ browsing = true }) { Text("Siguiendo el audio ✓") } }
-                    PillTonal({ enterPip() }) { Text("Ventana flotante") }
+                    if (state.status == Status.SYNCED && whisperOk) PillTonal({ Tracker.timeFromWhisper() }, enabled = timingMsg == null || !(timingMsg!!.endsWith("…") || timingMsg!!.endsWith("minutos."))) { Text("Resincronizar con la voz", maxLines = 1, softWrap = false) }
+                    if (state.status == Status.SYNCED) { if (browsing) PillButton({ browsing = false }) { Text("Seguir audio", maxLines = 1, softWrap = false) } else PillTonal({ browsing = true }) { Text("Siguiendo el audio ✓", maxLines = 1, softWrap = false) } }
+                    PillTonal({ enterPip() }) { Text("Ventana flotante", maxLines = 1, softWrap = false) }
                 }
                 if (!tools) BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                     // a third of the height as padding above, so the line being sung sits in the first third however many lines fit
