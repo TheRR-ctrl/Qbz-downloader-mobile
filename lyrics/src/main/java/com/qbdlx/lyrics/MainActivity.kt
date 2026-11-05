@@ -433,7 +433,7 @@ class MainActivity : ComponentActivity() {
                             androidx.compose.material3.Slider(value, onChange, valueRange = range)
                         }
                         Text("Aspecto de la ventana", Modifier.padding(top = 10.dp), fontWeight = FontWeight.SemiBold)
-                        slider("Transparencia del fondo: ${100 - fAlpha.toInt()} %", fAlpha, 20f..100f) { fAlpha = it; sp.edit().putInt("float_alpha", it.toInt()).apply() }
+                        slider("Transparencia del fondo: ${100 - fAlpha.toInt()} %", fAlpha, 0f..100f) { fAlpha = it; sp.edit().putInt("float_alpha", it.toInt()).apply() }
                         slider("Tamaño del texto: ${(fScale * 100).toInt()} %", fScale, 0.6f..2.2f) { fScale = it; sp.edit().putFloat("float_scale", it).apply() }
                         slider("Ancho: ${(fWidth / resources.displayMetrics.density).toInt()} dp", fWidth.coerceIn(minW, maxW), minW..maxW) { fWidth = it; sp.edit().putInt("float_w", it.toInt()).apply() }
                         slider("Tamaño de la burbuja: ${fBubble.toInt()} dp", fBubble, 28f..80f) { fBubble = it; sp.edit().putInt("float_bubble_dp", it.toInt()).apply() }

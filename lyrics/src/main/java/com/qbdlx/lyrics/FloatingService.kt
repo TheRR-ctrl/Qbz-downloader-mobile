@@ -113,6 +113,10 @@ class FloatingService : Service() {
             val hasBubble = prefs.getBoolean("float_bubble", true) || folded // a folded window is always the bubble
             val full = !folded
             bg.opacity = prefs.getInt("float_alpha", 100) / 100f
+            // with little or no background the text carries its own dark halo (like Musixmatch), so it reads over any app
+            val halo = if (bg.opacity < 0.7f) Color.argb(((0.7f - bg.opacity) / 0.7f * 230).toInt().coerceIn(90, 230), 0, 0, 0) else Color.TRANSPARENT
+            val r = if (bg.opacity < 0.7f) 3.5f * dp else 0f
+            for (t in listOf(now, prev, next, close, modeBtn, bigger, smaller)) t.setShadowLayer(r, 0f, 1f * dp, halo)
             val bd = (prefs.getInt("float_bubble_dp", 60) * dp).toInt()
             bubble.layoutParams = LinearLayout.LayoutParams(bd, bd)
             bubble.visibility = if (hasBubble) View.VISIBLE else View.GONE
@@ -208,7 +212,7 @@ class FloatingService : Service() {
                 // the notification's colour, darkened so white text stays readable
                 bg.update(Color.argb(255, (Color.red(color) * 0.55f).toInt(), (Color.green(color) * 0.55f).toInt(), (Color.blue(color) * 0.55f).toInt()), Tracker.cover)
                 if (bubbleCover !== Tracker.cover) { bubbleCover = Tracker.cover; bubble.setImageBitmap(bubbleCover) }
-                val fg = if (bg.light) Color.rgb(20, 20, 20) else Color.WHITE
+                val fg = if (bg.light && bg.opacity > 0.55f) Color.rgb(20, 20, 20) else Color.WHITE // over a see-through window the text is white with a shadow
                 if (now.currentTextColor != fg) {
                     now.setTextColor(fg); prev.setTextColor(Color.argb(150, Color.red(fg), Color.green(fg), Color.blue(fg))); next.setTextColor(Color.argb(190, Color.red(fg), Color.green(fg), Color.blue(fg)))
                     close.setTextColor(fg); modeBtn.setTextColor(fg); bigger.setTextColor(fg); smaller.setTextColor(fg); resize.setTextColor(fg)
