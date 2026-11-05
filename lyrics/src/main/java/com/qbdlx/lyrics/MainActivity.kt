@@ -64,7 +64,7 @@ class MainActivity : ComponentActivity() {
     private var inPip by mutableStateOf(false)
     private fun pipOn() = getSharedPreferences("lyrics", MODE_PRIVATE).getBoolean("pip_on_leave", true)
 
-    private fun pipParams(auto: Boolean) = android.app.PictureInPictureParams.Builder().setAspectRatio(android.util.Rational(3, 4)).also {
+    private fun pipParams(auto: Boolean) = android.app.PictureInPictureParams.Builder().setAspectRatio(android.util.Rational(239, 100)).also {
         if (android.os.Build.VERSION.SDK_INT >= 31) it.setAutoEnterEnabled(auto)
     }.build()
 
@@ -109,11 +109,11 @@ class MainActivity : ComponentActivity() {
         var pos by remember { mutableLongStateOf(0L) }
         LaunchedEffect(Unit) { while (true) { pos = Tracker.positionMs(); delay(200) } }
         val i = if (state.status == Status.SYNCED) Lrc.indexAt(state.lines, pos) else -1
-        Box(Modifier.fillMaxSize().padding(12.dp), contentAlignment = androidx.compose.ui.Alignment.Center) {
-            Column(horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Box(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 4.dp), contentAlignment = androidx.compose.ui.Alignment.Center) {
+            Column(horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 if (state.status == Status.SYNCED) {
-                    Text(state.lines.getOrNull(i)?.text?.ifBlank { "♪" } ?: "♪", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                    state.lines.getOrNull(i + 1)?.let { Text(it.text, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
+                    Text(state.lines.getOrNull(i)?.text?.ifBlank { "♪" } ?: "♪", fontSize = 16.sp, maxLines = 2, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    state.lines.getOrNull(i + 1)?.let { Text(it.text, fontSize = 11.sp, maxLines = 1, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
                 } else Text(state.track?.title ?: "Q Lyrics", fontSize = 16.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             }
         }
