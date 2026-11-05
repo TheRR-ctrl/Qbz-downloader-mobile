@@ -60,7 +60,8 @@ object WhisperAlign {
         if (match.count { it >= 0 } < n * MIN_MATCHED) {
             // Different alphabets (a Hindi lyric in Devanagari, Whisper writing the same song in Gurmukhi): no word is comparable. Both
             // still run through the same song, so the k-th lyric word is placed at the same fraction of what was heard.
-            if (n < 8 || m < 8 || script(lw.map { it.second }) == script(hw.map { it.second })) return null
+            // A song can mix alphabets (Spanish in Latin, the rest in Devanagari or Gurmukhi), so the dominant one says little: what counts is that Whisper heard enough words.
+            if (n < 8 || m < 8 || m < n / 2) return null
             approximate = true
             val st = LongArray(lines.size) { -1L }
             for (k in 0 until n) { val line = lw[k].first; if (st[line] < 0) st[line] = hw[(k.toLong() * (m - 1) / (n - 1).coerceAtLeast(1)).toInt()].first.startMs }
