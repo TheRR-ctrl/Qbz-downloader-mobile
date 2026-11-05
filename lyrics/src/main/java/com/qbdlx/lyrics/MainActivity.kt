@@ -174,7 +174,8 @@ class MainActivity : ComponentActivity() {
         val dragged by listState.interactionSource.collectIsDraggedAsState()
         LaunchedEffect(dragged) { if (dragged) browsing = true }
         LaunchedEffect(state.track?.key) { browsing = false }
-        LaunchedEffect(idx, browsing) { if (!browsing && idx >= 0) listState.animateScrollToItem(idx) } // the list padding puts that item in the first third
+        val hasIntro = state.status == Status.SYNCED && (state.lines.firstOrNull()?.timeMs ?: 0L) >= 5000 // the dots are item 0, so every line sits one place later
+        LaunchedEffect(idx, browsing) { if (!browsing && idx >= 0) listState.animateScrollToItem(idx + if (hasIntro) 1 else 0) } // the list padding puts that item in the first third
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Q Lyrics", fontSize = 28.sp, fontWeight = FontWeight.Bold)
             val pre by Prefetch.state.collectAsState()

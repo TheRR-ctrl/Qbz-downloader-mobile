@@ -91,7 +91,7 @@ object SyncCheck {
     /** Listens to one song and judges its saved lyric. Slow (minutes). Null when there is no audio file or it could not be read. */
     private fun verdictFor(context: Context, t: PrefetchTrack, lyrics: Lyrics, cancelled: () -> Boolean): SyncVerdict? {
         val synced = lyrics.synced ?: return null
-        val uri = AudioTiming.find(context, t.title, t.artist, t.durationSec * 1000L) ?: downloaderCopy(context, t) ?: return null
+        val uri = AudioTiming.findOrBorrow(context, t.title, t.artist, t.durationSec * 1000L) ?: return null
         val lines = Lrc.parse(synced).filter { it.text.isNotBlank() }
         if (lines.size < 4) return null
         val pcm = Whisper.pcm16k(context, uri, cancelled = cancelled) ?: return null
@@ -99,13 +99,6 @@ object SyncCheck {
         val ref = WhisperAlign.align(lines.map { it.text }, asr.words)
         if (ref == null || WhisperAlign.approximate) return SyncVerdict("unk", 0, 0, lines.size, null) // another alphabet: nothing to compare
         return judge(lines, ref)
-    }
-
-    /** Not on the phone: QBDLX Mobile lends a temporary MP3 from Qobuz (opened once, by the decoder; no file stays on disk). Null when it is not installed; if it is logged out or lacks the song, the decoder simply fails and the verdict is "can't judge". */
-    private fun downloaderCopy(context: Context, t: PrefetchTrack): android.net.Uri? {
-        if (context.packageManager.resolveContentProvider("com.qbdlx.mobile.lyricsaudio", 0) == null) return null
-        return android.net.Uri.Builder().scheme("content").authority("com.qbdlx.mobile.lyricsaudio").path("track")
-            .appendQueryParameter("title", t.title).appendQueryParameter("artist", t.artist).appendQueryParameter("dur", t.durationSec.toString()).build()
     }
 
     private fun onWifi(context: Context): Boolean {

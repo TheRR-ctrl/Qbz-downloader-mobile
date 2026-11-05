@@ -55,7 +55,7 @@ object Tracker {
         timingJob = scope.launch {
             timing.value = "Buscando el archivo de la canción…"
             val result = withContext(Dispatchers.IO) {
-                val uri = AudioTiming.find(ctx, t.title, t.artist, t.durationMs)
+                val uri = AudioTiming.findOrBorrow(ctx, t.title, t.artist, t.durationMs)
                     ?: return@withContext "No encuentro esta canción como archivo en el teléfono (o falta el permiso de audio). Prueba con «Estimar» o «Marcar mientras suena»."
                 withContext(Dispatchers.Main) { timing.value = "Analizando el audio…" }
                 val env = AudioTiming.envelope(ctx, uri, cancelled = { !isActive })
@@ -80,7 +80,7 @@ object Tracker {
             timing.value = "Buscando el archivo de la canción…"
             val result = withContext(Dispatchers.Default) {
                 if (!Whisper.available(ctx)) return@withContext "Whisper no está en esta versión de la app."
-                val uri = AudioTiming.find(ctx, t.title, t.artist, t.durationMs)
+                val uri = AudioTiming.findOrBorrow(ctx, t.title, t.artist, t.durationMs)
                     ?: return@withContext "No encuentro esta canción como archivo en el teléfono (o falta el permiso de audio)."
                 withContext(Dispatchers.Main) { timing.value = "Preparando el audio…" }
                 val pcm = Whisper.pcm16k(ctx, uri, cancelled = { !isActive }) ?: return@withContext "No se pudo leer el audio de ese archivo."
@@ -138,7 +138,7 @@ object Tracker {
                     scope.launch(Dispatchers.Main) { if (_state.value.track?.key == t.key) { _saved.value = LyricsStore.count(); publish(t, yt, _state.value.playing) } }
                     return "Whisper no entendió la voz; la letra salió de YouTube Music."
                 }
-                val uri = AudioTiming.find(ctx, t.title, t.artist, t.durationMs) ?: return@withContext fromYoutube() ?: "No encuentro esta canción como archivo en el teléfono (o falta el permiso de audio)."
+                val uri = AudioTiming.findOrBorrow(ctx, t.title, t.artist, t.durationMs) ?: return@withContext fromYoutube() ?: "No encuentro esta canción como archivo en el teléfono (o falta el permiso de audio)."
                 withContext(Dispatchers.Main) { timing.value = "Preparando el audio…" }
                 val pcm = Whisper.pcm16k(ctx, uri, cancelled = { !isActive }) ?: return@withContext fromYoutube() ?: "No se pudo leer el audio de ese archivo."
                 withContext(Dispatchers.Main) { timing.value = "Whisper está escuchando la canción… puede tardar unos minutos." }
