@@ -74,9 +74,8 @@ class FloatingService : Service() {
             clipToOutline = true; outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
         }
         val modeBtn = tool("▭")
-        val fold = tool("–")
         val defaultW = (resources.displayMetrics.widthPixels * 0.86f).toInt()
-        val tools = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.END; addView(close); addView(fold); addView(modeBtn); addView(bigger); addView(smaller); addView(resize) }
+        val tools = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.END; addView(close); addView(modeBtn); addView(bigger); addView(smaller); addView(resize) }
         val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL; addView(now); addView(next) }
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -87,7 +86,23 @@ class FloatingService : Service() {
         }
         // pop in / out like a chat head
         val spring = android.view.animation.OvershootInterpolator(1.6f)
-        close.setOnClickListener { root.animate().scaleX(0.3f).scaleY(0.3f).alpha(0f).setDuration(160).withEndAction { stopSelf() }.start() }
+        fun dismiss() { root.animate().scaleX(0.3f).scaleY(0.3f).alpha(0f).setDuration(160).withEndAction { stopSelf() }.start() }
+        // like a picture-in-picture window or a chat head: dragging it onto the ✕ at the bottom closes it
+        var target: TextView? = null
+        fun overTarget(x: Float, y: Float): Boolean { val t = target ?: return false; val c = IntArray(2); t.getLocationOnScreen(c); return Math.hypot((x - (c[0] + t.width / 2)).toDouble(), (y - (c[1] + t.height / 2)).toDouble()) < 80 * dp }
+        fun showTarget() {
+            if (target != null) return
+            val t = TextView(this).apply {
+                text = "✕"; textSize = 22f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
+                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.argb(200, 20, 20, 20)); setStroke((2 * dp).toInt(), Color.argb(160, 255, 255, 255)) }
+                alpha = 0f; translationY = 40 * dp
+            }
+            val lp = WindowManager.LayoutParams((60 * dp).toInt(), (60 * dp).toInt(), WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS, PixelFormat.TRANSLUCENT)
+                .apply { gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL; y = (48 * dp).toInt() }
+            if (runCatching { wm.addView(t, lp) }.isSuccess) { target = t; t.animate().alpha(1f).translationY(0f).setDuration(180).start() }
+        }
+        fun hideTarget() { target?.let { t -> target = null; t.animate().alpha(0f).setDuration(120).withEndAction { runCatching { wm.removeView(t) } }.start() } }
         var wasFolded: Boolean? = null
         val bg = CoverBackground(if (bar) 30 * dp else 18 * dp)
         applyLayout = {
@@ -139,15 +154,18 @@ class FloatingService : Service() {
             }
             prefs.edit().putInt("float_x", target).apply()
         }
-        fold.setOnClickListener { prefs.edit().putBoolean("float_min", true).apply(); applyLayout(); snapBubble() }
+        close.setOnClickListener { prefs.edit().putBoolean("float_min", true).apply(); applyLayout(); snapBubble() }
         modeBtn.setOnClickListener { prefs.edit().putBoolean("float_bar", !bar).apply(); applyLayout() }
 
         var downX = 0f; var downY = 0f; var startX = 0; var startY = 0
         root.setOnTouchListener { _, e ->
             when (e.action) {
                 MotionEvent.ACTION_DOWN -> { downX = e.rawX; downY = e.rawY; startX = params.x; startY = params.y }
-                MotionEvent.ACTION_MOVE -> { params.x = startX + (e.rawX - downX).toInt(); params.y = startY + (e.rawY - downY).toInt(); runCatching { wm.updateViewLayout(root, params) } }
+                MotionEvent.ACTION_MOVE -> { params.x = startX + (e.rawX - downX).toInt(); params.y = startY + (e.rawY - downY).toInt(); runCatching { wm.updateViewLayout(root, params) }
+                    if (Math.abs(e.rawX - downX) > 8 * dp || Math.abs(e.rawY - downY) > 8 * dp) { showTarget(); target?.let { it.scaleX = if (overTarget(e.rawX, e.rawY)) 1.25f else 1f; it.scaleY = it.scaleX } } }
                 MotionEvent.ACTION_UP -> {
+                    val drop = overTarget(e.rawX, e.rawY); hideTarget()
+                    if (drop) { dismiss(); return@setOnTouchListener true }
                     // optionally the window sticks to the nearest side edge when let go
                     if (folded) snapBubble()
                     else if (prefs.getBoolean("float_snap", false)) {
@@ -191,7 +209,7 @@ class FloatingService : Service() {
                 val fg = if (bg.light) Color.rgb(20, 20, 20) else Color.WHITE
                 if (now.currentTextColor != fg) {
                     now.setTextColor(fg); next.setTextColor(Color.argb(190, Color.red(fg), Color.green(fg), Color.blue(fg)))
-                    close.setTextColor(fg); fold.setTextColor(fg); modeBtn.setTextColor(fg); bigger.setTextColor(fg); smaller.setTextColor(fg); resize.setTextColor(fg)
+                    close.setTextColor(fg); modeBtn.setTextColor(fg); bigger.setTextColor(fg); smaller.setTextColor(fg); resize.setTextColor(fg)
                 }
                 val (a, b) = when (state.status) {
                     Status.SYNCED -> {
