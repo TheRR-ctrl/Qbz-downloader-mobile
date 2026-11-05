@@ -32,6 +32,7 @@ class FloatingService : Service() {
         running = true
         Tracker.start(this)
         val prefs = getSharedPreferences("lyrics", MODE_PRIVATE)
+        if (openedByLeaving) prefs.edit().putBoolean("float_min", true).apply() // leaving the app shows just the bubble, like a chat head
         val wm = getSystemService(WindowManager::class.java)
         val dp = resources.displayMetrics.density
         val params = WindowManager.LayoutParams(
@@ -73,8 +74,9 @@ class FloatingService : Service() {
             clipToOutline = true; outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
         }
         val modeBtn = tool("▭")
+        val fold = tool("–")
         val defaultW = (resources.displayMetrics.widthPixels * 0.86f).toInt()
-        val tools = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.END; addView(close); addView(modeBtn); addView(bigger); addView(smaller); addView(resize) }
+        val tools = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.END; addView(close); addView(fold); addView(modeBtn); addView(bigger); addView(smaller); addView(resize) }
         val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL; addView(now); addView(next) }
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -87,8 +89,8 @@ class FloatingService : Service() {
         applyLayout = {
             // everything is read from the saved settings, so the Ajustes sliders and the handles on the window act on the same values
             scale = prefs.getFloat("float_scale", 1f); bar = prefs.getBoolean("float_bar", true)
-            val hasBubble = prefs.getBoolean("float_bubble", true)
-            folded = prefs.getBoolean("float_min", false) && hasBubble
+            folded = prefs.getBoolean("float_min", false)
+            val hasBubble = prefs.getBoolean("float_bubble", true) || folded // a folded window is always the bubble
             val full = !folded
             bg.opacity = prefs.getInt("float_alpha", 100) / 100f
             val bd = (prefs.getInt("float_bubble_dp", 46) * dp).toInt()
@@ -109,8 +111,17 @@ class FloatingService : Service() {
             root.setPadding(((if (hasBubble) pad else 14) * dp).toInt(), vp.toInt(), ((if (bar) 4 else 12) * dp).toInt(), vp.toInt())
             (texts.layoutParams as LinearLayout.LayoutParams).marginStart = ((if (hasBubble) 10 else 0) * dp).toInt()
             params.width = if (full) prefs.getInt("float_w", defaultW) else WindowManager.LayoutParams.WRAP_CONTENT
+            // opened next to the right edge, the panel must not hang off the screen
+            if (full && params.width > 0) params.x = params.x.coerceIn(0, (resources.displayMetrics.widthPixels - params.width).coerceAtLeast(0))
             relayout()
         }
+        // a folded bubble rests against the nearest side edge
+        fun snapBubble() {
+            val sw = resources.displayMetrics.widthPixels; val bd = (prefs.getInt("float_bubble_dp", 46) * dp).toInt()
+            params.x = if (params.x + bd / 2 < sw / 2) 0 else (sw - bd).coerceAtLeast(0); relayout()
+            prefs.edit().putInt("float_x", params.x).apply()
+        }
+        fold.setOnClickListener { prefs.edit().putBoolean("float_min", true).apply(); applyLayout(); snapBubble() }
         modeBtn.setOnClickListener { prefs.edit().putBoolean("float_bar", !bar).apply(); applyLayout() }
 
         var downX = 0f; var downY = 0f; var startX = 0; var startY = 0
@@ -120,14 +131,15 @@ class FloatingService : Service() {
                 MotionEvent.ACTION_MOVE -> { params.x = startX + (e.rawX - downX).toInt(); params.y = startY + (e.rawY - downY).toInt(); runCatching { wm.updateViewLayout(root, params) } }
                 MotionEvent.ACTION_UP -> {
                     // optionally the window sticks to the nearest side edge when let go
-                    if (prefs.getBoolean("float_snap", false)) {
+                    if (folded) snapBubble()
+                    else if (prefs.getBoolean("float_snap", false)) {
                         val sw = resources.displayMetrics.widthPixels
                         params.x = if (params.x + root.width / 2 < sw / 2) 0 else (sw - root.width).coerceAtLeast(0); relayout()
                     }
                     prefs.edit().putInt("float_x", params.x).putInt("float_y", params.y).apply()
                     // a tap (no drag) on the round button folds the bar to just the button, and opens it again
                     val tap = Math.abs(e.rawX - downX) < 8 * dp && Math.abs(e.rawY - downY) < 8 * dp
-                    if (tap && bubble.visibility == View.VISIBLE && e.x <= bubble.right + 6 * dp) { prefs.edit().putBoolean("float_min", !folded).apply(); applyLayout() }
+                    if (tap && bubble.visibility == View.VISIBLE && e.x <= bubble.right + 6 * dp) { prefs.edit().putBoolean("float_min", !folded).apply(); applyLayout(); if (!folded) Unit else snapBubble() }
                 }
             }
             true
@@ -151,7 +163,7 @@ class FloatingService : Service() {
                 val fg = if (bg.light) Color.rgb(20, 20, 20) else Color.WHITE
                 if (now.currentTextColor != fg) {
                     now.setTextColor(fg); next.setTextColor(Color.argb(190, Color.red(fg), Color.green(fg), Color.blue(fg)))
-                    close.setTextColor(fg); modeBtn.setTextColor(fg); bigger.setTextColor(fg); smaller.setTextColor(fg); resize.setTextColor(fg)
+                    close.setTextColor(fg); fold.setTextColor(fg); modeBtn.setTextColor(fg); bigger.setTextColor(fg); smaller.setTextColor(fg); resize.setTextColor(fg)
                 }
                 val (a, b) = when (state.status) {
                     Status.SYNCED -> {
