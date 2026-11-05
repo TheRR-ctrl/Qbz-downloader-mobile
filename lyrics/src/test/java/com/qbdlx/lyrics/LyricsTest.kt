@@ -124,6 +124,18 @@ class WhisperAlignTest {
         r.forEachIndexed { i, l -> assertTrue("line $i at ${l.timeMs}", kotlin.math.abs(l.timeMs - expect[i]) <= 400) }
     }
 
+    @Test fun aStrayCommonWordFarAwayDoesNotDragALine() {
+        val lines = listOf("alegria desbordante mañana", "recuerdo aquella tarde lluviosa", "nunca olvidaré tu abrazo", "caminando juntos despacio", "cantando canciones viejas", "mirando las estrellas")
+        val heard = ArrayList<AsrWord>()
+        var t = 5_000L
+        for (l in lines) { l.split(" ").forEach { heard.add(w(t, it)); t += 400 }; t += 3_000 }
+        heard.add(w(2_000, "tu")) // a stray word near the start that also appears in line 3
+        heard.sortBy { it.startMs }
+        val r = WhisperAlign.align(lines, heard)!!
+        assertTrue("line 2 at ${r[2].timeMs}", r[2].timeMs > 12_000)
+        assertTrue(r.zipWithNext().all { (a, b) -> a.timeMs < b.timeMs })
+    }
+
     @Test fun aLineWithNothingHeardIsPlacedBetweenItsNeighbours() {
         val lines = listOf("uno dos tres cuatro", "palabras que nadie oyó", "cinco seis siete ocho")
         val heard = listOf(w(1_000, "uno"), w(1_400, "dos"), w(1_800, "tres"), w(2_200, "cuatro"), w(9_000, "cinco"), w(9_400, "seis"), w(9_800, "siete"), w(10_200, "ocho"))
@@ -229,5 +241,70 @@ class CarTranslationTest {
     @org.junit.Test fun spanishLineKeepsNext() {
         val rows = CarView.rows(st, 5000, mapOf(0 to "x"))
         org.junit.Assert.assertEquals(listOf("▶ Hola mundo", "Tres"), rows.map { it.title })
+    }
+}
+
+class LyricEditTest {
+    private val ls = listOf(LyricLine(1000, "Te quiero mucho, mucho", 3000), LyricLine(5000, "muchos besos"), LyricLine(9000, "Mucho más"))
+    @org.junit.Test fun replacesWholeWordsOnly() {
+        val (out, n) = LyricEdit.replaceWord(ls, "mucho", "tanto")
+        org.junit.Assert.assertEquals(3, n)
+        org.junit.Assert.assertEquals(listOf("Te quiero tanto, tanto", "muchos besos", "tanto más"), out.map { it.text })
+        org.junit.Assert.assertEquals(listOf(1000L, 5000L, 9000L), out.map { it.timeMs })
+        org.junit.Assert.assertEquals(3000L, out[0].endMs)
+    }
+    @org.junit.Test fun emptyWordChangesNothing() = org.junit.Assert.assertEquals(0, LyricEdit.replaceWord(ls, "  ", "x").second)
+    @org.junit.Test fun editedSourceLabel() {
+        org.junit.Assert.assertEquals("editada", LyricEdit.editedSource(null))
+        org.junit.Assert.assertEquals("LRCLIB · editada", LyricEdit.editedSource("LRCLIB"))
+        org.junit.Assert.assertEquals("LRCLIB · editada", LyricEdit.editedSource("LRCLIB · editada"))
+        org.junit.Assert.assertTrue(LyricEdit.isEdited("x · editada"))
+    }
+}
+
+class WhisperFitTest {
+    private fun asr(ms: Long) = Asr("es", listOf(AsrWord(10_000, 10_400, "hola"), AsrWord(100_000, 100_400, "adios")), ms)
+    @Test fun shortDecodeIsRescaledToTheSongLength() {
+        val a = Whisper.fit(asr(180_000), 200_000)
+        assertTrue(kotlin.math.abs(a.words[0].startMs - 11_111L) <= 2)
+        assertTrue(kotlin.math.abs(a.words[1].startMs - 111_111L) <= 2)
+    }
+    @Test fun smallDifferenceIsLeftAlone() { assertEquals(10_000L, Whisper.fit(asr(198_000), 200_000).words[0].startMs) }
+    @Test fun aCutOffDecodeIsNotRescaled() { assertEquals(10_000L, Whisper.fit(asr(100_000), 400_000).words[0].startMs) }
+    @Test fun cacheKeepsTheAudioLength() { assertEquals(123_000L, Whisper.parse("lang=es\nms=123000\n0\t100\thola")!!.audioMs) }
+    @Test fun describeSaysWhatWasHeard() {
+        val t = Whisper.describe(asr(180_000), 200_000, 12_000, 5 to 20)
+        assertTrue(t, t.contains("coincidieron 5 de 20") && t.contains("primera voz a los 10s") && t.contains("180s de 200s"))
+    }
+}
+
+class LrcTagsTest {
+    @Test fun offsetTagShiftsTheLines() {
+        val l = Lrc.parse("[ar:x]\n[offset:+500]\n[00:10.00]hola\n[00:20.00]adios")
+        assertEquals(9_500L, l[0].timeMs); assertEquals(19_500L, l[1].timeMs)
+    }
+    @Test fun negativeOffsetDelays() { assertEquals(10_500L, Lrc.parse("[offset:-500]\n[00:10.00]hola")[0].timeMs) }
+    @Test fun wordTagsAreRemovedFromTheText() {
+        assertEquals("hola mundo cruel", Lrc.parse("[00:10.00]<00:10.00>hola <00:10.50>mundo <00:11.00>cruel")[0].text)
+    }
+    @Test fun noOffsetLeavesTimesAlone() { assertEquals(10_000L, Lrc.parse("[00:10.00]hola")[0].timeMs) }
+}
+
+class LyricDisplayTest {
+    private val lines = listOf(LyricLine(12_000, "primera linea"), LyricLine(20_000, "segunda"), LyricLine(40_000, "tercera"))
+    @Test fun beforeTheFirstLineNothingIsSelected() { assertEquals(-1, Lrc.indexAt(lines, 11_999)) }
+    @Test fun lineStartsExactlyOnItsStamp() { assertEquals(0, Lrc.indexAt(lines, 12_000)); assertEquals(1, Lrc.indexAt(lines, 20_000)) }
+    @Test fun afterTheLastLineStaysOnIt() { assertEquals(2, Lrc.indexAt(lines, 999_000)) }
+    @Test fun karaokeFillIsZeroBeforeAndFullAfter() {
+        assertEquals(0, Lrc.litChars("hola mundo", 1000, 9000, 500))
+        assertEquals(10, Lrc.litChars("hola mundo", 1000, 9000, 9000))
+    }
+    @Test fun karaokeFillFollowsTheRealEnd() {
+        // sung in 1 s although the next line is 20 s away: it is fully lit after that second, not after 20
+        assertEquals(10, Lrc.litChars("hola mundo", 0, 20_000, 1_100, 1_000))
+    }
+    @Test fun karaokeFillAdvancesWordByWord() {
+        val a = Lrc.litChars("uno dos tres", 0, 10_000, 500, 3_000); val b = Lrc.litChars("uno dos tres", 0, 10_000, 2_500, 3_000)
+        assertTrue("$a<$b", a in 3..7 && b > a)
     }
 }

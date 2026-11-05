@@ -73,6 +73,19 @@ object SyncCheck {
         results.put(key, JSONObject().put("v", "ok").put("t", System.currentTimeMillis()).put("voice", true)); removeFromQueue(key); meta.remove(key); save()
     }
 
+    /** The user says this lyric is badly synced: the "verified" mark goes away and the report is kept (sync-reports.json, last 200). */
+    @Synchronized fun report(key: String, title: String, artist: String, source: String?) {
+        val d = dir ?: return
+        results.remove(key); removeFromQueue(key); save()
+        runCatching {
+            val f = File(d, "sync-reports.json")
+            val all = runCatching { JSONArray(f.readText()) }.getOrDefault(JSONArray())
+            all.put(JSONObject().put("key", key).put("title", title).put("artist", artist).put("source", source ?: "").put("t", System.currentTimeMillis()))
+            val keep = JSONArray(); for (i in maxOf(0, all.length() - 200) until all.length()) keep.put(all.get(i))
+            f.writeText(keep.toString())
+        }
+    }
+
     @Synchronized fun enqueue(key: String, l: Lyrics, t: PrefetchTrack? = null) {
         if (dir == null || l.synced == null || !autoOnWifi || results.has(key)) return
         if (l.source?.startsWith("Whisper") == true) return // made from Whisper's own times
@@ -104,7 +117,7 @@ object SyncCheck {
         val uri = AudioTiming.findOrBorrow(context, t.title, t.artist, t.durationSec * 1000L) ?: return null
         val lines = Lrc.parse(synced).filter { it.text.isNotBlank() }
         if (lines.size < 4) return null
-        val asr = Whisper.listen(context, Prefetch.storeKey(t.title, t.artist), uri, cancelled) ?: return null
+        val asr = Whisper.listen(context, Prefetch.storeKey(t.title, t.artist), uri, cancelled, t.durationSec * 1000L) ?: return null
         val ref = WhisperAlign.align(lines.map { it.text }, asr.words)
         if (ref == null || WhisperAlign.approximate) return SyncVerdict("unk", 0, 0, lines.size, null) // another alphabet: nothing to compare
         return judge(lines, ref)

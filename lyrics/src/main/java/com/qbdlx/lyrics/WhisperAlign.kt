@@ -1,6 +1,7 @@
 package com.qbdlx.lyrics
 
 import java.text.Normalizer
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
@@ -60,7 +61,7 @@ object WhisperAlign {
         for (i in 1..n) s[i][0] = -i
         for (j in 1..m) s[0][j] = -j
         val sim = Array(n) { i -> DoubleArray(m) { j -> similarity(lw[i].second, hw[j].second) } }
-        fun sc(i: Int, j: Int) = if (sim[i][j] == 1.0) 3 else if (sim[i][j] >= 0.65) 1 else -2
+        fun sc(i: Int, j: Int) = if (sim[i][j] == 1.0) (if (lw[i].second.length <= 2) 1 else 3) else if (sim[i][j] >= 0.65) 1 else -2
         for (i in 1..n) for (j in 1..m) s[i][j] = maxOf(s[i - 1][j - 1] + sc(i - 1, j - 1), s[i - 1][j] - 1, s[i][j - 1] - 1)
         // walk back: for every lyric word, the heard word it matched (or -1)
         val match = IntArray(n) { -1 }
@@ -70,6 +71,18 @@ object WhisperAlign {
                 s[i][j] == s[i - 1][j - 1] + sc(i - 1, j - 1) -> { if (sim[i - 1][j - 1] >= 0.65) match[i - 1] = j - 1; i--; j-- }
                 s[i][j] == s[i - 1][j] - 1 -> i--
                 else -> j--
+            }
+        }
+        // A common word ("que", "de", "y") can match a heard word far from where the line is really sung, and one such anchor drags a whole line.
+        // The real anchors move together (their times follow the word order), so an anchor that jumps away from the median of its neighbours is dropped.
+        repeat(2) {
+            val idx = match.indices.filter { match[it] >= 0 }
+            if (idx.size >= 5) {
+                val d = idx.map { hw[match[it]].first.startMs - 400L * it }
+                for (p in idx.indices) {
+                    val w = d.subList(max(0, p - 3), min(d.size, p + 4)).sorted()
+                    if (abs(d[p] - w[w.size / 2]) > 12_000L) match[idx[p]] = -1
+                }
             }
         }
         lastMatched = match.count { it >= 0 } to n

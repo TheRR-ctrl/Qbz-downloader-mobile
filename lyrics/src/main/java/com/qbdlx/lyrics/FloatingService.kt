@@ -32,6 +32,7 @@ class FloatingService : Service() {
         running = true
         Tracker.start(this)
         val prefs = getSharedPreferences("lyrics", MODE_PRIVATE)
+        if (openedByLeaving) prefs.edit().putBoolean("float_min", true).apply() // leaving the app shows just the bubble, like a chat head
         val wm = getSystemService(WindowManager::class.java)
         val dp = resources.displayMetrics.density
         val params = WindowManager.LayoutParams(
@@ -41,9 +42,10 @@ class FloatingService : Service() {
             PixelFormat.TRANSLUCENT,
         ).apply { gravity = Gravity.TOP or Gravity.START; x = prefs.getInt("float_x", (resources.displayMetrics.widthPixels * 0.07f).toInt()); y = prefs.getInt("float_y", (120 * dp).toInt()) }
 
-        val now = TextView(this).apply { setTextColor(Color.WHITE); textSize = 18f; setTypeface(typeface, android.graphics.Typeface.BOLD); maxLines = 2 }
+        val now = TextView(this).apply { setTextColor(Color.WHITE); textSize = 18f; setTypeface(typeface, android.graphics.Typeface.BOLD); maxLines = 3 }
+        val prev = TextView(this).apply { setTextColor(Color.argb(150, 255, 255, 255)); textSize = 12f; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; visibility = View.GONE }
         val next = TextView(this).apply { setTextColor(Color.argb(180, 255, 255, 255)); textSize = 14f; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
-        val close = TextView(this).apply { text = "✕"; setTextColor(Color.argb(200, 255, 255, 255)); textSize = 16f; setPadding((10 * dp).toInt(), (6 * dp).toInt(), (10 * dp).toInt(), (6 * dp).toInt()); setOnClickListener { stopSelf() } }
+        val close = TextView(this).apply { text = "✕"; setTextColor(Color.argb(200, 255, 255, 255)); textSize = 16f; setPadding((10 * dp).toInt(), (6 * dp).toInt(), (10 * dp).toInt(), (6 * dp).toInt()); }
         var scale = prefs.getFloat("float_scale", 1f)
         fun tool(label: String) = TextView(this).apply { text = label; setTextColor(Color.argb(220, 255, 255, 255)); textSize = 16f; gravity = Gravity.CENTER; setPadding((10 * dp).toInt(), (6 * dp).toInt(), (10 * dp).toInt(), (6 * dp).toInt()) }
         fun relayout() { runCatching { wm.updateViewLayout(view, params) } }
@@ -75,7 +77,7 @@ class FloatingService : Service() {
         val modeBtn = tool("▭")
         val defaultW = (resources.displayMetrics.widthPixels * 0.86f).toInt()
         val tools = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.END; addView(close); addView(modeBtn); addView(bigger); addView(smaller); addView(resize) }
-        val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL; addView(now); addView(next) }
+        val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL; addView(prev); addView(now); addView(next) }
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -83,15 +85,35 @@ class FloatingService : Service() {
             addView(texts, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = (10 * dp).toInt() })
             addView(tools)
         }
+        // pop in / out like a chat head
+        val spring = android.view.animation.DecelerateInterpolator(1.6f) // never above 1: the window clips whatever grows past its edges
+        fun dismiss() { root.animate().scaleX(0.3f).scaleY(0.3f).alpha(0f).setDuration(160).withEndAction { stopSelf() }.start() }
+        // like a picture-in-picture window or a chat head: dragging it onto the ✕ at the bottom closes it
+        var target: TextView? = null
+        fun overTarget(x: Float, y: Float): Boolean { val t = target ?: return false; val c = IntArray(2); t.getLocationOnScreen(c); return Math.hypot((x - (c[0] + t.width / 2)).toDouble(), (y - (c[1] + t.height / 2)).toDouble()) < 80 * dp }
+        fun showTarget() {
+            if (target != null) return
+            val t = TextView(this).apply {
+                text = "✕"; textSize = 22f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
+                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.argb(200, 20, 20, 20)); setStroke((2 * dp).toInt(), Color.argb(160, 255, 255, 255)) }
+                alpha = 0f; translationY = 40 * dp
+            }
+            val lp = WindowManager.LayoutParams((60 * dp).toInt(), (60 * dp).toInt(), WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS, PixelFormat.TRANSLUCENT)
+                .apply { gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL; y = (48 * dp).toInt() }
+            if (runCatching { wm.addView(t, lp) }.isSuccess) { target = t; t.animate().alpha(1f).translationY(0f).setDuration(180).start() }
+        }
+        fun hideTarget() { target?.let { t -> target = null; t.animate().alpha(0f).setDuration(120).withEndAction { runCatching { wm.removeView(t) } }.start() } }
+        var wasFolded: Boolean? = null
         val bg = CoverBackground(if (bar) 30 * dp else 18 * dp)
         applyLayout = {
             // everything is read from the saved settings, so the Ajustes sliders and the handles on the window act on the same values
             scale = prefs.getFloat("float_scale", 1f); bar = prefs.getBoolean("float_bar", true)
-            val hasBubble = prefs.getBoolean("float_bubble", true)
-            folded = prefs.getBoolean("float_min", false) && hasBubble
+            folded = prefs.getBoolean("float_min", false)
+            val hasBubble = prefs.getBoolean("float_bubble", true) || folded // a folded window is always the bubble
             val full = !folded
             bg.opacity = prefs.getInt("float_alpha", 100) / 100f
-            val bd = (prefs.getInt("float_bubble_dp", 46) * dp).toInt()
+            val bd = (prefs.getInt("float_bubble_dp", 60) * dp).toInt()
             bubble.layoutParams = LinearLayout.LayoutParams(bd, bd)
             bubble.visibility = if (hasBubble) View.VISIBLE else View.GONE
             texts.visibility = if (full) View.VISIBLE else View.GONE
@@ -101,7 +123,7 @@ class FloatingService : Service() {
             smaller.visibility = bigger.visibility
             now.maxLines = if (bar) 1 else 2
             now.ellipsize = if (bar) android.text.TextUtils.TruncateAt.END else null
-            now.textSize = (if (bar) 15f else 18f) * scale; next.textSize = 14f * scale
+            now.textSize = (if (bar) 14f else 15f) * scale; next.textSize = 12f * scale; prev.textSize = 12f * scale
             root.background = if (full) bg else null
             bg.invalidateSelf()
             val pad = if (full) 8 else 0
@@ -109,25 +131,53 @@ class FloatingService : Service() {
             root.setPadding(((if (hasBubble) pad else 14) * dp).toInt(), vp.toInt(), ((if (bar) 4 else 12) * dp).toInt(), vp.toInt())
             (texts.layoutParams as LinearLayout.LayoutParams).marginStart = ((if (hasBubble) 10 else 0) * dp).toInt()
             params.width = if (full) prefs.getInt("float_w", defaultW) else WindowManager.LayoutParams.WRAP_CONTENT
+            // opened next to the right edge, the panel must not hang off the screen
+            if (full && params.width > 0) params.x = params.x.coerceIn(0, (resources.displayMetrics.widthPixels - params.width).coerceAtLeast(0))
             relayout()
+            if (wasFolded != folded) {
+                // folding / unfolding: the window grows or shrinks from the centre of the round button
+                if (wasFolded != null) {
+                    root.pivotX = (((if (hasBubble) pad else 14) * dp) + bd / 2f); root.pivotY = bd / 2f + vp
+                    root.scaleX = if (folded) 0.85f else 0.7f; root.scaleY = root.scaleX; root.alpha = 0.5f
+                    root.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(260).setInterpolator(spring).start()
+                }
+                wasFolded = folded
+            }
         }
+        // a folded bubble rests against the nearest side edge
+        fun snapBubble() {
+            val sw = resources.displayMetrics.widthPixels; val bd = (prefs.getInt("float_bubble_dp", 60) * dp).toInt()
+            val target = if (params.x + bd / 2 < sw / 2) 0 else (sw - bd).coerceAtLeast(0)
+            android.animation.ValueAnimator.ofInt(params.x, target).apply {
+                duration = 260; interpolator = android.view.animation.DecelerateInterpolator(1.5f)
+                addUpdateListener { params.x = it.animatedValue as Int; relayout() }
+                start()
+            }
+            prefs.edit().putInt("float_x", target).apply()
+        }
+        close.setOnClickListener { prefs.edit().putBoolean("float_min", true).apply(); applyLayout(); snapBubble() }
         modeBtn.setOnClickListener { prefs.edit().putBoolean("float_bar", !bar).apply(); applyLayout() }
 
         var downX = 0f; var downY = 0f; var startX = 0; var startY = 0
         root.setOnTouchListener { _, e ->
             when (e.action) {
                 MotionEvent.ACTION_DOWN -> { downX = e.rawX; downY = e.rawY; startX = params.x; startY = params.y }
-                MotionEvent.ACTION_MOVE -> { params.x = startX + (e.rawX - downX).toInt(); params.y = startY + (e.rawY - downY).toInt(); runCatching { wm.updateViewLayout(root, params) } }
+                MotionEvent.ACTION_MOVE -> { params.x = (startX + (e.rawX - downX).toInt()).coerceIn(0, (resources.displayMetrics.widthPixels - root.width).coerceAtLeast(0)); params.y = startY + (e.rawY - downY).toInt(); runCatching { wm.updateViewLayout(root, params) }
+                    if (Math.abs(e.rawX - downX) > 8 * dp || Math.abs(e.rawY - downY) > 8 * dp) { showTarget(); target?.let { it.scaleX = if (overTarget(e.rawX, e.rawY)) 1.25f else 1f; it.scaleY = it.scaleX } } }
+                MotionEvent.ACTION_CANCEL -> hideTarget()
                 MotionEvent.ACTION_UP -> {
+                    val drop = overTarget(e.rawX, e.rawY); hideTarget()
+                    if (drop) { dismiss(); return@setOnTouchListener true }
                     // optionally the window sticks to the nearest side edge when let go
-                    if (prefs.getBoolean("float_snap", false)) {
+                    if (folded) snapBubble()
+                    else if (prefs.getBoolean("float_snap", false)) {
                         val sw = resources.displayMetrics.widthPixels
                         params.x = if (params.x + root.width / 2 < sw / 2) 0 else (sw - root.width).coerceAtLeast(0); relayout()
                     }
                     prefs.edit().putInt("float_x", params.x).putInt("float_y", params.y).apply()
-                    // a tap (no drag) on the round button folds the bar to just the button, and opens it again
+                    // a tap (no drag) anywhere on the window folds it to the round button, and a tap on the button opens it again
                     val tap = Math.abs(e.rawX - downX) < 8 * dp && Math.abs(e.rawY - downY) < 8 * dp
-                    if (tap && bubble.visibility == View.VISIBLE && e.x <= bubble.right + 6 * dp) { prefs.edit().putBoolean("float_min", !folded).apply(); applyLayout() }
+                    if (tap) { prefs.edit().putBoolean("float_min", !folded).apply(); applyLayout(); if (!folded) Unit else snapBubble() }
                 }
             }
             true
@@ -135,7 +185,15 @@ class FloatingService : Service() {
         wm.addView(root, params)
         view = root
         applyLayout()
+        root.pivotX = 0f; root.pivotY = 0f; root.scaleX = 0.3f; root.scaleY = 0.3f; root.alpha = 0f
+        root.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(280).setInterpolator(spring).start()
+        // while the song plays, the folded bubble breathes slowly
+        val breath = android.animation.ValueAnimator.ofFloat(0.92f, 1f).apply {
+            duration = 900; repeatMode = android.animation.ValueAnimator.REVERSE; repeatCount = android.animation.ValueAnimator.INFINITE
+            addUpdateListener { bubble.scaleX = it.animatedValue as Float; bubble.scaleY = bubble.scaleX }
+        }
 
+        scope.coroutineContext[kotlinx.coroutines.Job]?.invokeOnCompletion { breath.cancel() }
         var litNow = 0; var litShown = -1; var sig = ""
         var bubbleCover: android.graphics.Bitmap? = null
         scope.launch {
@@ -144,19 +202,23 @@ class FloatingService : Service() {
                 val now2 = listOf("float_scale", "float_bar", "float_bubble", "float_min", "float_alpha", "float_bubble_dp", "float_w", "float_next").joinToString("|") { prefs.all[it].toString() }
                 if (now2 != sig) { sig = now2; applyLayout() }
                 val state = Tracker.state.value
+                val wantBreath = folded && state.playing
+                if (wantBreath && !breath.isRunning) breath.start() else if (!wantBreath && breath.isRunning) { breath.cancel(); bubble.scaleX = 1f; bubble.scaleY = 1f }
                 val color = Tracker.accent.value.takeIf { it != 0 } ?: 0xFF455A64.toInt()
                 // the notification's colour, darkened so white text stays readable
                 bg.update(Color.argb(255, (Color.red(color) * 0.55f).toInt(), (Color.green(color) * 0.55f).toInt(), (Color.blue(color) * 0.55f).toInt()), Tracker.cover)
                 if (bubbleCover !== Tracker.cover) { bubbleCover = Tracker.cover; bubble.setImageBitmap(bubbleCover) }
                 val fg = if (bg.light) Color.rgb(20, 20, 20) else Color.WHITE
                 if (now.currentTextColor != fg) {
-                    now.setTextColor(fg); next.setTextColor(Color.argb(190, Color.red(fg), Color.green(fg), Color.blue(fg)))
+                    now.setTextColor(fg); prev.setTextColor(Color.argb(150, Color.red(fg), Color.green(fg), Color.blue(fg))); next.setTextColor(Color.argb(190, Color.red(fg), Color.green(fg), Color.blue(fg)))
                     close.setTextColor(fg); modeBtn.setTextColor(fg); bigger.setTextColor(fg); smaller.setTextColor(fg); resize.setTextColor(fg)
                 }
+                var before = ""
                 val (a, b) = when (state.status) {
                     Status.SYNCED -> {
                         val posNow = Tracker.positionMs()
                         val i = Lrc.indexAt(state.lines, posNow)
+                        before = if (i > 0) state.lines[i - 1].text else ""
                         litNow = if (i >= 0 && Tracker.karaoke) Lrc.litChars(state.lines[i].text, state.lines[i].timeMs, state.lines.getOrNull(i + 1)?.timeMs, posNow, state.lines[i].endMs) else 0
                         (if (i < 0) "♪ …" else state.lines[i].text.ifBlank { "♪" }) to (Tracker.translations.value[i]?.let { "↳ $it" } ?: state.lines.getOrNull(i + 1)?.text.orEmpty())
                     }
@@ -174,6 +236,8 @@ class FloatingService : Service() {
                         setSpan(android.text.style.ForegroundColorSpan(Color.argb(150, Color.red(fg), Color.green(fg), Color.blue(fg))), litNow, a.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                     } else a
                 }
+                if (prev.text.toString() != before) prev.text = before
+                prev.visibility = if (before.isBlank() || bar) View.GONE else View.VISIBLE
                 if (next.text.toString() != b) next.text = b
                 next.visibility = if (b.isBlank() || bar || !prefs.getBoolean("float_next", true)) View.GONE else View.VISIBLE
                 delay(250)
@@ -190,8 +254,21 @@ class FloatingService : Service() {
 
     companion object {
         @Volatile var running = false
+        /** True when the bubble was opened by leaving the app (it closes by itself when the app comes back); false when the person opened it. */
+        @Volatile var openedByLeaving = false
+        /** Shows the bubble if it is not already showing; false when Android's "display over other apps" permission is missing. */
+        fun show(context: Context, byLeaving: Boolean): Boolean {
+            if (!android.provider.Settings.canDrawOverlays(context)) return false
+            if (!running) { openedByLeaving = byLeaving; context.startService(Intent(context, FloatingService::class.java)) }
+            return true
+        }
+        /** Closes a bubble that opening the app made redundant; one the person opened themselves stays. */
+        fun hideIfAuto(context: Context) {
+            if (running && openedByLeaving) { openedByLeaving = false; context.stopService(Intent(context, FloatingService::class.java)) }
+        }
         fun toggle(context: Context) {
             val i = Intent(context, FloatingService::class.java)
+            openedByLeaving = false
             if (running) context.stopService(i) else context.startService(i)
         }
     }
