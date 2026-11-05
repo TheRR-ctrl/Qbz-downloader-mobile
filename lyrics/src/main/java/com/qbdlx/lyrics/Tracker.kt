@@ -345,6 +345,15 @@ object Tracker {
         publish(t, l, _state.value.playing)
     }
 
+    /** The user picked this lyric from the list: it is saved as edited, so no automatic search offers to replace it. */
+    fun useChosen(l: Lyrics) {
+        val t = _state.value.track ?: return
+        val n = Lyrics(l.synced, l.plain, LyricEdit.editedSource(l.source ?: "LRCLIB"))
+        suggestion.value = null
+        LyricsStore.put(t.storeKey, n); cache[t.key] = n; _saved.value = LyricsStore.count()
+        publish(t, n, _state.value.playing)
+    }
+
     /** Saves a lyric corrected by hand. Synced lyrics keep their times; plain ones lose the blank lines. Marked as edited so no search replaces it. */
     fun saveEdited(lines: List<LyricLine>) {
         val t = _state.value.track ?: return

@@ -187,6 +187,41 @@ class MainActivity : ComponentActivity() {
 
     /** Full-screen editor: fix the words of any line, delete a line, or change a misheard word everywhere. Times are kept. */
     @Composable
+    private fun LyricsPicker(track: TrackInfo, onClose: () -> Unit) {
+        var items by remember { mutableStateOf<List<Candidate>?>(null) }
+        var why by remember { mutableStateOf("") }
+        LaunchedEffect(track.key) {
+            val (list, msg) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Candidates.search(track) }
+            items = list; why = msg
+        }
+        Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+            Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Elegir la letra", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                    Text("${track.title} — ${track.artist}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                    Text("Estas son las letras que se encontraron. La que elijas se queda y no se reemplaza sola.", style = MaterialTheme.typography.bodySmall)
+                    val list = items
+                    if (list == null) Text("Buscando en LRCLIB y YouTube Music…")
+                    else if (list.isEmpty()) Text("No encontré otras letras. $why")
+                    LazyColumn(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(list.orEmpty().size) { i ->
+                            val c = list!![i]
+                            Surface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceVariant) {
+                                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Text(c.label, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                    Text(c.preview, fontSize = 12.sp, maxLines = 4, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    TextButton({ Tracker.useChosen(c.lyrics); onClose() }) { Text("Usar esta") }
+                                }
+                            }
+                        }
+                    }
+                    TextButton(onClose) { Text("Cerrar") }
+                }
+            }
+        }
+    }
+
+    @Composable
     private fun LyricsEditor(state: LyricsState, onClose: () -> Unit) {
         val synced = state.status == Status.SYNCED
         val rows = remember { mutableStateListOf<EditRow>().also { l -> state.lines.forEach { l.add(EditRow(it, it.text)) } } }
@@ -237,6 +272,9 @@ class MainActivity : ComponentActivity() {
         // Tap-timing of a lyric that has no times: one tap per line as it starts to be sung.
         var tagging by remember { mutableStateOf(false) }
         var editing by remember { mutableStateOf(false) }
+        var picking by remember { mutableStateOf(false) }
+        LaunchedEffect(state.track?.key) { picking = false }
+        if (picking && state.track != null) LyricsPicker(state.track!!) { picking = false }
         LaunchedEffect(state.track?.key) { editing = false }
         if (editing && (state.status == Status.SYNCED || state.status == Status.PLAIN)) LyricsEditor(state) { editing = false }
         val marks = remember { androidx.compose.runtime.mutableStateListOf<Long>() }
@@ -356,7 +394,7 @@ class MainActivity : ComponentActivity() {
                         var fAlpha by remember { mutableFloatStateOf(sp.getInt("float_alpha", 100).toFloat()) }
                         var fScale by remember { mutableFloatStateOf(sp.getFloat("float_scale", 1f)) }
                         var fWidth by remember { mutableFloatStateOf(sp.getInt("float_w", (resources.displayMetrics.widthPixels * 0.86f).toInt()).toFloat()) }
-                        var fBubble by remember { mutableFloatStateOf(sp.getInt("float_bubble_dp", 46).toFloat()) }
+                        var fBubble by remember { mutableFloatStateOf(sp.getInt("float_bubble_dp", 60).toFloat()) }
                         var fShowBubble by remember { mutableStateOf(sp.getBoolean("float_bubble", true)) }
                         var fFolded by remember { mutableStateOf(sp.getBoolean("float_min", false)) }
                         var fNext by remember { mutableStateOf(sp.getBoolean("float_next", true)) }
@@ -472,6 +510,7 @@ class MainActivity : ComponentActivity() {
                     if (state.status == Status.SYNCED) { if (browsing) PillButton({ browsing = false }) { Text("Seguir audio", maxLines = 1, softWrap = false) } else PillTonal({ browsing = true }) { Text("Siguiendo el audio ✓", maxLines = 1, softWrap = false) } }
                     if (state.status == Status.SYNCED || state.status == Status.PLAIN) PillTonal({ editing = true }) { Text("Editar letra", maxLines = 1, softWrap = false) }
                     PillTonal({ enterPip() }) { Text("Burbuja flotante", maxLines = 1, softWrap = false) }
+                    PillTonal({ picking = true }) { Text("Elegir letra", maxLines = 1, softWrap = false) }
                 }
                 if (!tools) BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                     // a third of the height as padding above, so the line being sung sits in the first third however many lines fit

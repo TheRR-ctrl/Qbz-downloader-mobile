@@ -34,6 +34,8 @@ object LrcLib {
         return null
     }
 
+    fun rawSearch(q: String): String? = get("$BASE/search?q=${enc(q)}")
+
     internal fun parseOne(o: JSONObject): Lyrics? {
         val synced = o.optString("syncedLyrics", "").takeIf { it.isNotBlank() && it != "null" }
         val plain = o.optString("plainLyrics", "").takeIf { it.isNotBlank() && it != "null" }

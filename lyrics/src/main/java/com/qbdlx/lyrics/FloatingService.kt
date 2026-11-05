@@ -93,7 +93,7 @@ class FloatingService : Service() {
             val hasBubble = prefs.getBoolean("float_bubble", true) || folded // a folded window is always the bubble
             val full = !folded
             bg.opacity = prefs.getInt("float_alpha", 100) / 100f
-            val bd = (prefs.getInt("float_bubble_dp", 46) * dp).toInt()
+            val bd = (prefs.getInt("float_bubble_dp", 60) * dp).toInt()
             bubble.layoutParams = LinearLayout.LayoutParams(bd, bd)
             bubble.visibility = if (hasBubble) View.VISIBLE else View.GONE
             texts.visibility = if (full) View.VISIBLE else View.GONE
@@ -117,7 +117,7 @@ class FloatingService : Service() {
         }
         // a folded bubble rests against the nearest side edge
         fun snapBubble() {
-            val sw = resources.displayMetrics.widthPixels; val bd = (prefs.getInt("float_bubble_dp", 46) * dp).toInt()
+            val sw = resources.displayMetrics.widthPixels; val bd = (prefs.getInt("float_bubble_dp", 60) * dp).toInt()
             params.x = if (params.x + bd / 2 < sw / 2) 0 else (sw - bd).coerceAtLeast(0); relayout()
             prefs.edit().putInt("float_x", params.x).apply()
         }
@@ -137,9 +137,9 @@ class FloatingService : Service() {
                         params.x = if (params.x + root.width / 2 < sw / 2) 0 else (sw - root.width).coerceAtLeast(0); relayout()
                     }
                     prefs.edit().putInt("float_x", params.x).putInt("float_y", params.y).apply()
-                    // a tap (no drag) on the round button folds the bar to just the button, and opens it again
+                    // a tap (no drag) anywhere on the window folds it to the round button, and a tap on the button opens it again
                     val tap = Math.abs(e.rawX - downX) < 8 * dp && Math.abs(e.rawY - downY) < 8 * dp
-                    if (tap && bubble.visibility == View.VISIBLE && e.x <= bubble.right + 6 * dp) { prefs.edit().putBoolean("float_min", !folded).apply(); applyLayout(); if (!folded) Unit else snapBubble() }
+                    if (tap) { prefs.edit().putBoolean("float_min", !folded).apply(); applyLayout(); if (!folded) Unit else snapBubble() }
                 }
             }
             true
