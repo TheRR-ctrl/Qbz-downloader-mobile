@@ -78,6 +78,15 @@ object Tracker {
         }
     }
 
+    /** "Informar mala sincronización": keeps the report, forgets the verified mark and checks the lyric right away. */
+    fun reportBadSync(): Boolean {
+        val t = _state.value.track ?: return false
+        SyncCheck.report(t.storeKey, t.title, t.artist, _state.value.source)
+        val ctx = app
+        if (ctx != null && Whisper.available(ctx)) { verifySync(); return true }
+        return false
+    }
+
     fun applyVerificationFix() {
         val v = verification.value ?: return
         val fix = v.fix ?: return

@@ -73,6 +73,19 @@ object SyncCheck {
         results.put(key, JSONObject().put("v", "ok").put("t", System.currentTimeMillis()).put("voice", true)); removeFromQueue(key); meta.remove(key); save()
     }
 
+    /** The user says this lyric is badly synced: the "verified" mark goes away and the report is kept (sync-reports.json, last 200). */
+    @Synchronized fun report(key: String, title: String, artist: String, source: String?) {
+        val d = dir ?: return
+        results.remove(key); removeFromQueue(key); save()
+        runCatching {
+            val f = File(d, "sync-reports.json")
+            val all = runCatching { JSONArray(f.readText()) }.getOrDefault(JSONArray())
+            all.put(JSONObject().put("key", key).put("title", title).put("artist", artist).put("source", source ?: "").put("t", System.currentTimeMillis()))
+            val keep = JSONArray(); for (i in maxOf(0, all.length() - 200) until all.length()) keep.put(all.get(i))
+            f.writeText(keep.toString())
+        }
+    }
+
     @Synchronized fun enqueue(key: String, l: Lyrics, t: PrefetchTrack? = null) {
         if (dir == null || l.synced == null || !autoOnWifi || results.has(key)) return
         if (l.source?.startsWith("Whisper") == true) return // made from Whisper's own times

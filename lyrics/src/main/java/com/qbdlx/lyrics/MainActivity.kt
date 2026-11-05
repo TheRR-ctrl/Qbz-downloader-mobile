@@ -535,6 +535,11 @@ class MainActivity : ComponentActivity() {
                     if (state.status == Status.SYNCED || state.status == Status.PLAIN) PillTonal({ editing = true }) { Text("Editar letra", maxLines = 1, softWrap = false) }
                     PillTonal({ enterPip() }) { Text("Burbuja flotante", maxLines = 1, softWrap = false) }
                     if (state.status == Status.SYNCED && whisperOk) PillTonal({ Tracker.verifySync() }, enabled = timingMsg == null || !(timingMsg!!.endsWith("…") || timingMsg!!.endsWith("minutos."))) { Text("Verificar sincronización", maxLines = 1, softWrap = false) }
+                    if (state.status == Status.SYNCED) PillTonal({
+                        val checking = Tracker.reportBadSync()
+                        android.widget.Toast.makeText(this@MainActivity, if (checking) "Informe guardado. Compruebo la letra con la voz…" else "Informe guardado. Elige otra letra de la lista.", android.widget.Toast.LENGTH_LONG).show()
+                        if (!checking) picking = true
+                    }) { Text("Informar mala sincronización", maxLines = 1, softWrap = false) }
                     PillTonal({ picking = true }) { Text("Elegir letra", maxLines = 1, softWrap = false) }
                 }
                 if (!tools) BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
