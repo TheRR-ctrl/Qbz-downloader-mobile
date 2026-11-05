@@ -82,10 +82,7 @@ object Tracker {
                 if (!Whisper.available(ctx)) return@withContext "Whisper no está en esta versión de la app."
                 val uri = AudioTiming.findOrBorrow(ctx, t.title, t.artist, t.durationMs)
                     ?: return@withContext "No encuentro esta canción como archivo en el teléfono (o falta el permiso de audio)."
-                withContext(Dispatchers.Main) { timing.value = "Preparando el audio…" }
-                val pcm = Whisper.pcm16k(ctx, uri, cancelled = { !isActive }) ?: return@withContext "No se pudo leer el audio de ese archivo."
-                withContext(Dispatchers.Main) { timing.value = "Whisper está escuchando la canción… puede tardar unos minutos." }
-                val asr = Whisper.transcribe(ctx, pcm) ?: return@withContext if (!isActive) "Cancelado." else "Whisper no pudo con esta canción."
+                val asr = Whisper.listen(ctx, t.storeKey, uri, { !isActive }) { m -> timing.value = m } ?: return@withContext if (!isActive) "Cancelado." else "Whisper no pudo con esta canción."
                 var timed = WhisperAlign.align(lines, asr.words)
                 ytWhy = ""
                 // The lyric and the voice use different alphabets: YouTube Music often writes the same song in the alphabet Whisper heard.
@@ -116,7 +113,7 @@ object Tracker {
                     if (heard.size >= 2) { withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key) saveTimed(heard, "Whisper (lo que se oyó)") }; return@withContext "Listo: no coincidía con la letra, así que se escribió lo que Whisper oyó. Puede tener errores." }
                 }
                 val done = timed ?: return@withContext "Whisper entendió muy poco de la voz (${asr.words.size} palabras, idioma ${asr.lang}). Prueba «Detectar con el audio»."
-                withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key) saveTimed(done) }
+                withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key) saveTimed(done); if (!WhisperAlign.approximate) SyncCheck.markVerified(t.storeKey) }
                 null
             }
             timing.value = result ?: if (WhisperAlign.approximate) "Listo, aproximado: la letra y la voz están en alfabetos distintos, así que se repartió por cantidad de palabras." else "Listo: letra sincronizada con la voz."
@@ -139,10 +136,7 @@ object Tracker {
                     return "Whisper no entendió la voz; la letra salió de YouTube Music."
                 }
                 val uri = AudioTiming.findOrBorrow(ctx, t.title, t.artist, t.durationMs) ?: return@withContext fromYoutube() ?: "No encuentro esta canción como archivo en el teléfono (o falta el permiso de audio)."
-                withContext(Dispatchers.Main) { timing.value = "Preparando el audio…" }
-                val pcm = Whisper.pcm16k(ctx, uri, cancelled = { !isActive }) ?: return@withContext fromYoutube() ?: "No se pudo leer el audio de ese archivo."
-                withContext(Dispatchers.Main) { timing.value = "Whisper está escuchando la canción… puede tardar unos minutos." }
-                val asr = Whisper.transcribe(ctx, pcm) ?: return@withContext if (!isActive) "Cancelado." else (fromYoutube() ?: "Whisper no pudo con esta canción.")
+                val asr = Whisper.listen(ctx, t.storeKey, uri, { !isActive }) { m -> timing.value = m } ?: return@withContext if (!isActive) "Cancelado." else (fromYoutube() ?: "Whisper no pudo con esta canción.")
                 val heard = WhisperAlign.linesFromHeard(asr.words)
                 if (asr.words.size < 8 || heard.size < 2) return@withContext fromYoutube() ?: "Whisper entendió muy poco (${asr.words.size} palabras) y YouTube Music no tiene esta letra."
                 withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key) saveTimed(heard, "Whisper (lo que se oyó)") }
@@ -271,7 +265,7 @@ object Tracker {
             }
             if (found == null) found = withContext(Dispatchers.IO) { runCatching { YtMusic.find(track.title, track.artist, (track.durationMs / 1000).toInt()) }.getOrNull() }
             cache[track.key] = found
-            found?.let { LyricsStore.put(track.storeKey, it); _saved.value = LyricsStore.count(); SyncCheck.enqueue(track.storeKey, it) }
+            found?.let { LyricsStore.put(track.storeKey, it); _saved.value = LyricsStore.count(); SyncCheck.enqueue(track.storeKey, it, PrefetchTrack(track.title, track.artist, track.album, (track.durationMs / 1000).toInt())) }
             publish(track, found, playing)
         }
     }

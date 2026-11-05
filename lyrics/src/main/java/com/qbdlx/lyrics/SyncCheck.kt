@@ -42,6 +42,7 @@ object SyncCheck {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var results = JSONObject()
     private var queue = JSONArray()
+    private var meta = JSONObject() // key -> [title, artist, album, seconds] of queued songs, so songs that are not on the phone can still be checked through the downloader
     private var dir: File? = null
     private var lastAuto = 0L
 
@@ -49,6 +50,7 @@ object SyncCheck {
         if (dir != null) return
         dir = context.applicationContext.filesDir
         results = runCatching { JSONObject(File(dir, "sync-check.json").readText()) }.getOrDefault(JSONObject())
+        meta = runCatching { JSONObject(File(dir, "sync-meta.json").readText()) }.getOrDefault(JSONObject())
         queue = runCatching { JSONArray(File(dir, "sync-pending.json").readText()) }.getOrDefault(JSONArray())
         autoOnWifi = context.getSharedPreferences("lyrics", Context.MODE_PRIVATE).getBoolean("sync_auto", true)
         _pending.value = queue.length(); _toFix.value = countFixable()
@@ -60,16 +62,24 @@ object SyncCheck {
 
     @Synchronized private fun save() {
         val d = dir ?: return
-        runCatching { File(d, "sync-check.json").writeText(results.toString()); File(d, "sync-pending.json").writeText(queue.toString()) }
+        runCatching { File(d, "sync-check.json").writeText(results.toString()); File(d, "sync-pending.json").writeText(queue.toString()); File(d, "sync-meta.json").writeText(meta.toString()) }
         _pending.value = queue.length(); _toFix.value = countFixable()
     }
 
     /** A lyric just saved: its check runs when the phone is on Wi-Fi. Only synced ones can be checked. */
-    @Synchronized fun enqueue(key: String, l: Lyrics) {
+    /** A lyric that Whisper just timed from the voice is already verified: it is never queued or checked again. */
+    @Synchronized fun markVerified(key: String) {
+        if (dir == null) return
+        results.put(key, JSONObject().put("v", "ok").put("t", System.currentTimeMillis()).put("voice", true)); removeFromQueue(key); meta.remove(key); save()
+    }
+
+    @Synchronized fun enqueue(key: String, l: Lyrics, t: PrefetchTrack? = null) {
         if (dir == null || l.synced == null || !autoOnWifi || results.has(key)) return
         if (l.source?.startsWith("Whisper") == true) return // made from Whisper's own times
         for (i in 0 until queue.length()) if (queue.optString(i) == key) return
-        queue.put(key); save()
+        queue.put(key)
+        if (t != null) meta.put(key, JSONArray().put(t.title).put(t.artist).put(t.album).put(t.durationSec))
+        save()
     }
 
     /** Pure judgement: [stored] are the saved lines, [ref] Whisper's times for the same non-blank lines in the same order. */
@@ -94,8 +104,7 @@ object SyncCheck {
         val uri = AudioTiming.findOrBorrow(context, t.title, t.artist, t.durationSec * 1000L) ?: return null
         val lines = Lrc.parse(synced).filter { it.text.isNotBlank() }
         if (lines.size < 4) return null
-        val pcm = Whisper.pcm16k(context, uri, cancelled = cancelled) ?: return null
-        val asr = Whisper.transcribe(context, pcm) ?: return null
+        val asr = Whisper.listen(context, Prefetch.storeKey(t.title, t.artist), uri, cancelled) ?: return null
         val ref = WhisperAlign.align(lines.map { it.text }, asr.words)
         if (ref == null || WhisperAlign.approximate) return SyncVerdict("unk", 0, 0, lines.size, null) // another alphabet: nothing to compare
         return judge(lines, ref)
@@ -119,7 +128,9 @@ object SyncCheck {
         if (job?.isActive == true || !Whisper.available(app)) return
         job = scope.launch {
             _state.value = SyncProgress(running = true, message = "Buscando canciones con letra…")
-            val library = runCatching { Prefetch.fromMediaStore(app) }.getOrDefault(emptyList()).associateBy { Prefetch.storeKey(it.title, it.artist) }
+            val library = runCatching { Prefetch.fromMediaStore(app) }.getOrDefault(emptyList()).associateBy { Prefetch.storeKey(it.title, it.artist) }.toMutableMap()
+            // queued songs that are not on the phone: still checked, with a temporary copy lent by QBDLX Mobile
+            for (k in meta.keys().asSequence().toList()) if (!library.containsKey(k)) meta.optJSONArray(k)?.let { a -> library[k] = PrefetchTrack(a.optString(0), a.optString(1), a.optString(2), a.optInt(3)) }
             val todo = (keys ?: library.keys.filter { k -> LyricsStore.get(k)?.synced != null && !results.has(k) }.toSet())
                 .filter { library.containsKey(it) && LyricsStore.get(it)?.synced != null }
             var ok = 0; var off = 0; var unk = 0; var fixed = 0; var done = 0

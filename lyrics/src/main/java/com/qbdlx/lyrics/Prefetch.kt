@@ -137,7 +137,7 @@ object Prefetch {
                                     else {
                                         failures.set(0)
                                         if (streak.incrementAndGet() >= 20) { streak.set(0); limit.updateAndGet { (it + 2).coerceAtMost(PARALLEL) } }
-                                        if (result != null) { LyricsStore.put(key, result, flush = false); SyncCheck.enqueue(key, result); found.incrementAndGet() } else { LyricsStore.markMissing(key); missing.incrementAndGet() }
+                                        if (result != null) { LyricsStore.put(key, result, flush = false); SyncCheck.enqueue(key, result, t); found.incrementAndGet() } else { LyricsStore.markMissing(key); missing.incrementAndGet() }
                                     }
                                 }
                                 val n = done.incrementAndGet()
