@@ -233,6 +233,12 @@ class FloatingService : Service() {
                     Status.NO_ACCESS -> "Falta el acceso a notificaciones" to ""
                     Status.NO_MEDIA -> "♪" to "Pon una canción"
                 }
+                if (now.text.toString() != a && !folded && now.text.isNotEmpty()) {
+                    // a new line rolls up into place: a short rise and fade, inside the window padding so nothing is clipped
+                    texts.animate().cancel()
+                    texts.translationY = 8 * dp; texts.alpha = 0.25f
+                    texts.animate().translationY(0f).alpha(1f).setDuration(260).setInterpolator(android.view.animation.DecelerateInterpolator(1.8f)).start()
+                }
                 if (now.text.toString() != a || litNow != litShown) {
                     litShown = litNow
                     now.text = if (litNow > 0 && litNow <= a.length) android.text.SpannableString(a).apply {
