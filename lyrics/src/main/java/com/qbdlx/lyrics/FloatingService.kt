@@ -43,6 +43,7 @@ class FloatingService : Service() {
         ).apply { gravity = Gravity.TOP or Gravity.START; x = prefs.getInt("float_x", (resources.displayMetrics.widthPixels * 0.07f).toInt()); y = prefs.getInt("float_y", (120 * dp).toInt()) }
 
         val now = TextView(this).apply { setTextColor(Color.WHITE); textSize = 18f; setTypeface(typeface, android.graphics.Typeface.BOLD); maxLines = 3 }
+        val prev = TextView(this).apply { setTextColor(Color.argb(150, 255, 255, 255)); textSize = 12f; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; visibility = View.GONE }
         val next = TextView(this).apply { setTextColor(Color.argb(180, 255, 255, 255)); textSize = 14f; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
         val close = TextView(this).apply { text = "✕"; setTextColor(Color.argb(200, 255, 255, 255)); textSize = 16f; setPadding((10 * dp).toInt(), (6 * dp).toInt(), (10 * dp).toInt(), (6 * dp).toInt()); }
         var scale = prefs.getFloat("float_scale", 1f)
@@ -76,7 +77,7 @@ class FloatingService : Service() {
         val modeBtn = tool("▭")
         val defaultW = (resources.displayMetrics.widthPixels * 0.86f).toInt()
         val tools = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.END; addView(close); addView(modeBtn); addView(bigger); addView(smaller); addView(resize) }
-        val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL; addView(now); addView(next) }
+        val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL; addView(prev); addView(now); addView(next) }
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -120,9 +121,9 @@ class FloatingService : Service() {
             modeBtn.text = if (bar) "⤢" else "▭"
             bigger.visibility = if (bar) View.GONE else View.VISIBLE
             smaller.visibility = bigger.visibility
-            now.maxLines = if (bar) 1 else 3
+            now.maxLines = if (bar) 1 else 2
             now.ellipsize = if (bar) android.text.TextUtils.TruncateAt.END else null
-            now.textSize = (if (bar) 15f else 18f) * scale; next.textSize = 14f * scale
+            now.textSize = (if (bar) 14f else 15f) * scale; next.textSize = 12f * scale; prev.textSize = 12f * scale
             root.background = if (full) bg else null
             bg.invalidateSelf()
             val pad = if (full) 8 else 0
@@ -209,13 +210,15 @@ class FloatingService : Service() {
                 if (bubbleCover !== Tracker.cover) { bubbleCover = Tracker.cover; bubble.setImageBitmap(bubbleCover) }
                 val fg = if (bg.light) Color.rgb(20, 20, 20) else Color.WHITE
                 if (now.currentTextColor != fg) {
-                    now.setTextColor(fg); next.setTextColor(Color.argb(190, Color.red(fg), Color.green(fg), Color.blue(fg)))
+                    now.setTextColor(fg); prev.setTextColor(Color.argb(150, Color.red(fg), Color.green(fg), Color.blue(fg))); next.setTextColor(Color.argb(190, Color.red(fg), Color.green(fg), Color.blue(fg)))
                     close.setTextColor(fg); modeBtn.setTextColor(fg); bigger.setTextColor(fg); smaller.setTextColor(fg); resize.setTextColor(fg)
                 }
+                var before = ""
                 val (a, b) = when (state.status) {
                     Status.SYNCED -> {
                         val posNow = Tracker.positionMs()
                         val i = Lrc.indexAt(state.lines, posNow)
+                        before = if (i > 0) state.lines[i - 1].text else ""
                         litNow = if (i >= 0 && Tracker.karaoke) Lrc.litChars(state.lines[i].text, state.lines[i].timeMs, state.lines.getOrNull(i + 1)?.timeMs, posNow, state.lines[i].endMs) else 0
                         (if (i < 0) "♪ …" else state.lines[i].text.ifBlank { "♪" }) to (Tracker.translations.value[i]?.let { "↳ $it" } ?: state.lines.getOrNull(i + 1)?.text.orEmpty())
                     }
@@ -233,6 +236,8 @@ class FloatingService : Service() {
                         setSpan(android.text.style.ForegroundColorSpan(Color.argb(150, Color.red(fg), Color.green(fg), Color.blue(fg))), litNow, a.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                     } else a
                 }
+                if (prev.text.toString() != before) prev.text = before
+                prev.visibility = if (before.isBlank() || bar) View.GONE else View.VISIBLE
                 if (next.text.toString() != b) next.text = b
                 next.visibility = if (b.isBlank() || bar || !prefs.getBoolean("float_next", true)) View.GONE else View.VISIBLE
                 delay(250)
