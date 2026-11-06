@@ -162,6 +162,28 @@ object Tracker {
                 var timed = WhisperAlign.align(lines, asr.words)
                 diag = Whisper.describe(asr, t.durationMs, lines.firstOrNull()?.let { _state.value.lines.firstOrNull { l -> l.text.isNotBlank() }?.timeMs }, WhisperAlign.lastMatched)
                 ytWhy = ""; var offer: String? = null
+                // The voice is out of reach of this lyric (other alphabet, or too little matched): every other source is tried and the first one
+                // whose words do match what was heard replaces it. A lyric the user chose or edited by hand is never swapped here (it is only offered below).
+                if ((timed == null || WhisperAlign.approximate) && !LyricEdit.isEdited(_state.value.source) && !declined(t.storeKey)) {
+                    withContext(Dispatchers.Main) { timing.value = "La letra no coincide con la voz: probando otras fuentes…" }
+                    val curPlain = lines.joinToString("\n")
+                    var best: Triple<List<LyricLine>, String, Double>? = null
+                    for (c in runCatching { Candidates.search(t).first }.getOrDefault(emptyList())) {
+                        val cl = (c.lyrics.plain ?: c.lyrics.synced?.let { Lrc.parse(it).joinToString("\n") { l -> l.text } })?.lines()?.map { it.trim() }?.filter { it.isNotEmpty() } ?: continue
+                        if (cl.size < 2 || cl.joinToString("\n") == curPlain) continue
+                        val al = WhisperAlign.align(cl, asr.words, 0.12)
+                        if (al == null || WhisperAlign.approximate) continue
+                        val ratio = WhisperAlign.lastMatched.let { if (it.second > 0) it.first.toDouble() / it.second else 0.0 }
+                        if (best == null || ratio > best.third) best = Triple(al, c.lyrics.source ?: "otra fuente", ratio)
+                    }
+                    val b = best
+                    if (b != null && _state.value.track?.key == t.key && same(lines)) {
+                        withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key && same(lines)) saveTimed(b.first, b.second) }
+                        SyncCheck.markVerified(t.storeKey)
+                        return@withContext "La letra que tenías no coincidía con la voz (Whisper no la alcanzaba), así que se usó la de ${b.second}, que sí coincide."
+                    }
+                    WhisperAlign.align(lines, asr.words) // back to this lyric's own result for the steps below
+                }
                 // The lyric and the voice use different alphabets: YouTube Music often writes the same song in the alphabet Whisper heard.
                 // Its lines only serve to find the times; they are moved onto the user's lines by position.
                 if ((timed == null || WhisperAlign.approximate) && _state.value.source?.startsWith(YtMusic.SOURCE) != true && !(auto && (LyricEdit.isEdited(_state.value.source) || declined(t.storeKey)))) {
