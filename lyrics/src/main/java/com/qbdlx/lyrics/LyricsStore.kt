@@ -23,7 +23,15 @@ object LyricsStore {
 
     @Synchronized fun has(key: String) = data.has(key)
 
+    /** The last writes (who wrote what), to trace a lyric that goes back to an old text. Shown under the result of "Resincronizar". */
+    private val writes = ArrayDeque<String>()
+    fun recentWrites(): String = synchronized(this) { writes.joinToString("\n") }
+
     @Synchronized fun put(key: String, l: Lyrics, flush: Boolean = true) {
+        val who = Throwable().stackTrace.drop(1).firstOrNull { !it.className.contains("LyricsStore") }?.let { "${it.className.substringAfterLast('.')}.${it.methodName}:${it.lineNumber}" } ?: "?"
+        val first = (l.plain ?: "").lineSequence().firstOrNull { it.isNotBlank() }?.take(24) ?: ""
+        writes.addLast("${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())} $who · ${l.source ?: "?"} · «$first»")
+        while (writes.size > 8) writes.removeFirst()
         data.put(key, JSONObject().put("s", l.synced ?: "").put("p", l.plain ?: "").put("src", l.source ?: ""))
         if (flush) flush()
     }
