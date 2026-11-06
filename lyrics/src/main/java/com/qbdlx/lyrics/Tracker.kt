@@ -164,7 +164,9 @@ object Tracker {
                 ytWhy = ""; var offer: String? = null
                 // The voice is out of reach of this lyric (other alphabet, or too little matched): every other source is tried and the first one
                 // whose words do match what was heard replaces it. A lyric the user chose or edited by hand is never swapped here (it is only offered below).
-                if ((timed == null || WhisperAlign.approximate) && !LyricEdit.isEdited(_state.value.source) && !declined(t.storeKey)) {
+                // without times of its own the lyric cannot be left as it is, even if the user picked it: a source with times replaces it below
+                val untimed = _state.value.status == Status.PLAIN
+                if ((timed == null || WhisperAlign.approximate) && (!LyricEdit.isEdited(_state.value.source) || untimed) && !declined(t.storeKey)) {
                     withContext(Dispatchers.Main) { timing.value = "La letra no coincide con la voz: probando otras fuentes…" }
                     val curPlain = lines.joinToString("\n")
                     var best: Triple<List<LyricLine>, String, Double>? = null
@@ -176,7 +178,14 @@ object Tracker {
                         val ratio = WhisperAlign.lastMatched.let { if (it.second > 0) it.first.toDouble() / it.second else 0.0 }
                         if (best == null || ratio > best.third) best = Triple(al, c.lyrics.source ?: "otra fuente", ratio)
                     }
+                    val cands = runCatching { Candidates.search(t).first }.getOrDefault(emptyList())
                     val b = best
+                    // Whisper cannot judge any of them: a lyric without times takes the first source that comes with its own times (they are the song's real ones)
+                    val own = if (b == null && untimed) cands.firstOrNull { it.lyrics.synced != null && Lrc.parse(it.lyrics.synced).size >= 2 } else null
+                    if (own != null && _state.value.track?.key == t.key && same(lines)) {
+                        withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key && same(lines)) saveTimed(Lrc.parse(own.lyrics.synced!!), own.lyrics.source ?: "otra fuente") }
+                        return@withContext "Whisper no pudo comprobar esta letra con la voz (idioma o voces mezcladas). Tu letra no tenía tiempos, así que se usó la de ${own.lyrics.source ?: "otra fuente"}, que trae los suyos."
+                    }
                     if (b != null && _state.value.track?.key == t.key && same(lines)) {
                         withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key && same(lines)) saveTimed(b.first, b.second) }
                         SyncCheck.markVerified(t.storeKey)
