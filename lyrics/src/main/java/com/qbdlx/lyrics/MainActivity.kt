@@ -614,14 +614,14 @@ class MainActivity : ComponentActivity() {
                                     }).padding(vertical = 6.dp))
                             val trLine = if (Tracker.translate) translations[i] else null
                             if (trLine != null) Text(trLine, fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (on) 1f else .7f), modifier = Modifier.fillMaxWidth(.83f).padding(bottom = 4.dp))
-                            // A pause of 5 s or more after a sung line (the line is taken as sung at ~100 ms a character, at least 2.5 s): the same three dots as before the first line.
+                            // A pause of 4 s or more after a sung line (the line is taken as sung at ~100 ms a character, at least 1.5 s): the same three dots as before the first line.
                             val nextT = state.lines.getOrNull(i + 1)?.timeMs
                             if (state.status == Status.SYNCED && nextT != null && l.text.isNotBlank()) {
                                 // with Whisper's end for the line, the pause starts when the voice really stops; otherwise it is estimated from the text
                                 val realEnd = l.endMs?.takeIf { it > l.timeMs + 300 && it <= nextT }
-                                val gapStart = realEnd ?: (l.timeMs + (l.text.length * 100L).coerceAtLeast(2500L).coerceAtMost(span))
+                                val gapStart = realEnd ?: (l.timeMs + (l.text.length * 100L).coerceAtLeast(1500L).coerceAtMost(span))
                                 val gap = nextT - gapStart
-                                if (gap >= (if (realEnd != null) 4000 else 5000)) BreathDots(if (pos >= gapStart) ((pos - gapStart).toFloat() / gap).coerceIn(0f, 1f) else 0f, pos in gapStart until nextT, Modifier.padding(vertical = 10.dp))
+                                if (gap >= (if (realEnd != null) 4000 else 4000)) BreathDots(if (pos >= gapStart) ((pos - gapStart).toFloat() / gap).coerceIn(0f, 1f) else 0f, pos in gapStart until nextT, Modifier.padding(vertical = 10.dp))
                             }
                             }
                         }
