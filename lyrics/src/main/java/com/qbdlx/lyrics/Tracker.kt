@@ -190,10 +190,10 @@ object Tracker {
                 if (timed == null && LyricEdit.isEdited(_state.value.source)) return@withContext "La letra que elegiste está en otro alfabeto que la voz (o se entendió muy poco), así que no pude ajustar los tiempos. Se queda tu letra tal cual."
                 if (timed == null && asr.words.size >= 8) {
                     val heard = WhisperAlign.linesFromHeard(asr.words)
-                    if (heard.size >= 2) { withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key) saveTimed(heard, "Whisper (lo que se oyó)") }; return@withContext "Listo: no coincidía con la letra, así que se escribió lo que Whisper oyó. Puede tener errores." }
+                    if (heard.size >= 2) { withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key && same(lines)) saveTimed(heard, "Whisper (lo que se oyó)") }; return@withContext "Listo: no coincidía con la letra, así que se escribió lo que Whisper oyó. Puede tener errores." }
                 }
                 val done = timed ?: return@withContext "Whisper entendió muy poco de la voz (${asr.words.size} palabras, idioma ${asr.lang}). Prueba «Detectar con el audio»."
-                withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key) saveTimed(done); if (!WhisperAlign.approximate) SyncCheck.markVerified(t.storeKey) }
+                withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key && same(lines)) saveTimed(done); if (!WhisperAlign.approximate) SyncCheck.markVerified(t.storeKey) }
                 offer
             }
             timing.value = (result ?: if (WhisperAlign.approximate) "Listo, aproximado: la letra y la voz están en alfabetos distintos, así que se repartió por cantidad de palabras." else "Listo: letra sincronizada con la voz.") + "\n" + diag + "\nÚltimos guardados:\n" + LyricsStore.recentWrites()
@@ -392,6 +392,9 @@ object Tracker {
     fun rawPositionMs() = (positionMs() - offsetMs).coerceAtLeast(0)
 
     /** Saves lines timed by the user as this song's synced lyrics (kept on the phone like any found lyrics) and shows them at once. */
+    /** A long job (Whisper) finished: it may only save if the lyric on screen is still the one it started with, or it would bring an old text back. */
+    private fun same(started: List<String>) = _state.value.lines.map { it.text } == started
+
     fun saveTimed(lines: List<LyricLine>, source: String? = _state.value.source) {
         val t = _state.value.track ?: return
         val l = Lyrics(Lrc.toLrc(lines), lines.joinToString("\n") { it.text }, source)
@@ -401,6 +404,7 @@ object Tracker {
 
     /** The user picked this lyric from the list: it is saved as edited, so no automatic search offers to replace it. */
     fun useChosen(l: Lyrics) {
+        timingJob?.cancel(); timing.value = null
         val t = _state.value.track ?: return
         val n = Lyrics(l.synced, l.plain, LyricEdit.editedSource(l.source ?: "LRCLIB"))
         suggestion.value = null
@@ -410,6 +414,7 @@ object Tracker {
 
     /** Saves a lyric corrected by hand. Synced lyrics keep their times; plain ones lose the blank lines. Marked as edited so no search replaces it. */
     fun saveEdited(lines: List<LyricLine>) {
+        timingJob?.cancel(); timing.value = null
         val t = _state.value.track ?: return
         val src = LyricEdit.editedSource(_state.value.source)
         val l = if (_state.value.status == Status.SYNCED) Lyrics(Lrc.toLrc(lines), lines.joinToString("\n") { it.text }, src)
