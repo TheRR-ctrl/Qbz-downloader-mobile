@@ -206,8 +206,9 @@ object Tracker {
                     if (better == null && other != null && otherLines != null && otherLines.size >= 2) {
                         val replaced = other.synced?.let { Lrc.parse(it) }?.takeIf { it.size >= 2 }
                             ?: WhisperAlign.align(otherLines, asr.words, 0.12)
-                        if (replaced != null) {
-                            val approx = other.synced == null && WhisperAlign.approximate
+                        val approx = other.synced == null && WhisperAlign.approximate
+                        if (approx) ytWhy = "encontró la letra, pero no trae tiempos y la voz no se pudo emparejar, así que no la ofrezco con tiempos inventados"
+                        if (replaced != null && !approx) {
                             withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key) suggestion.value = Suggestion(t.key, t.storeKey, replaced, YtMusic.SOURCE, other.synced != null) }
                             offer = "Encontré otra letra (YouTube Music) que coincide mejor con la voz" + (if (other.synced != null) ", con sus propios tiempos." else if (approx) ", repartida por cantidad de palabras (aproximado)." else ", sincronizada con la voz.") + " Abajo te pregunto si quieres cambiarla."
                             if (timed == null) return@withContext offer
