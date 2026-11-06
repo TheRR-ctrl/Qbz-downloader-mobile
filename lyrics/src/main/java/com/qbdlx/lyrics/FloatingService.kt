@@ -136,6 +136,7 @@ class FloatingService : Service() {
             toolsShown = true; tools.animate().cancel(); tools.visibility = View.VISIBLE; tools.animate().alpha(1f).setDuration(150).start()
             root.removeCallbacks(hideTools); root.postDelayed(hideTools, 2000)
         }
+        var snapAnim: android.animation.ValueAnimator? = null
         val bg = CoverBackground(if (bar) 30 * dp else 18 * dp)
         applyLayout = {
             // everything is read from the saved settings, so the Ajustes sliders and the handles on the window act on the same values
@@ -167,6 +168,7 @@ class FloatingService : Service() {
             (texts.layoutParams as LinearLayout.LayoutParams).marginStart = ((if (hasBubble) 10 else 0) * dp).toInt()
             params.width = if (full) prefs.getInt("float_w", defaultW) else WindowManager.LayoutParams.WRAP_CONTENT
             // opened next to the right edge, the panel must not hang off the screen
+            if (full) snapAnim?.cancel() // a bubble still sliding to the edge would drag the opened window off screen
             if (full && params.width > 0) params.x = params.x.coerceIn(0, (resources.displayMetrics.widthPixels - params.width).coerceAtLeast(0))
             relayout()
             if (wasFolded != folded) {
@@ -183,7 +185,8 @@ class FloatingService : Service() {
         fun snapBubble() {
             val sw = resources.displayMetrics.widthPixels; val bd = (prefs.getInt("float_bubble_dp", 60) * dp).toInt()
             val target = if (params.x + bd / 2 < sw / 2) 0 else (sw - bd).coerceAtLeast(0)
-            android.animation.ValueAnimator.ofInt(params.x, target).apply {
+            snapAnim?.cancel()
+            snapAnim = android.animation.ValueAnimator.ofInt(params.x, target).apply {
                 duration = 260; interpolator = android.view.animation.DecelerateInterpolator(1.5f)
                 addUpdateListener { params.x = it.animatedValue as Int; relayout() }
                 start()
