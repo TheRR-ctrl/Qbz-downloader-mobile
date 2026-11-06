@@ -39,8 +39,18 @@ object WhisperAlign {
     private fun script(words: List<String>): Character.UnicodeScript? =
         words.joinToString("").filter { it.isLetter() }.groupBy { Character.UnicodeScript.of(it.code) }.maxByOrNull { it.value.size }?.key
 
+    /** Arabic is written with the same word in several spellings (alef with or without hamza, ى/ي, ة/ه, ؤ/ئ): they are made one so Whisper's spelling and the lyric's can meet. */
+    private fun arabic(c: Char): Char = when (c) { 'أ', 'إ', 'آ', 'ٱ' -> 'ا'; 'ى', 'ئ' -> 'ي'; 'ة' -> 'ه'; 'ؤ' -> 'و'; 'گ', 'ڤ' -> if (c == 'گ') 'ك' else 'ف'; 'ک' -> 'ك'; 'ی' -> 'ي'; else -> c }
+
     private fun norm(s: String): String =
-        Normalizer.normalize(s.lowercase(), Normalizer.Form.NFD).filter { it.isLetterOrDigit() }
+        Normalizer.normalize(s.lowercase(), Normalizer.Form.NFD).filter { it.isLetterOrDigit() }.map { arabic(it) }.joinToString("")
+
+    /** A few words of each side, so a bad match can be seen: what Whisper wrote and what the lyric says, after the same clean-up. */
+    fun sample(lines: List<String>, words: List<AsrWord>): String {
+        val l = lines.flatMap { it.split(Regex("\\s+")) }.map(::norm).filter { it.isNotEmpty() }.take(10).joinToString(" ")
+        val h = words.map { norm(it.text) }.filter { it.isNotEmpty() }.take(10).joinToString(" ")
+        return "Oyó: $h\nLetra: $l"
+    }
 
     private fun similarity(a: String, b: String): Double {
         if (a == b) return 1.0

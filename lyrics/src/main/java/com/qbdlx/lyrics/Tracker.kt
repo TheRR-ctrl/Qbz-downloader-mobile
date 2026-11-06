@@ -160,7 +160,7 @@ object Tracker {
                     ?: return@withContext "No encuentro esta canción como archivo en el teléfono (o falta el permiso de audio)."
                 val asr = Whisper.listen(ctx, t.storeKey, uri, { !isActive }, t.durationMs, WhisperAlign.langHint(lines)) { m -> timing.value = m } ?: return@withContext if (!isActive) "Cancelado." else "Whisper no pudo con esta canción."
                 var timed = WhisperAlign.align(lines, asr.words)
-                diag = Whisper.describe(asr, t.durationMs, lines.firstOrNull()?.let { _state.value.lines.firstOrNull { l -> l.text.isNotBlank() }?.timeMs }, WhisperAlign.lastMatched)
+                diag = Whisper.describe(asr, t.durationMs, lines.firstOrNull()?.let { _state.value.lines.firstOrNull { l -> l.text.isNotBlank() }?.timeMs }, WhisperAlign.lastMatched) + "\n" + WhisperAlign.sample(lines, asr.words)
                 ytWhy = ""; var offer: String? = null
                 // The voice is out of reach of this lyric (other alphabet, or too little matched): every other source is tried and the first one
                 // whose words do match what was heard replaces it. A lyric the user chose or edited by hand is never swapped here (it is only offered below).
