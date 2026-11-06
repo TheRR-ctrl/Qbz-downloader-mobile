@@ -186,6 +186,8 @@ object Tracker {
                     else if (timed != null) WhisperAlign.markApproximate()
                 }
                 // Nothing matches and no other lyric helps: what Whisper heard becomes the lyric, with its real times.
+                // a lyric the user chose or edited is never replaced by what Whisper heard: that brought the old (wrong) text back
+                if (timed == null && LyricEdit.isEdited(_state.value.source)) return@withContext "La letra que elegiste está en otro alfabeto que la voz (o se entendió muy poco), así que no pude ajustar los tiempos. Se queda tu letra tal cual."
                 if (timed == null && asr.words.size >= 8) {
                     val heard = WhisperAlign.linesFromHeard(asr.words)
                     if (heard.size >= 2) { withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key) saveTimed(heard, "Whisper (lo que se oyó)") }; return@withContext "Listo: no coincidía con la letra, así que se escribió lo que Whisper oyó. Puede tener errores." }
@@ -294,7 +296,7 @@ object Tracker {
         val playing = c.playbackState?.state == PlaybackState.STATE_PLAYING
         if (accentKey != track.key || accent.value == 0) { accentKey = track.key; cover = findCover(meta); accent.value = findAccent(c, meta) }
         if (track.key != loadedKey && SystemClock.elapsedRealtime() >= retryAt) { loadedKey = track.key; load(track, playing) }
-        else if (_state.value.playing != playing) _state.value = LyricsState(_state.value.status, _state.value.track, _state.value.lines, playing)
+        else if (_state.value.playing != playing) _state.value = LyricsState(_state.value.status, _state.value.track, _state.value.lines, playing, _state.value.source)
     }
 
     private fun findCover(meta: MediaMetadata): android.graphics.Bitmap? = runCatching {
