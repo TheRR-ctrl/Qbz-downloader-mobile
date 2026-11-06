@@ -77,7 +77,8 @@ class MainActivity : ComponentActivity() {
     /** The floating bubble when it can be shown; otherwise the picture-in-picture window. */
     private fun enterPip() { if (!FloatingService.show(this, false)) runCatching { enterPictureInPictureMode(pipParams(false)) } }
 
-    override fun onResume() { super.onResume(); FloatingService.hideIfAuto(this) }
+    override fun onResume() { super.onResume(); FloatingService.appForeground = true; FloatingService.hideIfAuto(this) }
+    override fun onPause() { super.onPause(); FloatingService.appForeground = false }
 
     /** Leaving the app (Home) keeps the lyrics in a small window when the setting is on: automatically on Android 12+, from here before. */
     fun applyPipSetting() { if (android.os.Build.VERSION.SDK_INT >= 31) runCatching { setPictureInPictureParams(pipParams(pipOn() && !bubbleReady())) } }
@@ -424,6 +425,7 @@ class MainActivity : ComponentActivity() {
                         var fBubble by remember { mutableFloatStateOf(sp.getInt("float_bubble_dp", 60).toFloat()) }
                         var fFolded by remember { mutableStateOf(sp.getBoolean("float_min", false)) }
                         var fNext by remember { mutableStateOf(sp.getBoolean("float_next", true)) }
+                        var fAuto by remember { mutableStateOf(sp.getBoolean("float_auto", true)) }
                         var fSnap by remember { mutableStateOf(sp.getBoolean("float_snap", false)) }
                         var fBar by remember { mutableStateOf(sp.getBoolean("float_bar", true)) }
                         val maxW = resources.displayMetrics.widthPixels.toFloat(); val minW = 160 * resources.displayMetrics.density
@@ -443,6 +445,7 @@ class MainActivity : ComponentActivity() {
                         toggle("Plegar a solo la burbuja (tócala para abrir)", fFolded, "float_min") { fFolded = it }
                         toggle("Barra compacta (una línea)", fBar, "float_bar") { fBar = it }
                         toggle("Mostrar la línea siguiente (modo grande)", fNext, "float_next") { fNext = it }
+                        toggle("Abrir la burbuja sola al detectar música", fAuto, "float_auto") { fAuto = it }
                         toggle("Pegarse al borde al soltarla", fSnap, "float_snap") { fSnap = it }
                         Text("En la ventana, arrastra ⤡ para cambiar el ancho (izquierda/derecha) y el texto (arriba/abajo).", style = small)
                         TextButton({

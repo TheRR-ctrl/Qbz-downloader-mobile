@@ -93,6 +93,7 @@ class FloatingService : Service() {
         fun dismiss(cx: Float, cy: Float) {
             if (closing) return
             closing = true
+            suppressAuto = true // closed by hand: it does not pop up again until the music stops
             val c = IntArray(2); root.getLocationOnScreen(c)
             val dx = cx - (c[0] + root.width / 2f); val dy = cy - (c[1] + root.height / 2f)
             val sx = params.x; val sy = params.y
@@ -303,6 +304,10 @@ class FloatingService : Service() {
         @Volatile var running = false
         /** True when the bubble was opened by leaving the app (it closes by itself when the app comes back); false when the person opened it. */
         @Volatile var openedByLeaving = false
+        /** True while Q Lyrics is on screen; the bubble never opens by itself over its own app. */
+        @Volatile var appForeground = false
+        /** Set when the person closes the bubble while music plays, so the auto-open does not bring it straight back. */
+        @Volatile var suppressAuto = false
         /** Shows the bubble if it is not already showing; false when Android's "display over other apps" permission is missing. */
         fun show(context: Context, byLeaving: Boolean): Boolean {
             if (!android.provider.Settings.canDrawOverlays(context)) return false
@@ -316,6 +321,7 @@ class FloatingService : Service() {
         fun toggle(context: Context) {
             val i = Intent(context, FloatingService::class.java)
             openedByLeaving = false
+            if (running) suppressAuto = true
             if (running) context.stopService(i) else context.startService(i)
         }
     }
