@@ -38,7 +38,7 @@ class FloatingService : Service() {
         val params = WindowManager.LayoutParams(
             prefs.getInt("float_w", (resources.displayMetrics.widthPixels * 0.86f).toInt()), WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
             PixelFormat.TRANSLUCENT,
         ).apply { gravity = Gravity.TOP or Gravity.START; x = prefs.getInt("float_x", (resources.displayMetrics.widthPixels * 0.07f).toInt()); y = prefs.getInt("float_y", (120 * dp).toInt()) }
 
@@ -203,6 +203,7 @@ class FloatingService : Service() {
                 MotionEvent.ACTION_DOWN -> { wasHidden = !folded && !toolsShown; if (!folded) showTools(); downX = e.rawX; downY = e.rawY; startX = params.x; startY = params.y }
                 MotionEvent.ACTION_MOVE -> { params.x = (startX + (e.rawX - downX).toInt()).coerceIn(0, (resources.displayMetrics.widthPixels - root.width).coerceAtLeast(0)); params.y = startY + (e.rawY - downY).toInt(); runCatching { wm.updateViewLayout(root, params) }
                     if (Math.abs(e.rawX - downX) > 8 * dp || Math.abs(e.rawY - downY) > 8 * dp) { showTarget(); target?.let { it.scaleX = if (overTarget(e.rawX, e.rawY)) 1.25f else 1f; it.scaleY = it.scaleX } } }
+                MotionEvent.ACTION_OUTSIDE -> if (!folded && !closing) { prefs.edit().putBoolean("float_min", true).apply(); applyLayout(); snapBubble() } // a tap anywhere else folds the open window
                 MotionEvent.ACTION_CANCEL -> hideTarget()
                 MotionEvent.ACTION_UP -> {
                     val drop = overTarget(e.rawX, e.rawY); val tc = targetCenter(); hideTarget()
