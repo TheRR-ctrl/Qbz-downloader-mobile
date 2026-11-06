@@ -120,15 +120,15 @@ class FloatingService : Service() {
             if (target != null) return
             val t = TextView(this).apply {
                 text = "✕"; textSize = 22f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
-                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.argb(200, 20, 20, 20)); setStroke((2 * dp).toInt(), Color.argb(160, 255, 255, 255)) }
-                alpha = 0f; translationY = 40 * dp
+                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.argb(215, 20, 20, 20)) } // no outline: a ring around the ✕ read as a hard border
+                alpha = 0f; scaleX = 0.4f; scaleY = 0.4f; translationY = 40 * dp
             }
             val lp = WindowManager.LayoutParams((60 * dp).toInt(), (60 * dp).toInt(), WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS, PixelFormat.TRANSLUCENT)
                 .apply { gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL; y = (48 * dp).toInt() }
-            if (runCatching { wm.addView(t, lp) }.isSuccess) { target = t; t.animate().alpha(1f).translationY(0f).setDuration(180).start() }
+            if (runCatching { wm.addView(t, lp) }.isSuccess) { target = t; t.animate().alpha(1f).scaleX(1f).scaleY(1f).translationY(0f).setDuration(220).setInterpolator(android.view.animation.OvershootInterpolator(1.6f)).start() }
         }
-        fun hideTarget() { target?.let { t -> target = null; t.animate().alpha(0f).setDuration(120).withEndAction { runCatching { wm.removeView(t) } }.start() } }
+        fun hideTarget() { target?.let { t -> target = null; t.animate().alpha(0f).scaleX(0.6f).scaleY(0.6f).setDuration(140).withEndAction { runCatching { wm.removeView(t) } }.start() } }
         var wasFolded: Boolean? = null
         // the setting buttons fade out 2 s after the last touch; touching the window brings them back
         var toolsShown = true
@@ -197,17 +197,17 @@ class FloatingService : Service() {
         close.setOnClickListener { prefs.edit().putBoolean("float_min", true).apply(); applyLayout(); snapBubble() }
         modeBtn.setOnClickListener { prefs.edit().putBoolean("float_bar", !bar).apply(); applyLayout() }
 
-        var wasHidden = false
+        var wasHidden = false; var wasOver = false
         var downX = 0f; var downY = 0f; var startX = 0; var startY = 0
         root.setOnTouchListener { _, e ->
             when (e.action) {
                 MotionEvent.ACTION_DOWN -> { wasHidden = !folded && !toolsShown; if (!folded) showTools(); downX = e.rawX; downY = e.rawY; startX = params.x; startY = params.y }
                 MotionEvent.ACTION_MOVE -> { params.x = (startX + (e.rawX - downX).toInt()).coerceIn(0, (resources.displayMetrics.widthPixels - root.width).coerceAtLeast(0)); params.y = startY + (e.rawY - downY).toInt(); runCatching { wm.updateViewLayout(root, params) }
-                    if (Math.abs(e.rawX - downX) > 8 * dp || Math.abs(e.rawY - downY) > 8 * dp) { showTarget(); target?.let { it.scaleX = if (overTarget(e.rawX, e.rawY)) 1.25f else 1f; it.scaleY = it.scaleX } } }
+                    if (Math.abs(e.rawX - downX) > 8 * dp || Math.abs(e.rawY - downY) > 8 * dp) { showTarget(); target?.let { t -> val over = overTarget(e.rawX, e.rawY); if (over != wasOver) { wasOver = over; t.animate().scaleX(if (over) 1.25f else 1f).scaleY(if (over) 1.25f else 1f).setDuration(120).start() } } } }
                 MotionEvent.ACTION_OUTSIDE -> if (!folded && !closing) { prefs.edit().putBoolean("float_min", true).apply(); applyLayout(); snapBubble() } // a tap anywhere else folds the open window
-                MotionEvent.ACTION_CANCEL -> hideTarget()
+                MotionEvent.ACTION_CANCEL -> { wasOver = false; hideTarget() }
                 MotionEvent.ACTION_UP -> {
-                    val drop = overTarget(e.rawX, e.rawY); val tc = targetCenter(); hideTarget()
+                    val drop = overTarget(e.rawX, e.rawY); val tc = targetCenter(); wasOver = false; hideTarget()
                     if (drop && tc != null) { dismiss(tc.first, tc.second); return@setOnTouchListener true }
                     // optionally the window sticks to the nearest side edge when let go
                     if (folded) snapBubble()
