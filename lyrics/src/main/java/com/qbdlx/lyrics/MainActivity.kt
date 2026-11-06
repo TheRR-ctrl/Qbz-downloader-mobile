@@ -193,12 +193,12 @@ class MainActivity : ComponentActivity() {
         val v = r.verdict
         val secs = "%.1f".format(kotlin.math.abs(v.medianMs) / 1000.0)
         QCard(Modifier.fillMaxWidth()) {
-            Text(when (v.kind) { "ok" -> "✓ Bien sincronizada"; "off" -> "Desfasada"; "drift" -> "Se va desfasando"; else -> "No se pudo comprobar" }, fontWeight = FontWeight.Bold)
+            Text(when (v.kind) { "ok" -> "✓ Bien sincronizada"; "off" -> "Desfasada"; "drift" -> "Se va desfasando"; else -> "Sin comprobar con la voz" }, fontWeight = FontWeight.Bold)
             Text(when (v.kind) {
                 "ok" -> "${v.within} de ${v.total} líneas coinciden con la voz (margen de 2,5 s)."
                 "off" -> "Toda la letra va ${if (v.medianMs < 0) "adelantada" else "atrasada"} unos $secs s respecto a la voz."
                 "drift" -> "Solo ${v.within} de ${v.total} líneas coinciden: el error cambia a lo largo de la canción. Puedo usar los tiempos de la voz."
-                else -> "La letra y la voz están en alfabetos distintos, o se entendió muy poco de la voz."
+                else -> "Whisper no entiende bien el idioma de esta canción, así que no pudo comparar. Se usan los tiempos de la fuente de la letra, que no tienen por qué estar mal."
             }, style = MaterialTheme.typography.bodySmall)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 if (r.fix != null) PillButton({ Tracker.applyVerificationFix() }) { Text(if (v.kind == "off") "Corregir" else "Usar tiempos de la voz", maxLines = 1, softWrap = false) }

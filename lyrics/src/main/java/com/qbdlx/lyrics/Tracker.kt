@@ -63,7 +63,7 @@ object Tracker {
             val outcome: Pair<SyncVerdict?, String?> = withContext(Dispatchers.Default) {
                 if (!Whisper.available(ctx)) return@withContext null to "Whisper no está en esta versión de la app."
                 val uri = AudioTiming.findOrBorrow(ctx, t.title, t.artist, t.durationMs) ?: return@withContext null to "No encuentro esta canción como archivo en el teléfono (o falta el permiso de audio)."
-                val asr = Whisper.listen(ctx, t.storeKey, uri, { !isActive }, t.durationMs) { m -> timing.value = m } ?: return@withContext null to (if (!isActive) "Cancelado." else "Whisper no pudo con esta canción.")
+                val asr = Whisper.listen(ctx, t.storeKey, uri, { !isActive }, t.durationMs, WhisperAlign.langHint(lines.map { it.text })) { m -> timing.value = m } ?: return@withContext null to (if (!isActive) "Cancelado." else "Whisper no pudo con esta canción.")
                 val sung = lines.filter { it.text.isNotBlank() }
                 val ref = WhisperAlign.align(sung.map { it.text }, asr.words)
                 if (ref == null || WhisperAlign.approximate) SyncVerdict("unk", 0, 0, sung.size, null) to null else SyncCheck.judge(sung, ref) to null
