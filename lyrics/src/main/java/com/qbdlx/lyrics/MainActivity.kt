@@ -196,12 +196,12 @@ class MainActivity : ComponentActivity() {
             Text(when (v.kind) { "ok" -> "✓ Bien sincronizada"; "off" -> "Desfasada"; "drift" -> "Se va desfasando"; else -> "Sin comprobar con la voz" }, fontWeight = FontWeight.Bold)
             Text(when (v.kind) {
                 "ok" -> "${v.within} de ${v.total} líneas coinciden con la voz (margen de 2,5 s)."
-                "off" -> "Toda la letra va ${if (v.medianMs < 0) "adelantada" else "atrasada"} unos $secs s respecto a la voz."
+                "off" -> "Toda la letra va ${if (v.medianMs < 0) "adelantada" else "atrasada"} unos $secs s respecto a la voz." + (if (v.total > 0 && v.within == 0) " (Medido con el sonido de la canción, no con Whisper.)" else "")
                 "drift" -> "Solo ${v.within} de ${v.total} líneas coinciden: el error cambia a lo largo de la canción. Puedo usar los tiempos de la voz."
                 else -> "Whisper no entiende bien el idioma de esta canción, así que no pudo comparar. Se usan los tiempos de la fuente de la letra, que no tienen por qué estar mal."
             }, style = MaterialTheme.typography.bodySmall)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                if (r.fix != null) PillButton({ Tracker.applyVerificationFix() }) { Text(if (v.kind == "off") "Corregir" else "Usar tiempos de la voz", maxLines = 1, softWrap = false) }
+                if (r.fix != null) PillButton({ Tracker.applyVerificationFix() }) { Text(if (v.kind == "off") (if (v.medianMs < 0) "Retrasar la letra $secs s" else "Adelantar la letra $secs s") else "Usar tiempos de la voz", maxLines = 1, softWrap = false) }
                 TextButton({ Tracker.verification.value = null }) { Text("Cerrar") }
             }
         }

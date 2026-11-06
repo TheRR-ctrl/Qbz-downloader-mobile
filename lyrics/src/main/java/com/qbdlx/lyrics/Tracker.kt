@@ -66,7 +66,11 @@ object Tracker {
                 val asr = Whisper.listen(ctx, t.storeKey, uri, { !isActive }, t.durationMs, WhisperAlign.langHint(lines.map { it.text })) { m -> timing.value = m } ?: return@withContext null to (if (!isActive) "Cancelado." else "Whisper no pudo con esta canción.")
                 val sung = lines.filter { it.text.isNotBlank() }
                 val ref = WhisperAlign.align(sung.map { it.text }, asr.words)
-                if (ref == null || WhisperAlign.approximate) SyncVerdict("unk", 0, 0, sung.size, null) to null else SyncCheck.judge(sung, ref) to null
+                if (ref == null || WhisperAlign.approximate) {
+                    // Whisper could not follow the voice: compare the lyric with the song's own loudness instead
+                    val shift = AudioTiming.envelope(ctx, uri, cancelled = { !isActive })?.let { AudioTiming.onsetShift(it, lines) }
+                    if (shift != null) SyncVerdict("off", -shift, 0, sung.size, null) to null else SyncVerdict("unk", 0, 0, sung.size, null) to null
+                } else SyncCheck.judge(sung, ref) to null
             }
             val v = outcome.first
             if (v == null) { timing.value = outcome.second; return@launch }

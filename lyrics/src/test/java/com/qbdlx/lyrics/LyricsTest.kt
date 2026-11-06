@@ -307,4 +307,22 @@ class LyricDisplayTest {
         val a = Lrc.litChars("uno dos tres", 0, 10_000, 500, 3_000); val b = Lrc.litChars("uno dos tres", 0, 10_000, 2_500, 3_000)
         assertTrue("$a<$b", a in 3..7 && b > a)
     }
+
+    private fun env(shiftMs: Long, lineTimes: List<Long>): FloatArray {
+        val e = FloatArray(6000) { 0.001f }
+        for (t in lineTimes) { val f = ((t + shiftMs) / AudioTiming.FRAME_MS).toInt(); for (k in 0 until 20) if (f + k < e.size) e[f + k] = 0.2f }
+        return e
+    }
+    private val times = (1..12).map { it * 4000L + (it * 37 % 5) * 20 }
+    private val ls = times.map { LyricLine(it, "linea") }
+
+    @Test fun onsetShiftFindsALyricThatRunsEarly() {
+        val s = AudioTiming.onsetShift(env(1000, times), ls)
+        assertNotNull(s); assertEquals(1000.0, s!!.toDouble(), 80.0)
+    }
+    @Test fun onsetShiftLeavesALyricInTimeAlone() = assertNull(AudioTiming.onsetShift(env(100, times), ls))
+    @Test fun onsetShiftNeedsALyricThatAgreesWithTheSound() {
+        val e = env(0, times.mapIndexed { i, t -> t + (if (i % 2 == 0) 1300L else -1300L) })
+        assertNull(AudioTiming.onsetShift(e, ls))
+    }
 }
