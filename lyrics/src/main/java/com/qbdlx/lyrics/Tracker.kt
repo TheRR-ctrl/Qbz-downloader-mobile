@@ -164,7 +164,7 @@ object Tracker {
                 ytWhy = ""; var offer: String? = null
                 // The lyric and the voice use different alphabets: YouTube Music often writes the same song in the alphabet Whisper heard.
                 // Its lines only serve to find the times; they are moved onto the user's lines by position.
-                if ((timed == null || WhisperAlign.approximate) && _state.value.source != YtMusic.SOURCE && !LyricEdit.isEdited(_state.value.source) && !(auto && declined(t.storeKey))) {
+                if ((timed == null || WhisperAlign.approximate) && _state.value.source?.startsWith(YtMusic.SOURCE) != true && !(auto && (LyricEdit.isEdited(_state.value.source) || declined(t.storeKey)))) {
                     withContext(Dispatchers.Main) { timing.value = "Buscando la letra en otro alfabeto…" }
                     val other = runCatching { YtMusic.find(t.title, t.artist, (t.durationMs / 1000).toInt()) }.getOrNull()
                     val otherLines = (other?.plain ?: other?.synced?.let { Lrc.parse(it).map { l -> l.text }.joinToString("\n") })?.lines()?.map { it.trim() }?.filter { it.isNotEmpty() }
