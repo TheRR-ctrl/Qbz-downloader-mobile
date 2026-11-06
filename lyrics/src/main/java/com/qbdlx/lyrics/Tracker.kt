@@ -402,7 +402,7 @@ object Tracker {
         val t = _state.value.track ?: return
         val n = Lyrics(l.synced, l.plain, LyricEdit.editedSource(l.source ?: "LRCLIB"))
         suggestion.value = null
-        LyricsStore.put(t.storeKey, n); cache[t.key] = n; _saved.value = LyricsStore.count()
+        LyricsStore.put(t.storeKey, n); cache[t.key] = n; _saved.value = LyricsStore.count(); SyncCheck.invalidate(t.storeKey)
         publish(t, n, _state.value.playing)
     }
 
@@ -413,7 +413,7 @@ object Tracker {
         val l = if (_state.value.status == Status.SYNCED) Lyrics(Lrc.toLrc(lines), lines.joinToString("\n") { it.text }, src)
             else lines.map { it.text.trim() }.filter { it.isNotEmpty() }.joinToString("\n").let { Lyrics(null, it, src) }
         suggestion.value = null
-        LyricsStore.put(t.storeKey, l); cache[t.key] = l; _saved.value = LyricsStore.count()
+        LyricsStore.put(t.storeKey, l); cache[t.key] = l; _saved.value = LyricsStore.count(); SyncCheck.invalidate(t.storeKey)
         publish(t, l, _state.value.playing)
     }
 
