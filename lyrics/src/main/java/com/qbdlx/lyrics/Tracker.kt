@@ -187,7 +187,7 @@ object Tracker {
                 }
                 // Nothing matches and no other lyric helps: what Whisper heard becomes the lyric, with its real times.
                 // a lyric the user chose or edited is never replaced by what Whisper heard: that brought the old (wrong) text back
-                if (timed == null && LyricEdit.isEdited(_state.value.source)) return@withContext "La letra que elegiste está en otro alfabeto que la voz (o se entendió muy poco), así que no pude ajustar los tiempos. Se queda tu letra tal cual."
+                if (timed == null && (LyricEdit.isEdited(_state.value.source) || _state.value.source?.startsWith(YtMusic.SOURCE) == true)) return@withContext "La letra que tienes está en otro alfabeto que la voz (o se entendió muy poco), así que no pude ajustar los tiempos. Se queda tu letra tal cual."
                 if (timed == null && asr.words.size >= 8) {
                     val heard = WhisperAlign.linesFromHeard(asr.words)
                     if (heard.size >= 2) { withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key && same(lines)) saveTimed(heard, "Whisper (lo que se oyó)") }; return@withContext "Listo: no coincidía con la letra, así que se escribió lo que Whisper oyó. Puede tener errores." }
