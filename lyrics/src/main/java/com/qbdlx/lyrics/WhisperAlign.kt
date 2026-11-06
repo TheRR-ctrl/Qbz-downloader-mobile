@@ -26,6 +26,14 @@ object WhisperAlign {
     /** Lyric words found in what was heard, and the lyric's total, in the last [align]. */
     @Volatile var lastMatched = 0 to 0; private set
 
+    /** The language Whisper should be told when the lyric is in a non-Latin alphabet (its own detection guessed "te" for an Arabic song); "auto" otherwise. */
+    fun langHint(lines: List<String>): String = when (script(lines.flatMap { it.split(Regex("\\s+")) })) {
+        Character.UnicodeScript.ARABIC -> "ar"; Character.UnicodeScript.HEBREW -> "he"; Character.UnicodeScript.CYRILLIC -> "ru"
+        Character.UnicodeScript.HANGUL -> "ko"; Character.UnicodeScript.HIRAGANA, Character.UnicodeScript.KATAKANA -> "ja"
+        Character.UnicodeScript.HAN -> "zh"; Character.UnicodeScript.THAI -> "th"; Character.UnicodeScript.DEVANAGARI -> "hi"
+        Character.UnicodeScript.GREEK -> "el"; else -> "auto"
+    }
+
     fun markApproximate() { approximate = true }
 
     private fun script(words: List<String>): Character.UnicodeScript? =

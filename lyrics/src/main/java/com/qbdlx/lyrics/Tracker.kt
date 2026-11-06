@@ -158,7 +158,7 @@ object Tracker {
                 if (!Whisper.available(ctx)) return@withContext "Whisper no está en esta versión de la app."
                 val uri = AudioTiming.findOrBorrow(ctx, t.title, t.artist, t.durationMs)
                     ?: return@withContext "No encuentro esta canción como archivo en el teléfono (o falta el permiso de audio)."
-                val asr = Whisper.listen(ctx, t.storeKey, uri, { !isActive }, t.durationMs) { m -> timing.value = m } ?: return@withContext if (!isActive) "Cancelado." else "Whisper no pudo con esta canción."
+                val asr = Whisper.listen(ctx, t.storeKey, uri, { !isActive }, t.durationMs, WhisperAlign.langHint(lines)) { m -> timing.value = m } ?: return@withContext if (!isActive) "Cancelado." else "Whisper no pudo con esta canción."
                 var timed = WhisperAlign.align(lines, asr.words)
                 diag = Whisper.describe(asr, t.durationMs, lines.firstOrNull()?.let { _state.value.lines.firstOrNull { l -> l.text.isNotBlank() }?.timeMs }, WhisperAlign.lastMatched)
                 ytWhy = ""; var offer: String? = null
