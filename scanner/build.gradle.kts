@@ -12,8 +12,8 @@ android {
         applicationId = "com.qbdlx.scanner"
         minSdk = 29
         targetSdk = 35
-        versionCode = 16
-        versionName = "0.7.0"
+        versionCode = 17
+        versionName = "0.7.1"
     }
 
     buildTypes {

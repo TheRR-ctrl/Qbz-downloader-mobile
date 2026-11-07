@@ -784,7 +784,7 @@ fun MiniPlayer(vm: MainViewModel) {
         shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceVariant,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
-        Column(Modifier.swipeToSkip(vm::next, vm::previous).clickable { vm.playerOpen = true }) {
+        Column(Modifier.swipeToSkip(vm::next, vm::previous).swipeUpToOpen { vm.playerOpen = true }.clickable { vm.playerOpen = true }) {
             Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Cover(album.coverUrl, 44)
                 Spacer(Modifier.width(12.dp))

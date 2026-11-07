@@ -167,13 +167,22 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /** Fades and unfolds its content the first time it is shown (cards that appear after a check or a search). */
+    @Composable
+    private fun Appear(content: @Composable () -> Unit) {
+        val st = remember { androidx.compose.animation.core.MutableTransitionState(false).apply { targetState = true } }
+        androidx.compose.animation.AnimatedVisibility(st,
+            enter = androidx.compose.animation.fadeIn(tween(220, easing = UiEaseOut)) + androidx.compose.animation.expandVertically(tween(260, easing = UiEaseOut)) +
+                androidx.compose.animation.slideInVertically(tween(260, easing = UiEaseOut)) { -it / 5 }) { content() }
+    }
+
     /** Asks before another lyric (found by listening to the song) replaces the one the user has. */
     @Composable
     private fun SuggestionBanner(track: TrackInfo?) {
         val sg by Tracker.suggestion.collectAsState()
         val s = sg ?: return
         if (track == null || s.trackKey != track.key) return
-        QCard(Modifier.fillMaxWidth()) {
+        Appear { QCard(Modifier.fillMaxWidth()) {
             Text("¿Cambiar la letra?", fontWeight = FontWeight.Bold)
             Text("Encontré otra letra en ${s.source} que coincide mejor con lo que se oye en la canción que la que tienes. Empieza así:", style = MaterialTheme.typography.bodySmall)
             Text(s.lines.map { it.text }.filter { it.isNotBlank() }.take(2).joinToString("\n"), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
@@ -181,7 +190,7 @@ class MainActivity : ComponentActivity() {
                 PillButton({ Tracker.acceptSuggestion() }) { Text("Cambiarla", maxLines = 1, softWrap = false) }
                 TextButton({ Tracker.declineSuggestion() }) { Text("Dejar la mía") }
             }
-        }
+        } }
     }
 
     /** The result of "Verificar sincronización": says in words whether the lyric is in time and offers the fix. */
@@ -192,7 +201,7 @@ class MainActivity : ComponentActivity() {
         if (track == null || r.trackKey != track.key) return
         val v = r.verdict
         val secs = "%.1f".format(kotlin.math.abs(v.medianMs) / 1000.0)
-        QCard(Modifier.fillMaxWidth()) {
+        Appear { QCard(Modifier.fillMaxWidth()) {
             Text(when (v.kind) { "ok" -> "✓ Bien sincronizada"; "off" -> "Desfasada"; "drift" -> "Se va desfasando"; else -> "Sin comprobar con la voz" }, fontWeight = FontWeight.Bold)
             Text(when (v.kind) {
                 "ok" -> "${v.within} de ${v.total} líneas coinciden con la voz (margen de 2,5 s)."
@@ -204,7 +213,7 @@ class MainActivity : ComponentActivity() {
                 if (r.fix != null) PillButton({ Tracker.applyVerificationFix() }) { Text(if (v.kind == "off") (if (v.medianMs < 0) "Retrasar la letra $secs s" else "Adelantar la letra $secs s") else "Usar tiempos de la voz", maxLines = 1, softWrap = false) }
                 TextButton({ Tracker.verification.value = null }) { Text("Cerrar") }
             }
-        }
+        } }
     }
 
     private class EditRow(val line: LyricLine, text: String) { var text by mutableStateOf(text) }
@@ -587,7 +596,8 @@ class MainActivity : ComponentActivity() {
                             }
                             val dist = if (idx >= 0) kotlin.math.abs(i - idx) else 0
                             val ms = if (on) 280 else 200
-                            val scale by animateFloatAsState(if (on) 1.2f else 1f, tween(ms, easing = UiEaseOut), label = "scale")
+                            val scale by animateFloatAsState(if (on) 1.2f else 1f, androidx.compose.animation.core.spring(dampingRatio = .7f, stiffness = 380f), label = "scale")
+                            val nudge by animateFloatAsState(if (on) 6f else 0f, tween(ms, easing = UiEaseOut), label = "nudge")
                             val color by animateColorAsState(
                                 if (on) MaterialTheme.colorScheme.primary
                                 else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = when (dist) { 1 -> .8f; 2 -> .6f; else -> .45f }),
@@ -602,7 +612,7 @@ class MainActivity : ComponentActivity() {
                             androidx.compose.foundation.layout.Column {
                             Text(shown, fontSize = 22.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal, color = color,
                                 modifier = Modifier.fillMaxWidth(.83f)
-                                    .graphicsLayer { scaleX = scale; scaleY = scale; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, .5f) }
+                                    .graphicsLayer { scaleX = scale; scaleY = scale; translationX = nudge * density; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, .5f) }
                                     .combinedClickable(enabled = state.status == Status.SYNCED, onClick = {
                                         // jump the playing app to this line (undo the manual sync offset first)
                                         browsing = false

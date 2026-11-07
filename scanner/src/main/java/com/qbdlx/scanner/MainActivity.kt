@@ -216,7 +216,10 @@ private fun ScannerScreen(vm: ScanViewModel) {
         item {
             if (progress != null) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (progress.total > 0) LinearProgressIndicator({ progress.done / progress.total.toFloat() }, Modifier.fillMaxWidth()) else LinearProgressIndicator(Modifier.fillMaxWidth())
+                    if (progress.total > 0) {
+                        val shownP by androidx.compose.animation.core.animateFloatAsState(progress.done / progress.total.toFloat(), androidx.compose.animation.core.tween(350), label = "scanProgress")
+                        LinearProgressIndicator({ shownP }, Modifier.fillMaxWidth())
+                    } else LinearProgressIndicator(Modifier.fillMaxWidth())
                     Text("${progress.done}/${progress.total}  ${progress.current}", fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Clip, modifier = Modifier.basicMarquee())
                     PillTonal(vm::cancel) { Text(t("Cancelar", "Cancel")) }
                 }
@@ -252,7 +255,7 @@ private fun ScannerScreen(vm: ScanViewModel) {
             }
             // No key: the same file name can exist in several folders, and a repeated key crashes a LazyColumn.
             items(songs) { s ->
-                Column {
+                Column(Modifier.animateItem(fadeInSpec = androidx.compose.animation.core.tween(280), placementSpec = null, fadeOutSpec = null)) {
                     Text(s.title.ifBlank { s.file }, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(
                         listOf(s.artist, s.album).filter { it.isNotBlank() }.joinToString(" • ").ifBlank { t("sin identificar", "unidentified") } +
