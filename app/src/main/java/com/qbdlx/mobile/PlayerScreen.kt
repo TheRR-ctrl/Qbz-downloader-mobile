@@ -106,6 +106,7 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.media.audiofx.AudioEffect
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
@@ -306,7 +307,7 @@ private fun PlayerBar(page: PlayerPage, onPick: (PlayerPage) -> Unit) {
 /** The small card above the bar on the other pages; tap it to come back to the big player. */
 @Composable
 private fun PlayerMini(vm: MainViewModel, album: Album, track: Track, onOpen: () -> Unit) {
-    val progress by rememberPlaybackProgress(vm, track)
+    val progress = rememberPlaybackProgress(vm, track)
     Surface(
         shape = RoundedCornerShape(16.dp), color = Chip, contentColor = OnPlayer,
         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp).swipeToSkip(vm::next, vm::previous).clickable(onClick = onOpen),
@@ -323,9 +324,37 @@ private fun PlayerMini(vm: MainViewModel, album: Album, track: Track, onOpen: ()
                     Icon(if (vm.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, LocalStrings.current.playPause, tint = OnPlayer)
                 }
             }
-            Box(Modifier.fillMaxWidth().height(2.dp).background(Color.White.copy(alpha = .2f))) {
-                Box(Modifier.fillMaxWidth(progress.first.coerceIn(0f, 1f)).height(2.dp).background(OnPlayer))
-            }
+            Box(Modifier.fillMaxWidth().height(2.dp).background(Color.White.copy(alpha = .2f)).drawBehind {
+                drawRect(OnPlayer, size = size.copy(width = size.width * progress.value.first.coerceIn(0f, 1f)))
+            })
+        }
+    }
+}
+
+/** The seek bar and the two times: the only part of the player that follows the clock, so only it recomposes 4 times a second. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun SeekBar(vm: MainViewModel, track: Track) {
+    val progress by rememberPlaybackProgress(vm, track)
+    var dragging by remember { mutableStateOf(false) }
+    var dragValue by remember { mutableFloatStateOf(0f) }
+    val len = progress.third.coerceAtLeast(1)
+    val posMs = if (dragging) (dragValue * len).toLong() else progress.second
+    Column {
+        Slider(
+            value = if (dragging) dragValue else progress.first.coerceIn(0f, 1f),
+            onValueChange = { dragging = true; dragValue = it },
+            onValueChangeFinished = { vm.seekTo((dragValue * len).toLong()); dragging = false },
+            colors = SliderDefaults.colors(thumbColor = OnPlayer, activeTrackColor = OnPlayer, inactiveTrackColor = Color.White.copy(alpha = .25f)),
+            // Like the Qobuz player: a thin rounded bar with no dot, which only shows a small thumb while it is dragged.
+            thumb = { Box(Modifier.size(if (dragging) 14.dp else 1.dp).clip(CircleShape).background(OnPlayer)) },
+            track = { st ->
+                SliderDefaults.Track(st, Modifier.height(6.dp), colors = SliderDefaults.colors(activeTrackColor = OnPlayer, inactiveTrackColor = Color.White.copy(alpha = .25f)), thumbTrackGapSize = 0.dp, trackInsideCornerSize = 0.dp, drawStopIndicator = null)
+            },
+        )
+        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(clock(posMs), fontSize = 12.sp, color = OnPlayerDim)
+            Text("-" + clock(len - posMs), fontSize = 12.sp, color = OnPlayerDim)
         }
     }
 }
@@ -350,16 +379,11 @@ private fun rememberPlaybackProgress(vm: MainViewModel, track: Track): State<Tri
 private fun NowPlayingPage(vm: MainViewModel, album: Album, track: Track, close: (() -> Unit) -> Unit) {
     val s = LocalStrings.current
     val q = vm.queueState
-    val progress by rememberPlaybackProgress(vm, track)
-    var dragging by remember { mutableStateOf(false) }
-    var dragValue by remember { mutableFloatStateOf(0f) }
     var menu by remember { mutableStateOf(false) }
     var qualityDialog by remember { mutableStateOf(false) }
     var sleepDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val quality = vm.nowQuality
-    val len = progress.third.coerceAtLeast(1)
-    val posMs = if (dragging) (dragValue * len).toLong() else progress.second
 
     if (qualityDialog) QualityDialog(vm.playQuality, { vm.updatePlayQuality(it); qualityDialog = false }, { qualityDialog = false })
     if (sleepDialog) AlertDialog(
@@ -453,23 +477,7 @@ private fun NowPlayingPage(vm: MainViewModel, album: Album, track: Track, close:
                 }
             }
         }
-        Column {
-            Slider(
-                value = if (dragging) dragValue else progress.first.coerceIn(0f, 1f),
-                onValueChange = { dragging = true; dragValue = it },
-                onValueChangeFinished = { vm.seekTo((dragValue * len).toLong()); dragging = false },
-                colors = SliderDefaults.colors(thumbColor = OnPlayer, activeTrackColor = OnPlayer, inactiveTrackColor = Color.White.copy(alpha = .25f)),
-                // Like the Qobuz player: a thin rounded bar with no dot, which only shows a small thumb while it is dragged.
-                thumb = { Box(Modifier.size(if (dragging) 14.dp else 1.dp).clip(CircleShape).background(OnPlayer)) },
-                track = { st ->
-                    SliderDefaults.Track(st, Modifier.height(6.dp), colors = SliderDefaults.colors(activeTrackColor = OnPlayer, inactiveTrackColor = Color.White.copy(alpha = .25f)), thumbTrackGapSize = 0.dp, trackInsideCornerSize = 0.dp, drawStopIndicator = null)
-                },
-            )
-            Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(clock(posMs), fontSize = 12.sp, color = OnPlayerDim)
-                Text("-" + clock(len - posMs), fontSize = 12.sp, color = OnPlayerDim)
-            }
-        }
+        SeekBar(vm, track)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             ToggleIcon(Icons.Default.Shuffle, s.shuffle, q.shuffle) { vm.toggleShuffle() }
             IconButton({ vm.previous() }, Modifier.size(56.dp)) { Icon(Icons.Default.SkipPrevious, s.previous, Modifier.size(38.dp), tint = OnPlayer) }
@@ -589,7 +597,7 @@ private fun ExplorePage(vm: MainViewModel, album: Album, close: (() -> Unit) -> 
 private fun LyricsPage(vm: MainViewModel, album: Album, track: Track) {
     val s = LocalStrings.current
     LaunchedEffect(track.id) { vm.loadLyrics(album, track) }
-    val progress by rememberPlaybackProgress(vm, track)
+    val progress = rememberPlaybackProgress(vm, track)
     val lyrics = vm.lyrics
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 20.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -604,7 +612,7 @@ private fun LyricsPage(vm: MainViewModel, album: Album, track: Track) {
             vm.lyricsLoading -> Text("…", color = OnPlayerDim, modifier = Modifier.padding(16.dp))
             lyrics == null || lyrics.lines.isEmpty() -> Text(s.lyricsNone, color = OnPlayerDim, modifier = Modifier.padding(16.dp))
             else -> {
-                val current = if (lyrics.synced) LyricsParser.currentIndex(lyrics.lines, progress.second + vm.lyricsOffsetMs) else -1
+                val current by remember(lyrics, progress) { androidx.compose.runtime.derivedStateOf { if (lyrics.synced) LyricsParser.currentIndex(lyrics.lines, progress.value.second + vm.lyricsOffsetMs) else -1 } }
                 val state = androidx.compose.foundation.lazy.rememberLazyListState()
                 // Dragging the list lets the reader browse without being pulled back; "Resincronizar" returns to the line being sung.
                 var browsing by remember(track.id) { mutableStateOf(false) }

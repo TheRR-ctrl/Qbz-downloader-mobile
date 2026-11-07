@@ -19,7 +19,14 @@ object QueueStore {
     }
 
     fun encodeQueue(items: List<Pair<Album, Track>>, position: Int, positionMs: Long): String =
-        JSONObject().put("pos", position).put("ms", positionMs).put("items", encodeItems(items)).toString()
+        encodeQueue(encodeItemsText(items), position, positionMs)
+
+    /** The items alone as JSON text, so a caller can keep it while the queue does not change and only the position moves. */
+    fun encodeItemsText(items: List<Pair<Album, Track>>): String = encodeItems(items).toString()
+
+    /** The same text as [encodeQueue], from items already encoded with [encodeItemsText]. */
+    fun encodeQueue(itemsJson: String, position: Int, positionMs: Long): String =
+        "{\"pos\":$position,\"ms\":$positionMs,\"items\":$itemsJson}"
 
     fun decodeQueue(text: String?): Saved? {
         if (text.isNullOrBlank()) return null

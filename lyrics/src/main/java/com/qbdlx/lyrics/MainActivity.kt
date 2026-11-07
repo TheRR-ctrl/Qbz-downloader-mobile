@@ -119,9 +119,9 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun PipScreen() {
         val state by Tracker.state.collectAsState()
-        var pos by remember { mutableLongStateOf(0L) }
-        LaunchedEffect(Unit) { while (true) { pos = Tracker.positionMs(); delay(200) } }
-        val i = if (state.status == Status.SYNCED) Lrc.indexAt(state.lines, pos) else -1
+        val pos = remember { mutableLongStateOf(0L) }
+        LaunchedEffect(Unit) { while (true) { pos.longValue = Tracker.positionMs(); delay(200) } }
+        val i by remember { derivedStateOf { if (state.status == Status.SYNCED) Lrc.indexAt(state.lines, pos.longValue) else -1 } }
         Box(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 4.dp), contentAlignment = androidx.compose.ui.Alignment.Center) {
             Column(horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 if (state.status == Status.SYNCED) {
@@ -154,10 +154,10 @@ class MainActivity : ComponentActivity() {
     /** Three dots that light up one after another as [progress] goes 0..1, and breathe while [active]. Opacity and scale only. */
     @Composable
     private fun BreathDots(progress: Float, active: Boolean, modifier: Modifier = Modifier) {
-        val breathe = androidx.compose.animation.core.rememberInfiniteTransition(label = "breathe").animateFloat(
-            1f, 1.12f, androidx.compose.animation.core.infiniteRepeatable(tween(1200, easing = androidx.compose.animation.core.FastOutSlowInEasing), androidx.compose.animation.core.RepeatMode.Reverse), label = "b").value
+        val breathe = if (active) androidx.compose.animation.core.rememberInfiniteTransition(label = "breathe").animateFloat(
+            1f, 1.12f, androidx.compose.animation.core.infiniteRepeatable(tween(1200, easing = androidx.compose.animation.core.FastOutSlowInEasing), androidx.compose.animation.core.RepeatMode.Reverse), label = "b") else null
         val show by animateFloatAsState(if (active) 1f else .35f, tween(if (active) 280 else 200, easing = UiEaseOut), label = "dotsShow")
-        Row(modifier.graphicsLayer { alpha = show; val k = if (active) breathe else 1f; scaleX = k; scaleY = k; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, .5f) },
+        Row(modifier.graphicsLayer { alpha = show; val k = breathe?.value ?: 1f; scaleX = k; scaleY = k; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, .5f) },
             horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             for (n in 0..2) {
                 val lit by animateFloatAsState(if (progress * 3f >= n + .15f) 1f else .3f, tween(220, easing = UiEaseOut), label = "dot$n")
@@ -300,8 +300,10 @@ class MainActivity : ComponentActivity() {
     @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
     private fun Screen(offset: Long, setOffset: (Long) -> Unit) {
         val state by Tracker.state.collectAsState()
-        var pos by remember { mutableLongStateOf(0L) }
-        LaunchedEffect(Unit) { while (true) { pos = Tracker.positionMs(); delay(200) } }
+        // The clock ticks every 100 ms but only the line being sung (and its dots) read it, so the rest of the screen
+        // recomposes only when the current line changes.
+        val clock = remember { mutableLongStateOf(0L) }
+        LaunchedEffect(Unit) { while (true) { clock.longValue = Tracker.positionMs(); delay(100) } }
         // Tap-timing of a lyric that has no times: one tap per line as it starts to be sung.
         var tagging by remember { mutableStateOf(false) }
         var editing by remember { mutableStateOf(false) }
@@ -312,8 +314,10 @@ class MainActivity : ComponentActivity() {
         if (editing && (state.status == Status.SYNCED || state.status == Status.PLAIN)) LyricsEditor(state) { editing = false }
         val marks = remember { androidx.compose.runtime.mutableStateListOf<Long>() }
         LaunchedEffect(state.track?.key, state.status) { tagging = false; marks.clear() }
-        val idx = if (state.status == Status.SYNCED) Lrc.indexAt(state.lines, pos)
+        val idx by remember { derivedStateOf {
+            if (state.status == Status.SYNCED) Lrc.indexAt(state.lines, clock.longValue)
             else if (tagging && state.lines.isNotEmpty()) marks.size.coerceAtMost(state.lines.size - 1) else -1
+        } }
         val listState = androidx.compose.foundation.lazy.rememberLazyListState()
         // Dragging the list lets the reader browse without being pulled back; "Resincronizar" returns to the line being sung.
         val translations by Tracker.translations.collectAsState()
@@ -594,13 +598,13 @@ class MainActivity : ComponentActivity() {
                         // Intro longer than 5 s: three dots that fill up until the first line.
                         val first = state.lines.firstOrNull()?.timeMs ?: 0L
                         if (state.status == Status.SYNCED && first >= 5000) item(key = "intro") {
-                            BreathDots(if (idx < 0) (pos.toFloat() / first).coerceIn(0f, 1f) else 1f, idx < 0, Modifier.padding(vertical = 10.dp))
+                            BreathDots(if (idx < 0) (clock.longValue.toFloat() / first).coerceIn(0f, 1f) else 1f, idx < 0, Modifier.padding(vertical = 10.dp))
                         }
                         itemsIndexed(state.lines) { i, l ->
                             val on = i == idx
                             val span = (state.lines.getOrNull(i + 1)?.timeMs ?: (l.timeMs + 4000)) - l.timeMs
                             if (state.status == Status.SYNCED && l.text.isBlank() && span >= 5000) {
-                                BreathDots(if (on) ((pos - l.timeMs).toFloat() / span).coerceIn(0f, 1f) else if (i < idx) 1f else 0f, on, Modifier.padding(vertical = 10.dp))
+                                BreathDots(if (on) ((clock.longValue - l.timeMs).toFloat() / span).coerceIn(0f, 1f) else if (i < idx) 1f else 0f, on, Modifier.padding(vertical = 10.dp))
                                 return@itemsIndexed
                             }
                             val dist = if (idx >= 0) kotlin.math.abs(i - idx) else 0
@@ -612,7 +616,7 @@ class MainActivity : ComponentActivity() {
                                 else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = when (dist) { 1 -> .8f; 2 -> .6f; else -> .45f }),
                                 tween(ms, easing = UiEaseOut), label = "color",
                             )
-                            val lit = if (on && Tracker.karaoke && state.status == Status.SYNCED) Lrc.litChars(l.text, l.timeMs, state.lines.getOrNull(i + 1)?.timeMs, pos, l.endMs) else 0
+                            val lit = if (on && Tracker.karaoke && state.status == Status.SYNCED) Lrc.litChars(l.text, l.timeMs, state.lines.getOrNull(i + 1)?.timeMs, clock.longValue, l.endMs) else 0
                             val shown = if (lit > 0) androidx.compose.ui.text.buildAnnotatedString {
                                 append(l.text)
                                 addStyle(androidx.compose.ui.text.SpanStyle(color = MaterialTheme.colorScheme.onSurface), 0, lit)
@@ -640,7 +644,12 @@ class MainActivity : ComponentActivity() {
                                 val realEnd = l.endMs?.takeIf { it > l.timeMs + 300 && it <= nextT }
                                 val gapStart = realEnd ?: (l.timeMs + (l.text.length * 100L).coerceAtLeast(1500L).coerceAtMost(span))
                                 val gap = nextT - gapStart
-                                if (gap >= (if (realEnd != null) 4000 else 4000)) BreathDots(if (pos >= gapStart) ((pos - gapStart).toFloat() / gap).coerceIn(0f, 1f) else 0f, pos in gapStart until nextT, Modifier.padding(vertical = 10.dp))
+                                if (gap >= 4000) {
+                                    // only the line being sung can be in its own pause, so only it reads the clock
+                                    val now = if (on) clock.longValue else -1L
+                                    BreathDots(if (on) (if (now >= gapStart) ((now - gapStart).toFloat() / gap).coerceIn(0f, 1f) else 0f) else if (i < idx) 1f else 0f,
+                                        on && now in gapStart until nextT, Modifier.padding(vertical = 10.dp))
+                                }
                             }
                             }
                         }

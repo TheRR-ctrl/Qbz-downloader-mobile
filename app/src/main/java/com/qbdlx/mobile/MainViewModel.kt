@@ -1979,8 +1979,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (all.isEmpty()) { prefs.edit().remove("queue").apply(); return }
         // Nothing started since a restore: keep the position that was restored, the engine knows nothing yet.
         val ms = if (restoredPosMs >= 0) restoredPosMs else if (engineDelegate.isInitialized()) engine.position else 0L
-        prefs.edit().putString("queue", QueueStore.encodeQueue(all.take(300), s.history.size.coerceAtMost(299), ms)).apply()
+        // Every 5 s while playing only the position changes: the up to 300 songs are encoded again only when the queue itself changed.
+        val items = all.take(300)
+        val cached = savedItems
+        val itemsJson = if (cached != null && cached.size == items.size && items.indices.all { items[it] === cached[it] }) savedItemsJson
+            else QueueStore.encodeItemsText(items).also { savedItems = items; savedItemsJson = it }
+        prefs.edit().putString("queue", QueueStore.encodeQueue(itemsJson, s.history.size.coerceAtMost(299), ms)).apply()
     }
+    private var savedItems: List<Pair<Album, Track>>? = null
+    private var savedItemsJson = ""
 
     private fun restoreQueue() {
         val saved = QueueStore.decodeQueue(prefs.getString("queue", null)) ?: return

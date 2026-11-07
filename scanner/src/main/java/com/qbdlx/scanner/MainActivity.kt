@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.runtime.remember
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.material3.LinearProgressIndicator
@@ -83,6 +84,11 @@ private fun ScannerScreen(vm: ScanViewModel) {
     }
     val songs = vm.songs
     val progress = vm.progress
+    // A unique key per row (folder + file, and a counter when the very same path repeats), so rows keep their identity:
+    // new songs fade in where they appear and the rest slide into place when a folder is skipped.
+    val keys = remember(songs) {
+        songs?.let { list -> val seen = HashMap<String, Int>(); list.map { s -> val k = s.folder + "/" + s.file; val n = seen.merge(k, 1, Int::plus)!!; if (n == 1) k else "$k#$n" } }
+    }
 
     LazyColumn(
         Modifier.fillMaxSize().statusBarsPadding(), contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp, 12.dp, 16.dp, 32.dp),
@@ -253,9 +259,9 @@ private fun ScannerScreen(vm: ScanViewModel) {
                 Spacer(Modifier.height(6.dp))
                 PillButton({ vm.shareIntent()?.let(context::startActivity) }, Modifier.fillMaxWidth(), enabled = songs.isNotEmpty()) { Text(t("Compartir lista", "Share list")) }
             }
-            // No key: the same file name can exist in several folders, and a repeated key crashes a LazyColumn.
-            items(songs) { s ->
-                Column(Modifier.animateItem(fadeInSpec = androidx.compose.animation.core.tween(280), placementSpec = null, fadeOutSpec = null)) {
+            items(songs.size, key = { i -> keys?.getOrNull(i) ?: "#$i" }) { i ->
+                val s = songs[i]
+                Column(Modifier.animateItem(fadeInSpec = androidx.compose.animation.core.tween(280), fadeOutSpec = androidx.compose.animation.core.tween(180))) {
                     Text(s.title.ifBlank { s.file }, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(
                         listOf(s.artist, s.album).filter { it.isNotBlank() }.joinToString(" • ").ifBlank { t("sin identificar", "unidentified") } +
