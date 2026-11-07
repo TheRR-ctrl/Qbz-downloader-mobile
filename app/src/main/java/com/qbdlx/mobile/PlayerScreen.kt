@@ -27,6 +27,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.graphics.graphicsLayer
@@ -201,6 +202,33 @@ fun PlayerHost(vm: MainViewModel) {
         }
     }
     BackHandler { if (page != PlayerPage.Player) page = PlayerPage.Player else close {} }
+    // Dragging down closes the player from anywhere, not only from the grab bar: a list at its top hands the extra drag up to here,
+    // and a page that does not scroll gets it from the draggable below.
+    val settle: (Float) -> Unit = { velocity ->
+        if (offset.value > 0.22f || velocity > 1400f) close {}
+        else scope.launch { offset.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow)) }
+    }
+    val dragState = rememberDraggableState { delta -> scope.launch { offset.snapTo((offset.value + delta / heightPx).coerceAtLeast(0f)) } }
+    val nested = remember {
+        object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+            override fun onPreScroll(available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): androidx.compose.ui.geometry.Offset {
+                if (offset.value <= 0f || available.y >= 0f) return androidx.compose.ui.geometry.Offset.Zero
+                val cur = offset.value * heightPx
+                val d = maxOf(available.y, -cur)
+                scope.launch { offset.snapTo((cur + d) / heightPx) }
+                return androidx.compose.ui.geometry.Offset(0f, d)
+            }
+            override fun onPostScroll(consumed: androidx.compose.ui.geometry.Offset, available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): androidx.compose.ui.geometry.Offset {
+                if (source != androidx.compose.ui.input.nestedscroll.NestedScrollSource.UserInput || available.y <= 0f) return androidx.compose.ui.geometry.Offset.Zero
+                scope.launch { offset.snapTo((offset.value + available.y / heightPx).coerceAtLeast(0f)) }
+                return androidx.compose.ui.geometry.Offset(0f, available.y)
+            }
+            override suspend fun onPreFling(available: androidx.compose.ui.unit.Velocity): androidx.compose.ui.unit.Velocity {
+                if (offset.value <= 0f) return androidx.compose.ui.unit.Velocity.Zero
+                settle(available.y); return available
+            }
+        }
+    }
 
     val tone by rememberCoverTone(album.coverUrl)
     val fallback = Panel // the text here is always white, so the fallback must be dark whatever the theme
@@ -216,6 +244,8 @@ fun PlayerHost(vm: MainViewModel) {
       Box(
           Modifier.fillMaxSize()
               .onSizeChanged { heightPx = it.height.toFloat() }
+              .nestedScroll(nested)
+              .draggable(orientation = Orientation.Vertical, state = dragState, onDragStopped = { v -> settle(v) })
               .graphicsLayer { translationY = offset.value * size.height },
       ) {
         Column(
@@ -224,14 +254,7 @@ fun PlayerHost(vm: MainViewModel) {
             // The grab area at the top: tap to close, or drag down.
             Box(
                 Modifier.fillMaxWidth().height(40.dp)
-                    .draggable(
-                        orientation = Orientation.Vertical,
-                        state = rememberDraggableState { delta -> scope.launch { offset.snapTo((offset.value + delta / heightPx).coerceAtLeast(0f)) } },
-                        onDragStopped = { velocity ->
-                            if (offset.value > 0.22f || velocity > 1400f) close {}
-                            else scope.launch { offset.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow)) }
-                        },
-                    )
+                    .draggable(orientation = Orientation.Vertical, state = dragState, onDragStopped = { v -> settle(v) })
                     .clickable { close {} },
                 contentAlignment = Alignment.Center,
             ) {
