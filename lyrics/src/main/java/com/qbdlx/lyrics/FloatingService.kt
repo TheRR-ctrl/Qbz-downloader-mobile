@@ -38,7 +38,7 @@ class FloatingService : Service() {
         val params = WindowManager.LayoutParams(
             prefs.getInt("float_w", (resources.displayMetrics.widthPixels * 0.86f).toInt()), WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
             PixelFormat.TRANSLUCENT,
         ).apply { gravity = Gravity.TOP or Gravity.START; x = prefs.getInt("float_x", (resources.displayMetrics.widthPixels * 0.07f).toInt()); y = prefs.getInt("float_y", (120 * dp).toInt()) }
 
@@ -93,6 +93,7 @@ class FloatingService : Service() {
         fun dismiss(cx: Float, cy: Float) {
             if (closing) return
             closing = true
+            suppressAuto = true // closed by hand: it does not pop up again until the music stops
             val c = IntArray(2); root.getLocationOnScreen(c)
             val dx = cx - (c[0] + root.width / 2f); val dy = cy - (c[1] + root.height / 2f)
             val sx = params.x; val sy = params.y
@@ -119,15 +120,15 @@ class FloatingService : Service() {
             if (target != null) return
             val t = TextView(this).apply {
                 text = "✕"; textSize = 22f; gravity = Gravity.CENTER; setTextColor(Color.WHITE)
-                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.argb(200, 20, 20, 20)); setStroke((2 * dp).toInt(), Color.argb(160, 255, 255, 255)) }
-                alpha = 0f; translationY = 40 * dp
+                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.argb(215, 20, 20, 20)) } // no outline: a ring around the ✕ read as a hard border
+                alpha = 0f; scaleX = 0.4f; scaleY = 0.4f; translationY = 40 * dp
             }
             val lp = WindowManager.LayoutParams((60 * dp).toInt(), (60 * dp).toInt(), WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS, PixelFormat.TRANSLUCENT)
                 .apply { gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL; y = (48 * dp).toInt() }
-            if (runCatching { wm.addView(t, lp) }.isSuccess) { target = t; t.animate().alpha(1f).translationY(0f).setDuration(180).start() }
+            if (runCatching { wm.addView(t, lp) }.isSuccess) { target = t; t.animate().alpha(1f).scaleX(1f).scaleY(1f).translationY(0f).setDuration(220).setInterpolator(android.view.animation.OvershootInterpolator(1.6f)).start() }
         }
-        fun hideTarget() { target?.let { t -> target = null; t.animate().alpha(0f).setDuration(120).withEndAction { runCatching { wm.removeView(t) } }.start() } }
+        fun hideTarget() { target?.let { t -> target = null; t.animate().alpha(0f).scaleX(0.6f).scaleY(0.6f).setDuration(140).withEndAction { runCatching { wm.removeView(t) } }.start() } }
         var wasFolded: Boolean? = null
         // the setting buttons fade out 2 s after the last touch; touching the window brings them back
         var toolsShown = true
@@ -136,6 +137,7 @@ class FloatingService : Service() {
             toolsShown = true; tools.animate().cancel(); tools.visibility = View.VISIBLE; tools.animate().alpha(1f).setDuration(150).start()
             root.removeCallbacks(hideTools); root.postDelayed(hideTools, 2000)
         }
+        var snapAnim: android.animation.ValueAnimator? = null
         val bg = CoverBackground(if (bar) 30 * dp else 18 * dp)
         applyLayout = {
             // everything is read from the saved settings, so the Ajustes sliders and the handles on the window act on the same values
@@ -167,6 +169,7 @@ class FloatingService : Service() {
             (texts.layoutParams as LinearLayout.LayoutParams).marginStart = ((if (hasBubble) 10 else 0) * dp).toInt()
             params.width = if (full) prefs.getInt("float_w", defaultW) else WindowManager.LayoutParams.WRAP_CONTENT
             // opened next to the right edge, the panel must not hang off the screen
+            if (full) snapAnim?.cancel() // a bubble still sliding to the edge would drag the opened window off screen
             if (full && params.width > 0) params.x = params.x.coerceIn(0, (resources.displayMetrics.widthPixels - params.width).coerceAtLeast(0))
             relayout()
             if (wasFolded != folded) {
@@ -183,7 +186,8 @@ class FloatingService : Service() {
         fun snapBubble() {
             val sw = resources.displayMetrics.widthPixels; val bd = (prefs.getInt("float_bubble_dp", 60) * dp).toInt()
             val target = if (params.x + bd / 2 < sw / 2) 0 else (sw - bd).coerceAtLeast(0)
-            android.animation.ValueAnimator.ofInt(params.x, target).apply {
+            snapAnim?.cancel()
+            snapAnim = android.animation.ValueAnimator.ofInt(params.x, target).apply {
                 duration = 260; interpolator = android.view.animation.DecelerateInterpolator(1.5f)
                 addUpdateListener { params.x = it.animatedValue as Int; relayout() }
                 start()
@@ -193,16 +197,17 @@ class FloatingService : Service() {
         close.setOnClickListener { prefs.edit().putBoolean("float_min", true).apply(); applyLayout(); snapBubble() }
         modeBtn.setOnClickListener { prefs.edit().putBoolean("float_bar", !bar).apply(); applyLayout() }
 
-        var wasHidden = false
+        var wasHidden = false; var wasOver = false
         var downX = 0f; var downY = 0f; var startX = 0; var startY = 0
         root.setOnTouchListener { _, e ->
             when (e.action) {
                 MotionEvent.ACTION_DOWN -> { wasHidden = !folded && !toolsShown; if (!folded) showTools(); downX = e.rawX; downY = e.rawY; startX = params.x; startY = params.y }
                 MotionEvent.ACTION_MOVE -> { params.x = (startX + (e.rawX - downX).toInt()).coerceIn(0, (resources.displayMetrics.widthPixels - root.width).coerceAtLeast(0)); params.y = startY + (e.rawY - downY).toInt(); runCatching { wm.updateViewLayout(root, params) }
-                    if (Math.abs(e.rawX - downX) > 8 * dp || Math.abs(e.rawY - downY) > 8 * dp) { showTarget(); target?.let { it.scaleX = if (overTarget(e.rawX, e.rawY)) 1.25f else 1f; it.scaleY = it.scaleX } } }
-                MotionEvent.ACTION_CANCEL -> hideTarget()
+                    if (Math.abs(e.rawX - downX) > 8 * dp || Math.abs(e.rawY - downY) > 8 * dp) { showTarget(); target?.let { t -> val over = overTarget(e.rawX, e.rawY); if (over != wasOver) { wasOver = over; t.animate().scaleX(if (over) 1.25f else 1f).scaleY(if (over) 1.25f else 1f).setDuration(120).start() } } } }
+                MotionEvent.ACTION_OUTSIDE -> if (!folded && !closing) { prefs.edit().putBoolean("float_min", true).apply(); applyLayout(); snapBubble() } // a tap anywhere else folds the open window
+                MotionEvent.ACTION_CANCEL -> { wasOver = false; hideTarget() }
                 MotionEvent.ACTION_UP -> {
-                    val drop = overTarget(e.rawX, e.rawY); val tc = targetCenter(); hideTarget()
+                    val drop = overTarget(e.rawX, e.rawY); val tc = targetCenter(); wasOver = false; hideTarget()
                     if (drop && tc != null) { dismiss(tc.first, tc.second); return@setOnTouchListener true }
                     // optionally the window sticks to the nearest side edge when let go
                     if (folded) snapBubble()
@@ -299,6 +304,10 @@ class FloatingService : Service() {
         @Volatile var running = false
         /** True when the bubble was opened by leaving the app (it closes by itself when the app comes back); false when the person opened it. */
         @Volatile var openedByLeaving = false
+        /** True while Q Lyrics is on screen; the bubble never opens by itself over its own app. */
+        @Volatile var appForeground = false
+        /** Set when the person closes the bubble while music plays, so the auto-open does not bring it straight back. */
+        @Volatile var suppressAuto = false
         /** Shows the bubble if it is not already showing; false when Android's "display over other apps" permission is missing. */
         fun show(context: Context, byLeaving: Boolean): Boolean {
             if (!android.provider.Settings.canDrawOverlays(context)) return false
@@ -312,6 +321,7 @@ class FloatingService : Service() {
         fun toggle(context: Context) {
             val i = Intent(context, FloatingService::class.java)
             openedByLeaving = false
+            if (running) suppressAuto = true
             if (running) context.stopService(i) else context.startService(i)
         }
     }

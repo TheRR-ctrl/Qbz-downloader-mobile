@@ -73,6 +73,12 @@ object SyncCheck {
         results.put(key, JSONObject().put("v", "ok").put("t", System.currentTimeMillis()).put("voice", true)); removeFromQueue(key); meta.remove(key); save()
     }
 
+    /** The user changed this song's lyric by hand: whatever a background check found for the old one (queued, or a pending fix) no longer applies. */
+    @Synchronized fun invalidate(key: String) {
+        if (dir == null) return
+        results.remove(key); removeFromQueue(key); meta.remove(key); save()
+    }
+
     /** The user says this lyric is badly synced: the "verified" mark goes away and the report is kept (sync-reports.json, last 200). */
     @Synchronized fun report(key: String, title: String, artist: String, source: String?) {
         val d = dir ?: return
@@ -184,6 +190,9 @@ object SyncCheck {
     }
 
     private fun apply(key: String, old: Lyrics, lines: List<LyricLine>) {
+        // a check takes minutes: if the lyric was changed meanwhile (the user picked another one), its old fix must not bring the old text back
+        val now = LyricsStore.get(key)
+        if (now != null && (now.plain != old.plain || now.source != old.source || now.synced != old.synced)) return
         LyricsStore.put(key, Lyrics(Lrc.toLrc(lines), old.plain, old.source))
         Tracker.lyricsChanged()
     }

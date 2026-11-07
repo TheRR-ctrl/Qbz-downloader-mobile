@@ -63,10 +63,14 @@ object Tracker {
             val outcome: Pair<SyncVerdict?, String?> = withContext(Dispatchers.Default) {
                 if (!Whisper.available(ctx)) return@withContext null to "Whisper no está en esta versión de la app."
                 val uri = AudioTiming.findOrBorrow(ctx, t.title, t.artist, t.durationMs) ?: return@withContext null to "No encuentro esta canción como archivo en el teléfono (o falta el permiso de audio)."
-                val asr = Whisper.listen(ctx, t.storeKey, uri, { !isActive }, t.durationMs) { m -> timing.value = m } ?: return@withContext null to (if (!isActive) "Cancelado." else "Whisper no pudo con esta canción.")
+                val asr = Whisper.listen(ctx, t.storeKey, uri, { !isActive }, t.durationMs, WhisperAlign.langHint(lines.map { it.text })) { m -> timing.value = m } ?: return@withContext null to (if (!isActive) "Cancelado." else "Whisper no pudo con esta canción.")
                 val sung = lines.filter { it.text.isNotBlank() }
                 val ref = WhisperAlign.align(sung.map { it.text }, asr.words)
-                if (ref == null || WhisperAlign.approximate) SyncVerdict("unk", 0, 0, sung.size, null) to null else SyncCheck.judge(sung, ref) to null
+                if (ref == null || WhisperAlign.approximate) {
+                    // Whisper could not follow the voice: compare the lyric with the song's own loudness instead
+                    val shift = AudioTiming.envelope(ctx, uri, cancelled = { !isActive })?.let { AudioTiming.onsetShift(it, lines) }
+                    if (shift != null) SyncVerdict("off", -shift, 0, sung.size, null) to null else SyncVerdict("unk", 0, 0, sung.size, null) to null
+                } else SyncCheck.judge(sung, ref) to null
             }
             val v = outcome.first
             if (v == null) { timing.value = outcome.second; return@launch }
@@ -143,6 +147,15 @@ object Tracker {
         }
     }
 
+    /** Last resort for a lyric with no times when Whisper cannot match its words: lines are snapped to the pauses in the song's loudness. Returns the message to show, or null if the audio could not be read. */
+    private suspend fun audioFallback(ctx: Context, t: TrackInfo, uri: android.net.Uri, lines: List<String>, cancelled: () -> Boolean): String? {
+        if (lines.size < 2) return null
+        val env = AudioTiming.envelope(ctx, uri, cancelled = cancelled) ?: return null
+        val timed = AudioTiming.align(env, lines)
+        withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key && same(lines)) saveTimed(timed, "Audio (estimado)") }
+        return "Whisper no entendió esta canción, así que se pusieron los tiempos siguiendo las pausas del audio. Son estimados: si una línea sale corrida, ajústala con el desfase."
+    }
+
     /** Whisper: listens to the song's audio file, matches the words it hears to the lyric and times every line. Works on synced or unsynced lyrics. */
     @Volatile private var ytWhy = ""
 
@@ -158,13 +171,44 @@ object Tracker {
                 if (!Whisper.available(ctx)) return@withContext "Whisper no está en esta versión de la app."
                 val uri = AudioTiming.findOrBorrow(ctx, t.title, t.artist, t.durationMs)
                     ?: return@withContext "No encuentro esta canción como archivo en el teléfono (o falta el permiso de audio)."
-                val asr = Whisper.listen(ctx, t.storeKey, uri, { !isActive }, t.durationMs) { m -> timing.value = m } ?: return@withContext if (!isActive) "Cancelado." else "Whisper no pudo con esta canción."
+                val asr = Whisper.listen(ctx, t.storeKey, uri, { !isActive }, t.durationMs, WhisperAlign.langHint(lines)) { m -> timing.value = m } ?: return@withContext if (!isActive) "Cancelado." else "Whisper no pudo con esta canción."
                 var timed = WhisperAlign.align(lines, asr.words)
-                diag = Whisper.describe(asr, t.durationMs, lines.firstOrNull()?.let { _state.value.lines.firstOrNull { l -> l.text.isNotBlank() }?.timeMs }, WhisperAlign.lastMatched)
+                diag = Whisper.describe(asr, t.durationMs, lines.firstOrNull()?.let { _state.value.lines.firstOrNull { l -> l.text.isNotBlank() }?.timeMs }, WhisperAlign.lastMatched) + "\n" + WhisperAlign.sample(lines, asr.words)
                 ytWhy = ""; var offer: String? = null
+                // The voice is out of reach of this lyric (other alphabet, or too little matched): every other source is tried and the first one
+                // whose words do match what was heard replaces it. A lyric the user chose or edited by hand is never swapped here (it is only offered below).
+                // without times of its own the lyric cannot be left as it is, even if the user picked it: a source with times replaces it below
+                val untimed = _state.value.status == Status.PLAIN
+                if ((timed == null || WhisperAlign.approximate) && (!LyricEdit.isEdited(_state.value.source) || untimed) && !declined(t.storeKey)) {
+                    withContext(Dispatchers.Main) { timing.value = "La letra no coincide con la voz: probando otras fuentes…" }
+                    val curPlain = lines.joinToString("\n")
+                    var best: Triple<List<LyricLine>, String, Double>? = null
+                    for (c in runCatching { Candidates.search(t).first }.getOrDefault(emptyList())) {
+                        val cl = (c.lyrics.plain ?: c.lyrics.synced?.let { Lrc.parse(it).joinToString("\n") { l -> l.text } })?.lines()?.map { it.trim() }?.filter { it.isNotEmpty() } ?: continue
+                        if (cl.size < 2 || cl.joinToString("\n") == curPlain) continue
+                        val al = WhisperAlign.align(cl, asr.words, 0.12)
+                        if (al == null || WhisperAlign.approximate) continue
+                        val ratio = WhisperAlign.lastMatched.let { if (it.second > 0) it.first.toDouble() / it.second else 0.0 }
+                        if (best == null || ratio > best.third) best = Triple(al, c.lyrics.source ?: "otra fuente", ratio)
+                    }
+                    val cands = runCatching { Candidates.search(t).first }.getOrDefault(emptyList())
+                    val b = best
+                    // Whisper cannot judge any of them: a lyric without times takes the first source that comes with its own times (they are the song's real ones)
+                    val own = if (b == null && untimed) cands.firstOrNull { it.lyrics.synced != null && Lrc.parse(it.lyrics.synced).size >= 2 } else null
+                    if (own != null && _state.value.track?.key == t.key && same(lines)) {
+                        withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key && same(lines)) saveTimed(Lrc.parse(own.lyrics.synced!!), own.lyrics.source ?: "otra fuente") }
+                        return@withContext "Whisper no pudo comprobar esta letra con la voz (idioma o voces mezcladas). Tu letra no tenía tiempos, así que se usó la de ${own.lyrics.source ?: "otra fuente"}, que trae los suyos."
+                    }
+                    if (b != null && _state.value.track?.key == t.key && same(lines)) {
+                        withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key && same(lines)) saveTimed(b.first, b.second) }
+                        SyncCheck.markVerified(t.storeKey)
+                        return@withContext "La letra que tenías no coincidía con la voz (Whisper no la alcanzaba), así que se usó la de ${b.second}, que sí coincide."
+                    }
+                    WhisperAlign.align(lines, asr.words) // back to this lyric's own result for the steps below
+                }
                 // The lyric and the voice use different alphabets: YouTube Music often writes the same song in the alphabet Whisper heard.
                 // Its lines only serve to find the times; they are moved onto the user's lines by position.
-                if ((timed == null || WhisperAlign.approximate) && _state.value.source != YtMusic.SOURCE && !LyricEdit.isEdited(_state.value.source) && !(auto && declined(t.storeKey))) {
+                if ((timed == null || WhisperAlign.approximate) && _state.value.source?.startsWith(YtMusic.SOURCE) != true && !(auto && (LyricEdit.isEdited(_state.value.source) || declined(t.storeKey)))) {
                     withContext(Dispatchers.Main) { timing.value = "Buscando la letra en otro alfabeto…" }
                     val other = runCatching { YtMusic.find(t.title, t.artist, (t.durationMs / 1000).toInt()) }.getOrNull()
                     val otherLines = (other?.plain ?: other?.synced?.let { Lrc.parse(it).map { l -> l.text }.joinToString("\n") })?.lines()?.map { it.trim() }?.filter { it.isNotEmpty() }
@@ -175,8 +219,9 @@ object Tracker {
                     if (better == null && other != null && otherLines != null && otherLines.size >= 2) {
                         val replaced = other.synced?.let { Lrc.parse(it) }?.takeIf { it.size >= 2 }
                             ?: WhisperAlign.align(otherLines, asr.words, 0.12)
-                        if (replaced != null) {
-                            val approx = other.synced == null && WhisperAlign.approximate
+                        val approx = other.synced == null && WhisperAlign.approximate
+                        if (approx) ytWhy = "encontró la letra, pero no trae tiempos y la voz no se pudo emparejar, así que no la ofrezco con tiempos inventados"
+                        if (replaced != null && !approx) {
                             withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key) suggestion.value = Suggestion(t.key, t.storeKey, replaced, YtMusic.SOURCE, other.synced != null) }
                             offer = "Encontré otra letra (YouTube Music) que coincide mejor con la voz" + (if (other.synced != null) ", con sus propios tiempos." else if (approx) ", repartida por cantidad de palabras (aproximado)." else ", sincronizada con la voz.") + " Abajo te pregunto si quieres cambiarla."
                             if (timed == null) return@withContext offer
@@ -186,15 +231,18 @@ object Tracker {
                     else if (timed != null) WhisperAlign.markApproximate()
                 }
                 // Nothing matches and no other lyric helps: what Whisper heard becomes the lyric, with its real times.
+                // a lyric the user chose or edited is never replaced by what Whisper heard: that brought the old (wrong) text back
+                if ((timed == null || WhisperAlign.approximate) && untimed) audioFallback(ctx, t, uri, lines) { !isActive }?.let { return@withContext it }
+                if (timed == null && (LyricEdit.isEdited(_state.value.source) || _state.value.source?.startsWith(YtMusic.SOURCE) == true)) return@withContext "La letra que tienes está en otro alfabeto que la voz (o se entendió muy poco), así que no pude ajustar los tiempos. Se queda tu letra tal cual."
                 if (timed == null && asr.words.size >= 8) {
                     val heard = WhisperAlign.linesFromHeard(asr.words)
-                    if (heard.size >= 2) { withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key) saveTimed(heard, "Whisper (lo que se oyó)") }; return@withContext "Listo: no coincidía con la letra, así que se escribió lo que Whisper oyó. Puede tener errores." }
+                    if (heard.size >= 2) { withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key && same(lines)) saveTimed(heard, "Whisper (lo que se oyó)") }; return@withContext "Listo: no coincidía con la letra, así que se escribió lo que Whisper oyó. Puede tener errores." }
                 }
                 val done = timed ?: return@withContext "Whisper entendió muy poco de la voz (${asr.words.size} palabras, idioma ${asr.lang}). Prueba «Detectar con el audio»."
-                withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key) saveTimed(done); if (!WhisperAlign.approximate) SyncCheck.markVerified(t.storeKey) }
+                withContext(Dispatchers.Main) { if (_state.value.track?.key == t.key && same(lines)) saveTimed(done); if (!WhisperAlign.approximate) SyncCheck.markVerified(t.storeKey) }
                 offer
             }
-            timing.value = (result ?: if (WhisperAlign.approximate) "Listo, aproximado: la letra y la voz están en alfabetos distintos, así que se repartió por cantidad de palabras." else "Listo: letra sincronizada con la voz.") + "\n" + diag
+            timing.value = (result ?: if (WhisperAlign.approximate) "Listo, aproximado: la letra y la voz están en alfabetos distintos, así que se repartió por cantidad de palabras." else "Listo: letra sincronizada con la voz.") + "\n" + diag + "\nÚltimos guardados:\n" + LyricsStore.recentWrites()
             if (result == null && WhisperAlign.approximate && ytWhy.isNotEmpty()) timing.value = "Listo, aproximado. Antes probé YouTube Music y $ytWhy.\n$diag"
         }
     }
@@ -294,7 +342,7 @@ object Tracker {
         val playing = c.playbackState?.state == PlaybackState.STATE_PLAYING
         if (accentKey != track.key || accent.value == 0) { accentKey = track.key; cover = findCover(meta); accent.value = findAccent(c, meta) }
         if (track.key != loadedKey && SystemClock.elapsedRealtime() >= retryAt) { loadedKey = track.key; load(track, playing) }
-        else if (_state.value.playing != playing) _state.value = LyricsState(_state.value.status, _state.value.track, _state.value.lines, playing)
+        else if (_state.value.playing != playing) _state.value = LyricsState(_state.value.status, _state.value.track, _state.value.lines, playing, _state.value.source)
     }
 
     private fun findCover(meta: MediaMetadata): android.graphics.Bitmap? = runCatching {
@@ -390,6 +438,9 @@ object Tracker {
     fun rawPositionMs() = (positionMs() - offsetMs).coerceAtLeast(0)
 
     /** Saves lines timed by the user as this song's synced lyrics (kept on the phone like any found lyrics) and shows them at once. */
+    /** A long job (Whisper) finished: it may only save if the lyric on screen is still the one it started with, or it would bring an old text back. */
+    private fun same(started: List<String>) = _state.value.lines.map { it.text } == started
+
     fun saveTimed(lines: List<LyricLine>, source: String? = _state.value.source) {
         val t = _state.value.track ?: return
         val l = Lyrics(Lrc.toLrc(lines), lines.joinToString("\n") { it.text }, source)
@@ -399,21 +450,23 @@ object Tracker {
 
     /** The user picked this lyric from the list: it is saved as edited, so no automatic search offers to replace it. */
     fun useChosen(l: Lyrics) {
+        timingJob?.cancel(); timing.value = null
         val t = _state.value.track ?: return
         val n = Lyrics(l.synced, l.plain, LyricEdit.editedSource(l.source ?: "LRCLIB"))
         suggestion.value = null
-        LyricsStore.put(t.storeKey, n); cache[t.key] = n; _saved.value = LyricsStore.count()
+        LyricsStore.put(t.storeKey, n); cache[t.key] = n; _saved.value = LyricsStore.count(); SyncCheck.invalidate(t.storeKey)
         publish(t, n, _state.value.playing)
     }
 
     /** Saves a lyric corrected by hand. Synced lyrics keep their times; plain ones lose the blank lines. Marked as edited so no search replaces it. */
     fun saveEdited(lines: List<LyricLine>) {
+        timingJob?.cancel(); timing.value = null
         val t = _state.value.track ?: return
         val src = LyricEdit.editedSource(_state.value.source)
         val l = if (_state.value.status == Status.SYNCED) Lyrics(Lrc.toLrc(lines), lines.joinToString("\n") { it.text }, src)
             else lines.map { it.text.trim() }.filter { it.isNotEmpty() }.joinToString("\n").let { Lyrics(null, it, src) }
         suggestion.value = null
-        LyricsStore.put(t.storeKey, l); cache[t.key] = l; _saved.value = LyricsStore.count()
+        LyricsStore.put(t.storeKey, l); cache[t.key] = l; _saved.value = LyricsStore.count(); SyncCheck.invalidate(t.storeKey)
         publish(t, l, _state.value.playing)
     }
 
