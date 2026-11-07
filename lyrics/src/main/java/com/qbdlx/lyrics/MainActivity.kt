@@ -510,10 +510,17 @@ class MainActivity : ComponentActivity() {
                 val whisperOk = remember { Whisper.available(this@MainActivity) }
                 LaunchedEffect(state.track?.key) { Tracker.timing.value = null }
                 timingMsg?.let { m ->
+                    // Only the first line is for the user; the technical lines (what Whisper heard, saved files) hide behind "Detalles".
+                    val head = m.substringBefore('\n'); val more = m.substringAfter('\n', "").trim()
+                    val busy = m.endsWith("…") || m.endsWith("minutos.")
+                    var open by remember(head) { mutableStateOf(false) }
+                    LaunchedEffect(m) { if (!busy && !open) { kotlinx.coroutines.delay(8000); if (Tracker.timing.value == m) Tracker.timing.value = null } }
                     Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                        Text(m, Modifier.weight(1f), fontSize = 12.sp)
-                        if (m.endsWith("…") || m.endsWith("minutos.")) TextButton({ Tracker.cancelTiming() }) { Text("Cancelar") }
+                        Text(head, Modifier.weight(1f), fontSize = 13.sp)
+                        if (more.isNotEmpty()) TextButton({ open = !open }) { Text(if (open) "Ocultar" else "Detalles", fontSize = 12.sp) }
+                        if (busy) TextButton({ Tracker.cancelTiming() }) { Text("Cancelar") }
                     }
+                    if (open && more.isNotEmpty()) Text(more, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 SuggestionBanner(state.track)
                 VerificationBanner(state.track)
