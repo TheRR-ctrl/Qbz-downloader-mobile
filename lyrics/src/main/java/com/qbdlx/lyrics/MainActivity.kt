@@ -322,6 +322,8 @@ class MainActivity : ComponentActivity() {
         LaunchedEffect(dragged) { if (dragged) browsing = true }
         LaunchedEffect(state.track?.key) { browsing = false }
         val hasIntro = state.status == Status.SYNCED && (state.lines.firstOrNull()?.timeMs ?: 0L) >= 5000 // the dots are item 0, so every line sits one place later
+        // A new song (or new lyrics for it) starts at the top: the list would otherwise keep the previous song's scroll position.
+        LaunchedEffect(state.track?.key, state.lines.size) { listState.scrollToItem(if (idx >= 0) idx + (if (hasIntro) 1 else 0) else 0) }
         LaunchedEffect(idx, browsing) { if (!browsing && idx >= 0) listState.animateScrollToItem(idx + if (hasIntro) 1 else 0) } // the list padding puts that item in the first third
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Q Lyrics", fontSize = 28.sp, fontWeight = FontWeight.Bold)
