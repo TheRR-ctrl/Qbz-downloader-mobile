@@ -8,6 +8,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -401,27 +402,32 @@ private fun NowPlayingPage(vm: MainViewModel, album: Album, track: Track, close:
         dismissButton = { TextButton({ sleepDialog = false }) { Text(s.cancel) } },
     )
 
-    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    // The padding is inside the scroll area, so the cover can slide out to the very edge of the screen.
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Spacer(Modifier.height(6.dp))
         // The cover follows the finger and, when the song changes, the old one slides out and the new one slides in.
-        var skipDir by remember { mutableIntStateOf(1) }
         var dragX by remember { mutableFloatStateOf(0f) }
         val shownX by animateFloatAsState(dragX, if (dragX == 0f) spring(stiffness = Spring.StiffnessMedium) else snap(), label = "coverDrag")
+        val screenW = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp
+        val density = androidx.compose.ui.platform.LocalDensity.current
         Box(
             Modifier.fillMaxWidth().aspectRatio(1f).graphicsLayer { translationX = shownX }
-                .clip(RoundedCornerShape(16.dp))
-                .swipeToSkip(vm::next, vm::previous, onDrag = { dragX = it }, onSkip = { skipDir = it }),
+                .swipeToSkip(vm::next, vm::previous, onDrag = { dragX = it }),
         ) {
             // Keyed on the song (not the cover URL) so songs of the same album slide too.
             AnimatedContent(
                 targetState = track.id to album.coverUrl,
                 transitionSpec = {
-                    (slideInHorizontally(tween(320, easing = FastOutSlowInEasing)) { it * skipDir } + fadeIn(tween(320))) togetherWith
-                        (slideOutHorizontally(tween(320, easing = FastOutSlowInEasing)) { -it * skipDir } + fadeOut(tween(200)))
+                    // Slides across the whole screen (the page clips at the screen edge, not at the cover), so the old
+                    // cover leaves the screen completely and the new one arrives from the side it was swiped to.
+                    val dir = vm.skipDir
+                    val dist = (screenW * density.density).toInt()
+                    slideInHorizontally(tween(340, easing = FastOutSlowInEasing)) { dist * dir } togetherWith
+                        slideOutHorizontally(tween(340, easing = FastOutSlowInEasing)) { -dist * dir } using SizeTransform(clip = false)
                 },
                 label = "cover",
             ) { (_, url) ->
-                AsyncImage(model = url, contentDescription = album.title, modifier = Modifier.fillMaxSize().background(Chip))
+                AsyncImage(model = url, contentDescription = album.title, modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp)).background(Chip))
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {

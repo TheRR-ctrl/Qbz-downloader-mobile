@@ -213,7 +213,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         PlayerEngine(app, object : PlayerEngine.Listener {
             override fun onPlayingChanged(playing: Boolean) { isPlaying = playing; if (!playing) saveQueue(); syncNotification() }
             override fun onAdvanced() = advancedByEngine()
-            override fun onEnded() { playQueue.next(auto = true)?.let { playCurrent() } }
+            override fun onEnded() { skipDir = 1; playQueue.next(auto = true)?.let { playCurrent() } }
             override fun onBitPerfect(state: BitPerfectState) { bitPerfectState = state }
             override fun onError(e: Exception) {
                 // A prepared track's signed address can expire (a long pause near the end): load the track again, once.
@@ -2142,6 +2142,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** The engine moved on to the prepared next track by itself: gapless, or after a fade. */
     private fun advancedByEngine() {
+        skipDir = 1
         val item = playQueue.next(auto = true) ?: return
         val ready = prefetched?.takeIf { it.first === item }
         // The queue was edited while the next track was already loading: what plays isn't what the queue says.
@@ -2184,15 +2185,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (playQueue.current != null) startPrefetch()
     }
 
-    fun next() { if (playQueue.next(auto = false) != null) playCurrent() }
+    /** Which way the cover slides when the song changes: 1 forward, -1 back. Set by every way of changing song (buttons, swipe, notification). */
+    @Volatile var skipDir = 1
+
+    fun next() { skipDir = 1; if (playQueue.next(auto = false) != null) playCurrent() }
 
     /** Like most players: after a few seconds in, "previous" restarts the track; near its start it goes back one. */
     fun previous() {
         if (engineDelegate.isInitialized() && engine.position > 3000) engine.seekTo(0)
-        else if (playQueue.previous() != null) playCurrent()
+        else { skipDir = -1; if (playQueue.previous() != null) playCurrent() }
     }
 
-    fun jumpTo(index: Int) { if (playQueue.jump(index) != null) playCurrent() }
+    fun jumpTo(index: Int) { skipDir = 1; if (playQueue.jump(index) != null) playCurrent() }
 
     /** Saves the queue and the position now: called when the app leaves the screen, and every few seconds while playing, so an update or a kill loses almost nothing. */
     fun persistQueue() = saveQueue()
