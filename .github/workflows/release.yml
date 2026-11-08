@@ -1,0 +1,70 @@
+name: Publicar las apps firmadas
+# Compila las tres apps en modo release, las firma con TU clave y las publica como una release.
+# La clave NO está en el repo: va en los secrets del repositorio (Settings → Secrets and variables → Actions):
+#   RELEASE_KEYSTORE_B64  el archivo .jks/.keystore en base64 (una sola línea)
+#   RELEASE_PASSWORD      la contraseña (la misma para el almacén y la clave)
+#   RELEASE_ALIAS         el alias de la clave (opcional; por omisión "qbdlx")
+# Las descargas de cada APK las cuenta GitHub en la release (Releases → número junto a cada archivo).
+on:
+  workflow_dispatch:
+    inputs:
+      etiqueta:
+        description: "Etiqueta de la release (p. ej. v0.44.6)"
+        required: true
+      borrador:
+        description: "Dejarla como borrador (no pública) para revisarla antes"
+        type: boolean
+        default: true
+permissions:
+  contents: write
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Comprobar que están los secrets de la firma
+        env:
+          KS: ${{ secrets.RELEASE_KEYSTORE_B64 }}
+          PW: ${{ secrets.RELEASE_PASSWORD }}
+        run: |
+          if [ -z "$KS" ] || [ -z "$PW" ]; then
+            echo "Faltan los secrets RELEASE_KEYSTORE_B64 y/o RELEASE_PASSWORD: sin ellos no se firma nada." >&2
+            exit 1
+          fi
+      - name: Modelo de Whisper para Q Lyrics (no está en el repo)
+        run: curl -fL -o lyrics/src/main/assets/ggml-base-q5_1.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base-q5_1.bin
+      - name: Compilar y firmar
+        env:
+          KS: ${{ secrets.RELEASE_KEYSTORE_B64 }}
+          RELEASE_PASSWORD: ${{ secrets.RELEASE_PASSWORD }}
+          RELEASE_ALIAS: ${{ secrets.RELEASE_ALIAS }}
+        run: |
+          echo "$KS" | base64 -d > "$RUNNER_TEMP/release.keystore"
+          ./gradlew :app:assembleRelease :lyrics:assembleRelease :scanner:assembleRelease \
+            -PreleaseKeystore="$RUNNER_TEMP/release.keystore" \
+            -PreleasePassword="$RELEASE_PASSWORD" \
+            -PreleaseAlias="${RELEASE_ALIAS:-qbdlx}"
+      - name: Comprobar firmas y nombrar los archivos
+        run: |
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          mkdir -p salida
+          cp app/build/outputs/apk/release/app-release.apk salida/QBDLX-Mobile-${{ inputs.etiqueta }}.apk
+          cp lyrics/build/outputs/apk/release/lyrics-release.apk salida/QLyrics-${{ inputs.etiqueta }}.apk
+          cp scanner/build/outputs/apk/release/scanner-release.apk salida/QBDLX-Scanner-${{ inputs.etiqueta }}.apk
+          for f in salida/*.apk; do
+            "$APKSIGNER" verify --print-certs "$f" | grep -E "SHA-256|Verifies" | head -2
+            ls -l "$f"
+          done
+      - name: Publicar la release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          EXTRA=""
+          if [ "${{ inputs.borrador }}" = "true" ]; then EXTRA="--draft"; fi
+          gh release create "${{ inputs.etiqueta }}" salida/*.apk $EXTRA \
+            --title "${{ inputs.etiqueta }}" \
+            --notes "APK firmados con la clave de release. Instalar uno encima de otro funciona solo si la firma es la misma."
