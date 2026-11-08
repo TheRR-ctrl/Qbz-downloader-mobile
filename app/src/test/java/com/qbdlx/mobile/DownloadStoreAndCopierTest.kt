@@ -160,6 +160,8 @@ class DownloadErrorsTest {
         assertEquals(FailureKind.FATAL, DownloadErrors.classify(ApiException("Qobuz returned no download URL")))
         assertEquals(FailureKind.FATAL, DownloadErrors.classify(StorageException("Could not create file in Music folder")))
         assertEquals(FailureKind.FATAL, DownloadErrors.classify(IllegalStateException("bug")))
+        // A full disk can't be fixed by retrying (each retry would download the whole file again).
+        assertEquals(FailureKind.FATAL, DownloadErrors.classify(IOException("write failed: ENOSPC (No space left on device)")))
     }
 }
 

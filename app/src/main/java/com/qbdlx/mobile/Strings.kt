@@ -168,6 +168,7 @@ interface Strings {
     fun noteRetrying(n: Int, max: Int): String
     val noteRefreshing: String
     val noteSystemLimit: String
+    val noteWaitingNetwork: String
     fun alreadyQueued(n: Int): String
     fun queuedTracksSkipped(added: Int, skipped: Int): String
     fun preparingAlbums(n: Int): String
@@ -646,6 +647,7 @@ object English : Strings {
     override fun noteRetrying(n: Int, max: Int) = "Connection problem, retrying ($n/$max)…"
     override val noteRefreshing = "Renewing Qobuz credentials…"
     override val noteSystemLimit = "Paused by Android's background limit. Tap Resume."
+    override val noteWaitingNetwork = "No connection. Waiting to continue…"
     override fun alreadyQueued(n: Int) = if (n == 1) "Already queued or downloaded (remove it from Downloads to repeat it)"
         else "$n tracks were already queued or downloaded"
     override fun queuedTracksSkipped(added: Int, skipped: Int) = "${queuedTracks(added)} ($skipped already queued or downloaded)"
@@ -1155,6 +1157,7 @@ object Spanish : Strings {
     override fun noteRetrying(n: Int, max: Int) = "Problema de conexión, reintentando ($n/$max)…"
     override val noteRefreshing = "Renovando credenciales de Qobuz…"
     override val noteSystemLimit = "Pausada por el límite de Android en segundo plano. Pulsa Reanudar."
+    override val noteWaitingNetwork = "Sin conexión. Esperando para continuar…"
     override fun alreadyQueued(n: Int) = if (n == 1) "Ya está en cola o descargada (quítala de Descargas para repetirla)"
         else "$n pistas ya estaban en cola o descargadas"
     override fun queuedTracksSkipped(added: Int, skipped: Int) = "${queuedTracks(added)} ($skipped ya estaban en cola o descargadas)"

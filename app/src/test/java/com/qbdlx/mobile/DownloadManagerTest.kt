@@ -100,8 +100,11 @@ class DownloadManagerTest {
         clock: () -> Long = System::currentTimeMillis,
         w: TaskWorker = worker,
         restore: Boolean = true,
+        online: () -> Boolean = { true },
+        offlineWaitMs: Long = 10 * 60_000L,
     ) = DownloadManager(
         worker = w, store = store, scope = scope, secretVersion = secret,
+        online = online, offlineWaitMs = offlineWaitMs,
         backoffMs = backoff, clock = clock, sleep = { },
     ).also { if (restore) it.restore(); it.maxConcurrent = limit; it.setEnabled(true) }
 
@@ -385,6 +388,28 @@ class DownloadManagerTest {
         waitUntil { m.task(1).status == TaskStatus.FAILED }
         assertEquals("first attempt + 2 retries", 3, worker.callsFor(key(1)))
         assertTrue(m.task(1).error!!.contains("connection reset"))
+    }
+
+    @Test fun lackOfConnectionWaitsInsteadOfSpendingRetries() {
+        val online = java.util.concurrent.atomic.AtomicBoolean(false)
+        worker.script(key(1), { throw java.net.UnknownHostException("www.qobuz.com") })
+        // No retries allowed at all: with a connection a transient error would fail at once.
+        val m = manager(backoff = emptyList(), online = { online.get() }, offlineWaitMs = Long.MAX_VALUE)
+        m.enqueue(items(1), Quality.LOSSLESS)
+        waitUntil(what = "the task to wait for the network") { m.task(1).note == TaskNote.WAITING_NETWORK }
+        assertEquals(TaskStatus.DOWNLOADING, m.task(1).status)
+        online.set(true)
+        waitUntil { m.allDone() }
+        assertEquals(2, worker.callsFor(key(1)))
+        assertEquals(TaskNote.NONE, m.task(1).note)
+    }
+
+    @Test fun lackOfConnectionGivesUpAfterTheWaitLimit() {
+        worker.script(key(1), *Array(5) { { throw java.net.UnknownHostException("www.qobuz.com") } })
+        val m = manager(backoff = emptyList(), online = { false }, offlineWaitMs = 3_000L)
+        m.enqueue(items(1), Quality.LOSSLESS)
+        waitUntil { m.task(1).status == TaskStatus.FAILED }
+        assertEquals(1, worker.callsFor(key(1)))
     }
 
     @Test fun httpServerErrorsRetryButClientErrorsDoNot() {

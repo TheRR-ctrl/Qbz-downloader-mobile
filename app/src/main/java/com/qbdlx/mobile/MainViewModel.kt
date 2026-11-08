@@ -69,6 +69,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** How the Library lists are ordered: 0 as added (Qobuz's order), 1 title, 2 artist, 3 newest, 4 oldest, 5 A-Z by length is not offered. */
     var wifiOnly by mutableStateOf(prefs.getBoolean("wifi_only", false)); private set
     fun updateWifiOnly(on: Boolean) { wifiOnly = on; prefs.edit().putBoolean("wifi_only", on).apply(); downloads.recheckAllowed() }
+    private fun isOnline(): Boolean {
+        val cm = context.getSystemService(android.net.ConnectivityManager::class.java) ?: return true
+        val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
+        return caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
     private fun onWifi(): Boolean {
         val cm = context.getSystemService(android.net.ConnectivityManager::class.java) ?: return true
         val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
@@ -191,6 +196,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         scope = downloadScope,
         // What the current signature was made with: lets tasks that failed together share one refresh.
         allowed = { !wifiOnly || onWifi() },
+        online = { isOnline() },
         secretVersion = { api.appId + ":" + QobuzApi.fingerprintOf(api.appSecret) },
         // Qobuz rejects the signature when the app secret doesn't match the app id.
         errorMessage = { e ->

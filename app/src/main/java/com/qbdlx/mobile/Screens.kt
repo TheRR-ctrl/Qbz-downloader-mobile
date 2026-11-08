@@ -567,6 +567,7 @@ private fun DownloadRow(vm: MainViewModel, task: DownloadTask) {
                 TaskNote.NONE -> Unit
                 TaskNote.RETRYING -> Text(s.noteRetrying(task.noteArg, 3), fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
                 TaskNote.REFRESHING -> Text(s.noteRefreshing, fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                TaskNote.WAITING_NETWORK -> Text(s.noteWaitingNetwork, fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
                 TaskNote.SYSTEM_LIMIT -> Text(s.noteSystemLimit, fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
                 TaskNote.EXISTED -> Text(s.noteExisted, fontSize = 11.sp, color = MaterialTheme.colorScheme.secondary)
                 TaskNote.REPLACED -> Text(s.noteReplaced, fontSize = 11.sp, color = MaterialTheme.colorScheme.secondary)
