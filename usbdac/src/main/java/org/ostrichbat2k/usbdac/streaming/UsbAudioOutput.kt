@@ -889,7 +889,7 @@ class UsbAudioOutput(
             System.currentTimeMillis() - lastRecoveryAtMs > 10_000L) {
             lastRecoveryAtMs = System.currentTimeMillis()
             usbAudioManager.reportDiagnostic(
-                "UsbAudioOutput: el DAC lleva ${sinceLastUrbMs}ms sin completar bloques · en búfer=${ringBuffer.availableToRead()} bytes -> se reactiva sin vaciar el búfer")
+                "UsbAudioOutput: el DAC lleva ${sinceLastUrbMs}ms sin completar bloques · en búfer=${ringBuffer.availableToRead()} bytes -> se reactiva sin vaciar el búfer · ${streamEngine.resumenRitmo()}")
             pause()
             // pause() solo programa la liberación con RELEASE_GRACE_MS y play() la cancela: la interfaz
             // nunca se soltaba de verdad y el DAC seguía colgado. Aquí se suelta ya, para que play() haga
@@ -906,7 +906,7 @@ class UsbAudioOutput(
             // DefaultAudioSink will flush and rebuild the output right after this: the audible "jump".
             usbAudioManager.reportDiagnostic(
                 "UsbAudioOutput.isStalled -> true: ${sinceLastUrbMs}ms sin enviar bloques · espera máxima en reap=${streamEngine.longestReapMs}ms · " +
-                    "último retraso del hilo=${streamEngine.lastLateMs}ms · en búfer=${ringBuffer.availableToRead()} bytes · pausado=$paused · " +
+                    "${streamEngine.resumenRitmo()} · último retraso del hilo=${streamEngine.lastLateMs}ms · en búfer=${ringBuffer.availableToRead()} bytes · pausado=$paused · " +
                     if (reapEnCursoMs >= 0) "esperando al DAC (reap en curso) desde hace ${reapEnCursoMs}ms" else "el hilo NO estaba en reap")
         }
         return stalled

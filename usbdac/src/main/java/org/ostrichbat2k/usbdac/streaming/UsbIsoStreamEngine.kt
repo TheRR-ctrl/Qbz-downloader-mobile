@@ -80,6 +80,21 @@ internal class UsbIsoStreamEngine(
     @Volatile var longestReapMs: Long = 0L
     @Volatile var lastLateMs: Long = 0L
 
+    /** Último ritmo (Hz) que dijo el DAC por el endpoint de feedback; 0 si no ha dicho nada. */
+    @Volatile var feedbackHz: Int = 0
+    @Volatile var feedbackMinHz: Int = 0
+    @Volatile var feedbackMaxHz: Int = 0
+    @Volatile var feedbackCount: Int = 0
+    /** Cuánto se ha adelantado (+) o retrasado (-) el envío frente al reloj ideal, en ms. */
+    @Volatile var desvioEnvioMs: Long = 0L
+    @Volatile var urbsEnviados: Long = 0L
+
+    /** Resumen de ritmo para los informes: lo que pide el DAC frente a lo que enviamos. */
+    fun resumenRitmo(): String =
+        "nominal=${sampleRateHz}Hz · feedback del DAC=" +
+            (if (feedbackCount == 0) "sin datos" else "${feedbackHz}Hz (min ${feedbackMinHz}, max ${feedbackMaxHz}, $feedbackCount lecturas)") +
+            " · desvío del envío=${desvioEnvioMs}ms · bloques enviados=$urbsEnviados"
+
     /** Instante (nanoTime) en que empezó el reapIso en curso; 0 si el hilo no está esperando uno. */
     @Volatile var reapStartedAtNs: Long = 0L
 
@@ -136,6 +151,8 @@ internal class UsbIsoStreamEngine(
         // UsbAudioTuning.BASE_PACKETS_PER_URB's doc comment) so the *real* amount of audio -- and host-controller
         // lookahead cushion -- one URB represents stays the same regardless of negotiated speed;
         // only each packet's own content size shrinks to match its true, shorter duration.
+        feedbackHz = 0; feedbackMinHz = 0; feedbackMaxHz = 0; feedbackCount = 0
+        desvioEnvioMs = 0L; urbsEnviados = 0L
         val usbSpeed = nativeBridge.getUsbSpeed(fd)
         val speedName =
             when (usbSpeed) {
@@ -405,6 +422,8 @@ internal class UsbIsoStreamEngine(
                             break
                         }
                         submitted++
+                        urbsEnviados = submitted.toLong()
+                        desvioEnvioMs = (urbsPaced * urbRealTimeNs - (System.nanoTime() - streamStartNs)) / 1_000_000L
                         lastUrbSubmittedAtMs = System.currentTimeMillis()
                         // Recorded now, credited above next time this slot comes back around
                         // through reapIso() confirming it completed. Not creditable while paused:
@@ -534,7 +553,13 @@ internal class UsbIsoStreamEngine(
             val bytesRead = nativeBridge.readIsoSlotData(handle, slot, buffer)
             if (bytesRead > 0) {
                 val decoded = FeedbackRateDecoder.decode(buffer.copyOf(bytesRead), sampleRateHz)
-                if (decoded != null) scheduler.updateRate(decoded)
+                if (decoded != null) {
+                    scheduler.updateRate(decoded)
+                    feedbackHz = decoded
+                    feedbackCount++
+                    if (feedbackMinHz == 0 || decoded < feedbackMinHz) feedbackMinHz = decoded
+                    if (decoded > feedbackMaxHz) feedbackMaxHz = decoded
+                }
             }
             resubmit(slot)
         }
