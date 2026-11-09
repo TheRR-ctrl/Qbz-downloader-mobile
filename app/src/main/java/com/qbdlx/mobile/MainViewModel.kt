@@ -1964,9 +1964,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private fun resolve(trackId: Long): Pair<String, AudioQuality?> {
         val local = downloads.tasks.firstOrNull { it.track.id == trackId && it.status == TaskStatus.COMPLETED && it.quality.formatId >= playFormat() && it.savedUri != null }?.savedUri
         if (local != null && runCatching { context.contentResolver.openInputStream(Uri.parse(local))?.close() ?: error("") }.isSuccess) return local to null
-        val file = api.getFileUrl(trackId, playFormat())
+        val used = api.appSecret
+        val file = try {
+            api.getFileUrl(trackId, playFormat())
+        } catch (e: ApiException) {
+            // Qobuz rejected the signature: the saved App Secret went stale. Downloads already heal this on their own;
+            // do the same here once (fresh secret from the web player, checked against a real track) and try again.
+            if ("request_sig" !in (e.message ?: "")) throw e
+            // If something else already replaced the secret meanwhile, just retry with the new one.
+            synchronized(secretRefreshLock) { if (api.appSecret == used) doRefreshCredentials() }
+            api.getFileUrl(trackId, playFormat())
+        }
         return file.url to file.quality
     }
+
+    private val secretRefreshLock = Any()
 
     // ---- queue that survives closing the app, history, sleep timer, lyrics -----------------------------------------
     private var restoredPosMs = -1L // >= 0: a queue was restored and nothing has been started yet
