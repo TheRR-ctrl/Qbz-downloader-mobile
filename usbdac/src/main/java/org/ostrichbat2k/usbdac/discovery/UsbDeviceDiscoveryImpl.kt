@@ -165,6 +165,9 @@ internal class UsbDeviceDiscoveryImpl(
         for (name in newNames - knownDeviceNames) {
             log("USB Audio Device detected: $name")
         }
+        for (name in knownDeviceNames - newNames) {
+            log("USB Audio Device removed: $name")
+        }
         knownDeviceNames = newNames
 
         // Getting permission is cheap and worth doing eagerly -- it's just an Android dialog,
