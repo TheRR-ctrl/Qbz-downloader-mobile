@@ -866,6 +866,8 @@ class UsbAudioOutput(
      * sink implementation here never had, which left a genuinely stuck ring buffer with no way
      * back short of the user manually skipping the track.
      */
+    @Volatile private var lastKickAtMs = 0L
+
     override fun isStalled(): Boolean {
         // play() just handed activateAndStream() off to activationExecutor and hasn't heard back
         // yet -- this is no longer the instantaneous window it used to be when play() ran that
@@ -879,6 +881,14 @@ class UsbAudioOutput(
         // this state (streaming itself is false), so the check below alone would never catch it.
         if (!paused && !activated) return true
         val sinceLastUrbMs = System.currentTimeMillis() - streamEngine.lastUrbSubmittedAtMs
+        // Antes de dar el atasco por perdido (flush = salto de hasta 5 s): si el hilo está colgado en
+        // reapIso, se intenta destrabar sin tocar el búfer. Una vez por episodio (cada ~1 s como mucho).
+        if (streamEngine.streaming && sinceLastUrbMs > 1000L &&
+            System.currentTimeMillis() - lastKickAtMs > 1000L &&
+            streamEngine.kickStuckReap(1000L)) {
+            lastKickAtMs = System.currentTimeMillis()
+            usbAudioManager.reportDiagnostic("UsbAudioOutput: reapIso colgado ${sinceLastUrbMs}ms -> cancelIso para destrabarlo (intento ${streamEngine.kicks})")
+        }
         val stalled = streamEngine.streaming && sinceLastUrbMs > UsbAudioTuning.STALL_THRESHOLD_MS
         if (stalled) {
             val reapNs = streamEngine.reapStartedAtNs
