@@ -29,10 +29,19 @@ class ListenerService : NotificationListenerService() {
 
     override fun onListenerDisconnected() { instance = null; scope.coroutineContext.cancelChildren() }
 
+    /** Like Musixmatch: when music starts in another app, the bubble shows up by itself (folded); closing it by hand keeps it away until the music stops. */
+    private fun autoBubble(playing: Boolean) {
+        if (!playing) { FloatingService.suppressAuto = false; return }
+        if (FloatingService.running || FloatingService.appForeground || FloatingService.suppressAuto) return
+        if (!getSharedPreferences("lyrics", MODE_PRIVATE).getBoolean("float_auto", true)) return
+        runCatching { FloatingService.show(this, true) }
+    }
+
     private fun update() {
         val nm = getSystemService(NotificationManager::class.java)
         val st = Tracker.state.value
         val track = st.track
+        autoBubble(track != null && st.playing)
         if (track == null || st.status == Status.NO_MEDIA || st.status == Status.NO_ACCESS) {
             if (shown != "") { nm.cancel(ID); shown = "" }
             return

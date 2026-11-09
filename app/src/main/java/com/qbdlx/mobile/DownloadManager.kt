@@ -24,7 +24,7 @@ enum class TaskStatus {
 }
 
 /** A short, language-neutral hint shown next to a task; the UI turns it into text. */
-enum class TaskNote { NONE, RETRYING, REFRESHING, SYSTEM_LIMIT, EXISTED, REPLACED }
+enum class TaskNote { NONE, RETRYING, REFRESHING, SYSTEM_LIMIT, EXISTED, REPLACED, WAITING_NETWORK }
 
 class DownloadTask(
     val key: String,
@@ -113,6 +113,10 @@ class DownloadManager(
     private val secretVersion: () -> String = { "" },
     /** False while downloads must wait (e.g. Wi-Fi only and no Wi-Fi). */
     private val allowed: () -> Boolean = { true },
+    /** False while the phone has no connection: transient failures then wait instead of using up their retries. */
+    private val online: () -> Boolean = { true },
+    /** How long a task waits for the connection to come back before it fails. */
+    private val offlineWaitMs: Long = 10 * 60_000L,
     private val errorMessage: (Throwable) -> String = { it.message ?: it.javaClass.simpleName },
     private val backoffMs: List<Long> = listOf(2_000L, 5_000L, 10_000L),
     private val refreshCooldownMs: Long = 10 * 60_000L,
@@ -389,6 +393,15 @@ class DownloadManager(
                     if (handle.cancelled) return
                     when (DownloadErrors.classify(e)) {
                         FailureKind.TRANSIENT -> {
+                            if (!online()) {
+                                // No connection is not the track's fault: wait for it without spending a retry.
+                                afterChange { task.note = TaskNote.WAITING_NETWORK; task.progress = 0f }
+                                val back = waitForNetwork(handle)
+                                if (handle.cancelled) return
+                                afterChange { task.note = TaskNote.NONE }
+                                if (!back) { fail(task, handle, e); return }
+                                continue
+                            }
                             if (attempt >= backoffMs.size) { fail(task, handle, e); return }
                             afterChange { task.note = TaskNote.RETRYING; task.noteArg = attempt + 1; task.progress = 0f }
                             backoff(backoffMs[attempt], handle); attempt++
@@ -407,6 +420,16 @@ class DownloadManager(
                 pumpLocked()
             }
         }
+    }
+
+    /** Polls until the connection is back; false if it stays down for [offlineWaitMs]. */
+    private suspend fun waitForNetwork(handle: CancelHandle): Boolean {
+        var waited = 0L
+        while (!handle.cancelled && !online()) {
+            if (waited >= offlineWaitMs) return false
+            sleep(1_000L); waited += 1_000L
+        }
+        return true
     }
 
     /** Waits in short steps so a pause or cancel during the delay takes effect almost immediately. */
@@ -525,6 +548,8 @@ object DownloadErrors {
         return when {
             "request_sig" in msg || "Invalid Request Signature" in msg -> FailureKind.SIGNATURE
             e is StorageException -> FailureKind.FATAL
+            // A full disk won't clear by retrying; each retry would only download the whole file again.
+            "ENOSPC" in msg || "No space left" in msg -> FailureKind.FATAL
             retryableHttp.containsMatchIn(msg) -> FailureKind.TRANSIENT
             fatalHttp.containsMatchIn(msg) -> FailureKind.FATAL
             e is ApiException -> FailureKind.FATAL

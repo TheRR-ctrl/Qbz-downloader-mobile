@@ -69,6 +69,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** How the Library lists are ordered: 0 as added (Qobuz's order), 1 title, 2 artist, 3 newest, 4 oldest, 5 A-Z by length is not offered. */
     var wifiOnly by mutableStateOf(prefs.getBoolean("wifi_only", false)); private set
     fun updateWifiOnly(on: Boolean) { wifiOnly = on; prefs.edit().putBoolean("wifi_only", on).apply(); downloads.recheckAllowed() }
+    private fun isOnline(): Boolean {
+        val cm = context.getSystemService(android.net.ConnectivityManager::class.java) ?: return true
+        val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
+        return caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
     private fun onWifi(): Boolean {
         val cm = context.getSystemService(android.net.ConnectivityManager::class.java) ?: return true
         val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
@@ -191,6 +196,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         scope = downloadScope,
         // What the current signature was made with: lets tasks that failed together share one refresh.
         allowed = { !wifiOnly || onWifi() },
+        online = { isOnline() },
         secretVersion = { api.appId + ":" + QobuzApi.fingerprintOf(api.appSecret) },
         // Qobuz rejects the signature when the app secret doesn't match the app id.
         errorMessage = { e ->
@@ -207,7 +213,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         PlayerEngine(app, object : PlayerEngine.Listener {
             override fun onPlayingChanged(playing: Boolean) { isPlaying = playing; if (!playing) saveQueue(); syncNotification() }
             override fun onAdvanced() = advancedByEngine()
-            override fun onEnded() { playQueue.next(auto = true)?.let { playCurrent() } }
+            override fun onEnded() { skipDir = 1; playQueue.next(auto = true)?.let { playCurrent() } }
             override fun onBitPerfect(state: BitPerfectState) { bitPerfectState = state }
             override fun onError(e: Exception) {
                 // A prepared track's signed address can expire (a long pause near the end): load the track again, once.
@@ -1958,9 +1964,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private fun resolve(trackId: Long): Pair<String, AudioQuality?> {
         val local = downloads.tasks.firstOrNull { it.track.id == trackId && it.status == TaskStatus.COMPLETED && it.quality.formatId >= playFormat() && it.savedUri != null }?.savedUri
         if (local != null && runCatching { context.contentResolver.openInputStream(Uri.parse(local))?.close() ?: error("") }.isSuccess) return local to null
-        val file = api.getFileUrl(trackId, playFormat())
+        val used = api.appSecret
+        val file = try {
+            api.getFileUrl(trackId, playFormat())
+        } catch (e: ApiException) {
+            // Qobuz rejected the signature: the saved App Secret went stale. Downloads already heal this on their own;
+            // do the same here once (fresh secret from the web player, checked against a real track) and try again.
+            if ("request_sig" !in (e.message ?: "")) throw e
+            // If something else already replaced the secret meanwhile, just retry with the new one.
+            synchronized(secretRefreshLock) { if (api.appSecret == used) doRefreshCredentials() }
+            api.getFileUrl(trackId, playFormat())
+        }
         return file.url to file.quality
     }
+
+    private val secretRefreshLock = Any()
 
     // ---- queue that survives closing the app, history, sleep timer, lyrics -----------------------------------------
     private var restoredPosMs = -1L // >= 0: a queue was restored and nothing has been started yet
@@ -1979,8 +1997,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (all.isEmpty()) { prefs.edit().remove("queue").apply(); return }
         // Nothing started since a restore: keep the position that was restored, the engine knows nothing yet.
         val ms = if (restoredPosMs >= 0) restoredPosMs else if (engineDelegate.isInitialized()) engine.position else 0L
-        prefs.edit().putString("queue", QueueStore.encodeQueue(all.take(300), s.history.size.coerceAtMost(299), ms)).apply()
+        // Every 5 s while playing only the position changes: the up to 300 songs are encoded again only when the queue itself changed.
+        val items = all.take(300)
+        val cached = savedItems
+        val itemsJson = if (cached != null && cached.size == items.size && items.indices.all { items[it] === cached[it] }) savedItemsJson
+            else QueueStore.encodeItemsText(items).also { savedItems = items; savedItemsJson = it }
+        prefs.edit().putString("queue", QueueStore.encodeQueue(itemsJson, s.history.size.coerceAtMost(299), ms)).apply()
     }
+    private var savedItems: List<Pair<Album, Track>>? = null
+    private var savedItemsJson = ""
 
     private fun restoreQueue() {
         val saved = QueueStore.decodeQueue(prefs.getString("queue", null)) ?: return
@@ -2114,6 +2139,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         playJob = viewModelScope.launch {
             try {
                 val (url, q) = withContext(Dispatchers.IO) { resolve(item.second.id) }
+                // The USB driver only upgrades a track at configure(): claim the DAC first, or the first track stays on Android's mixer.
+                if (UsbDirect.prefs(getApplication()).enabled) {
+                    UsbDirect.managerOrNull(getApplication())?.let { m ->
+                        m.triggerActivation()
+                        withContext(Dispatchers.IO) { m.awaitActivation(8000L) }
+                    }
+                }
                 engine.start(url)
                 if (resumeMs > 0) engine.seekTo(resumeMs)
                 nowQuality = q
@@ -2129,6 +2161,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** The engine moved on to the prepared next track by itself: gapless, or after a fade. */
     private fun advancedByEngine() {
+        skipDir = 1
         val item = playQueue.next(auto = true) ?: return
         val ready = prefetched?.takeIf { it.first === item }
         // The queue was edited while the next track was already loading: what plays isn't what the queue says.
@@ -2171,15 +2204,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (playQueue.current != null) startPrefetch()
     }
 
-    fun next() { if (playQueue.next(auto = false) != null) playCurrent() }
+    /** Which way the cover slides when the song changes: 1 forward, -1 back. Set by every way of changing song (buttons, swipe, notification). */
+    @Volatile var skipDir = 1
+
+    fun next() { skipDir = 1; if (playQueue.next(auto = false) != null) playCurrent() }
 
     /** Like most players: after a few seconds in, "previous" restarts the track; near its start it goes back one. */
     fun previous() {
         if (engineDelegate.isInitialized() && engine.position > 3000) engine.seekTo(0)
-        else if (playQueue.previous() != null) playCurrent()
+        else { skipDir = -1; if (playQueue.previous() != null) playCurrent() }
     }
 
-    fun jumpTo(index: Int) { if (playQueue.jump(index) != null) playCurrent() }
+    fun jumpTo(index: Int) { skipDir = 1; if (playQueue.jump(index) != null) playCurrent() }
 
     /** Saves the queue and the position now: called when the app leaves the screen, and every few seconds while playing, so an update or a kill loses almost nothing. */
     fun persistQueue() = saveQueue()
@@ -2202,6 +2238,26 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var bitPerfect by mutableStateOf(prefs.getBoolean("bit_perfect", false)); private set
     var bitPerfectState by mutableStateOf(BitPerfectState(BitPerfectKind.OFF)); private set
     private val bitPerfectProbe by lazy { BitPerfectOutput(context) }
+
+    // A DAC plugged in (or out) after the screen was opened: look again right away instead of waiting for the next visit.
+    /** Direct USB driver: no fade (the stream must stay untouched). */
+    fun updateUsbDirect(on: Boolean) { engine.fadeMs = if (on) 0 else crossfadeMs }
+
+    private val dacCallback = object : android.media.AudioDeviceCallback() {
+        override fun onAudioDevicesAdded(added: Array<out android.media.AudioDeviceInfo>) = devicesChanged()
+        override fun onAudioDevicesRemoved(removed: Array<out android.media.AudioDeviceInfo>) = devicesChanged()
+    }
+    private fun devicesChanged() {
+        if (!bitPerfect) return
+        val seen = bitPerfectProbe.probe()
+        val settled = bitPerfectState.kind == BitPerfectKind.ACTIVE || bitPerfectState.kind == BitPerfectKind.NO_MATCH || bitPerfectState.kind == BitPerfectKind.REFUSED
+        if (seen.kind == BitPerfectKind.NO_USB || !settled) bitPerfectState = seen
+    }
+    init {
+        context.getSystemService(android.media.AudioManager::class.java)
+            .registerAudioDeviceCallback(dacCallback, android.os.Handler(android.os.Looper.getMainLooper()))
+        if (bitPerfect) bitPerfectState = bitPerfectProbe.probe()
+    }
 
     /** What the Settings line says before anything plays: is it possible, is a DAC connected? */
     fun refreshBitPerfect() {

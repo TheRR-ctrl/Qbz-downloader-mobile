@@ -87,15 +87,21 @@ private const val SIGNIN_HOST = "www.qobuz.com"
 // for creating one), so password managers would only fill the email. Mark them as a sign-in form.
 private const val SIGNIN_AUTOFILL_JS = """
 (function () {
-  function f() {
+  if (window.__qbdlxAutofill || !document.documentElement) return;
+  function fix() {
     var form = document.getElementById('loginForm');
-    if (form) form.setAttribute('autocomplete', 'on');
+    if (form && form.getAttribute('autocomplete') !== 'on') form.setAttribute('autocomplete', 'on');
     var user = document.getElementById('_username');
-    if (user) user.setAttribute('autocomplete', 'username');
+    if (user && user.getAttribute('autocomplete') !== 'username') user.setAttribute('autocomplete', 'username');
     var pass = document.getElementById('_password');
-    if (pass) pass.setAttribute('autocomplete', 'current-password');
+    if (pass && pass.getAttribute('autocomplete') !== 'current-password') pass.setAttribute('autocomplete', 'current-password');
   }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', f); else f();
+  fix();
+  // The page rewrites these attributes after loading ("new-password"), so keep them right and fix them again
+  // when a field is touched, which is when Android's autofill reads the form.
+  new MutationObserver(fix).observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['autocomplete'] });
+  document.addEventListener('focusin', fix, true);
+  window.__qbdlxAutofill = true;
 })();
 """
 

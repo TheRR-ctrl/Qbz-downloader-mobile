@@ -128,4 +128,31 @@ object AudioTiming {
         }
         return out
     }
+
+    /**
+     * How far the whole lyric sits from the song's real sound: for every timed line, the sharpest rise in loudness within 1.5 s of its time
+     * is taken as the moment it is sung, and the median of (rise - line time) is returned. Positive: the lyric runs early.
+     * Null unless most lines have a clear rise, they agree with each other (a steady shift, not a drifting or wrong lyric) and
+     * the shift is at least [MIN_SHIFT_MS]: a lyric that is already in time, or one that cannot be judged, gets no offer.
+     */
+    fun onsetShift(env: FloatArray, lines: List<LyricLine>): Long? {
+        val timed = lines.filter { it.text.isNotBlank() }
+        if (timed.size < 8 || env.size < 100) return null
+        val d = smooth(env, 3).map { 20 * log10(it + 1e-5f) }
+        val flux = FloatArray(d.size)
+        for (i in 12 until d.size) { var m = 0f; for (k in 1..12) m += d[i - k]; flux[i] = maxOf(0f, d[i] - m / 12) }
+        val deltas = ArrayList<Long>()
+        for (l in timed) {
+            val lo = ((l.timeMs - 1500) / FRAME_MS).toInt().coerceIn(0, flux.size - 1)
+            val hi = ((l.timeMs + 1500) / FRAME_MS).toInt().coerceIn(lo, flux.size - 1)
+            var best = lo; for (i in lo..hi) if (flux[i] > flux[best]) best = i
+            if (flux[best] >= 6f) deltas.add(best.toLong() * FRAME_MS - l.timeMs)
+        }
+        if (deltas.size < 8 || deltas.size < timed.size * 0.6) return null
+        deltas.sort()
+        val med = deltas[deltas.size / 2]
+        val iqr = deltas[deltas.size * 3 / 4] - deltas[deltas.size / 4]
+        return med.takeIf { abs(it) >= MIN_SHIFT_MS && iqr <= 800 }
+    }
+    const val MIN_SHIFT_MS = 500L
 }

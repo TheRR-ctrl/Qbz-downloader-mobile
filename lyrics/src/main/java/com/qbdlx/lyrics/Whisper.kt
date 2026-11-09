@@ -131,12 +131,13 @@ object Whisper {
     fun forget(context: Context, key: String) { runCatching { cacheFile(context, key).delete() } }
 
     /** Listens to [uri] (or reuses the saved result for [key]). [status] tells the screen what is happening. Null if it failed or was cancelled. */
-    fun listen(context: Context, key: String, uri: Uri, cancelled: () -> Boolean, songMs: Long = 0, status: (String) -> Unit = {}): Asr? {
-        heardBefore(context, key)?.let { return fit(it, songMs) }
+    fun listen(context: Context, key: String, uri: Uri, cancelled: () -> Boolean, songMs: Long = 0, lang: String = "auto", status: (String) -> Unit = {}): Asr? {
+        // what was heard before is reused, unless it was heard in another language than the one now asked for
+        heardBefore(context, key)?.takeIf { lang == "auto" || it.lang == lang }?.let { return fit(it, songMs) }
         status("Preparando el audio…")
         val pcm = pcm16k(context, uri, cancelled = cancelled) ?: return null
         status("Whisper está escuchando la canción… puede tardar unos minutos.")
-        val asr = transcribe(context, pcm)?.let { Asr(it.lang, it.words, pcm.size * 1000L / RATE) } ?: return null
+        val asr = transcribe(context, pcm, lang)?.let { Asr(it.lang, it.words, pcm.size * 1000L / RATE) } ?: return null
         if (asr.words.isNotEmpty()) runCatching { cacheFile(context, key).writeText("lang=${asr.lang}\nms=${asr.audioMs}\n" + asr.words.joinToString("\n") { "${it.startMs}\t${it.endMs}\t${it.text}" }) }
         return fit(asr, songMs)
     }

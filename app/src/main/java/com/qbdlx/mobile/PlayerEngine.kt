@@ -100,6 +100,7 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
                 }
                 AudioManager.AUDIOFOCUS_LOSS -> {
                     resumeOnGain = false; active.pause(); if (fading) idle?.pause()
+                    if (UsbDirect.prefs(context).enabled) UsbDirect.managerOrNull(context)?.releaseClaim(delayMs = 0)
                     audioManager.abandonAudioFocusRequest(focusRequest)
                 }
             }
@@ -121,7 +122,23 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
         )
     }
 
-    private fun build(): ExoPlayer = ExoPlayer.Builder(context)
+    /** Wraps the normal audio output so tracks the USB DAC can take go straight to it (see [UsbDirect]). */
+    @androidx.annotation.OptIn(UnstableApi::class)
+    // A function, not a property: `active` is built while the class initialises, and any property
+    // declared after it (even `by lazy`, whose delegate field) is still null at that point.
+    private fun renderers() = object : androidx.media3.exoplayer.DefaultRenderersFactory(context) {
+        override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): AudioSink =
+            super.buildAudioSink(context, enableFloatOutput, enableAudioTrackPlaybackParams)!!.let { normal ->
+                // Always wrap: the player is built once, so deciding here on the switch would ignore turning it on later.
+                // RoutingAudioSink asks the preferences on every track and uses the normal output while it is off.
+                // A failure to start the driver never takes the app down.
+                val usb = UsbDirect.managerOrNull(context)
+                if (usb == null) normal else org.ostrichbat2k.usbdac.streaming.RoutingAudioSink(usb, normal)
+            }
+    }
+
+    @androidx.annotation.OptIn(UnstableApi::class)
+    private fun build(): ExoPlayer = ExoPlayer.Builder(context, renderers())
         .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), false)
         .setHandleAudioBecomingNoisy(true) // unplugging headphones pauses
         .build()
@@ -144,6 +161,14 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
         })
     }
 
+    /** For the diagnostic report: which way this track really goes out (USB driver or Android's mixer) and at what rate. */
+    @androidx.annotation.OptIn(UnstableApi::class)
+    private fun logRoute(p: ExoPlayer) {
+        val fmt = p.audioFormat
+        val usb = if (UsbDirect.prefs(context).enabled) UsbDirect.managerOrNull(context)?.playbackRoute?.value else null
+        PlaybackLog.add(context, "pista ${fmt?.sampleRate ?: "?"} Hz · ${fmt?.sampleMimeType ?: "?"} · salida: ${usb ?: "mezclador de Android (controlador USB apagado)"}")
+    }
+
     private inner class Events(private val player: ExoPlayer) : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) { listener.onPlayingChanged(this@PlayerEngine.isPlaying) }
 
@@ -157,12 +182,15 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
         }
 
         override fun onPlaybackStateChanged(state: Int) {
+            PlaybackLog.add(context, "estado ${when (state) { Player.STATE_IDLE -> "IDLE"; Player.STATE_BUFFERING -> "BUFFERING"; Player.STATE_READY -> "READY"; else -> "ENDED" }}${if (player !== active) " (siguiente)" else ""}")
+            if (state == Player.STATE_READY && player === active) logRoute(player)
             if (player !== active || state != Player.STATE_ENDED || fading) return
             // The track ended. If a faded transition was prepared but never started (too late), switch now.
             if (idle?.playbackState == Player.STATE_READY && nextUrl != null) swapNow() else listener.onEnded()
         }
 
         override fun onPlayerError(error: PlaybackException) {
+            PlaybackLog.add(context, "ERROR ${error.errorCodeName}: ${error.message} / ${error.cause?.javaClass?.simpleName}: ${error.cause?.message}")
             if (player === active) listener.onError(error)
             else { nextUrl = null; idle?.stop(); idle?.clearMediaItems() } // the prepared track failed: the app fetches it normally later
         }
@@ -170,6 +198,7 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
 
     /** Replaces everything with [url] and plays it from the start. */
     fun start(url: String) {
+        PlaybackLog.add(context, "start ${url.substringBefore('?').takeLast(60)}")
         resetAll()
         restartedItem = false
         active.repeatMode = if (repeatOne) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF

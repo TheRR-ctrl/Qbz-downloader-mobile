@@ -567,6 +567,7 @@ private fun DownloadRow(vm: MainViewModel, task: DownloadTask) {
                 TaskNote.NONE -> Unit
                 TaskNote.RETRYING -> Text(s.noteRetrying(task.noteArg, 3), fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
                 TaskNote.REFRESHING -> Text(s.noteRefreshing, fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                TaskNote.WAITING_NETWORK -> Text(s.noteWaitingNetwork, fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
                 TaskNote.SYSTEM_LIMIT -> Text(s.noteSystemLimit, fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
                 TaskNote.EXISTED -> Text(s.noteExisted, fontSize = 11.sp, color = MaterialTheme.colorScheme.secondary)
                 TaskNote.REPLACED -> Text(s.noteReplaced, fontSize = 11.sp, color = MaterialTheme.colorScheme.secondary)
@@ -668,7 +669,24 @@ fun SettingsScreen(vm: MainViewModel) {
             }
             var diag by remember { mutableStateOf<String?>(null) }
             val ctx = LocalContext.current
-            TextButton(onClick = { diag = diagnoseUsb(ctx) }, Modifier.padding(horizontal = 8.dp)) { Text(s.usbDiagButton) }
+            var usbOn by remember { mutableStateOf(UsbDirect.prefs(ctx).enabled) }
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(s.usbDirectTitle, fontWeight = FontWeight.Medium)
+                    Text(s.usbDirectDesc, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (usbOn) {
+                        val mgr = remember { UsbDirect.managerOrNull(ctx) }
+                        if (mgr == null) Text(UsbDirect.failure?.lineSequence()?.firstOrNull().orEmpty(), fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                        else {
+                            val route by mgr.playbackRoute.collectAsState()
+                            val devs by mgr.devices.collectAsState()
+                            Text(if (devs.isEmpty()) s.usbDirectNoDevice else devs.joinToString { it.displayName } + " · " + route, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                }
+                Switch(usbOn, { usbOn = it; UsbDirect.prefs(ctx).set(it); if (it) UsbDirect.managerOrNull(ctx)?.triggerActivation(); vm.updateUsbDirect(it) })
+            }
+            TextButton(onClick = { diag = diagnoseUsb(ctx) + (if (usbOn) "\n\n== libusbdac ==\n" + (UsbDirect.managerOrNull(ctx)?.diagnosticLog?.value?.joinToString("\n") ?: UsbDirect.failure.orEmpty()) else "") + java.io.File(ctx.filesDir, QbdlxApp.CRASH_FILE).takeIf { it.exists() }?.let { "\n\n== Último cierre inesperado ==\n" + it.readText().take(3000) }.orEmpty() + "\n\n== Reproducción (últimos eventos) ==\n" + PlaybackLog.read(ctx).ifEmpty { "(nada todavía)" } }, Modifier.padding(horizontal = 8.dp)) { Text(s.usbDiagButton) }
             diag?.let { txt ->
                 val clip = LocalClipboardManager.current
                 AlertDialog(
@@ -784,7 +802,7 @@ fun MiniPlayer(vm: MainViewModel) {
         shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceVariant,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
-        Column(Modifier.swipeToSkip(vm::next, vm::previous).clickable { vm.playerOpen = true }) {
+        Column(Modifier.swipeToSkip(vm::next, vm::previous).swipeUpToOpen { vm.playerOpen = true }.clickable { vm.playerOpen = true }) {
             Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Cover(album.coverUrl, 44)
                 Spacer(Modifier.width(12.dp))

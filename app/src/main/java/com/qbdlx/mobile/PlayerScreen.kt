@@ -8,6 +8,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -27,6 +28,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.graphics.graphicsLayer
@@ -105,6 +107,7 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.media.audiofx.AudioEffect
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
@@ -201,6 +204,33 @@ fun PlayerHost(vm: MainViewModel) {
         }
     }
     BackHandler { if (page != PlayerPage.Player) page = PlayerPage.Player else close {} }
+    // Dragging down closes the player from anywhere, not only from the grab bar: a list at its top hands the extra drag up to here,
+    // and a page that does not scroll gets it from the draggable below.
+    val settle: (Float) -> Unit = { velocity ->
+        if (offset.value > 0.22f || velocity > 1400f) close {}
+        else scope.launch { offset.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow)) }
+    }
+    val dragState = rememberDraggableState { delta -> scope.launch { offset.snapTo((offset.value + delta / heightPx).coerceAtLeast(0f)) } }
+    val nested = remember {
+        object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+            override fun onPreScroll(available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): androidx.compose.ui.geometry.Offset {
+                if (offset.value <= 0f || available.y >= 0f) return androidx.compose.ui.geometry.Offset.Zero
+                val cur = offset.value * heightPx
+                val d = maxOf(available.y, -cur)
+                scope.launch { offset.snapTo((cur + d) / heightPx) }
+                return androidx.compose.ui.geometry.Offset(0f, d)
+            }
+            override fun onPostScroll(consumed: androidx.compose.ui.geometry.Offset, available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): androidx.compose.ui.geometry.Offset {
+                if (source != androidx.compose.ui.input.nestedscroll.NestedScrollSource.UserInput || available.y <= 0f) return androidx.compose.ui.geometry.Offset.Zero
+                scope.launch { offset.snapTo((offset.value + available.y / heightPx).coerceAtLeast(0f)) }
+                return androidx.compose.ui.geometry.Offset(0f, available.y)
+            }
+            override suspend fun onPreFling(available: androidx.compose.ui.unit.Velocity): androidx.compose.ui.unit.Velocity {
+                if (offset.value <= 0f) return androidx.compose.ui.unit.Velocity.Zero
+                settle(available.y); return available
+            }
+        }
+    }
 
     val tone by rememberCoverTone(album.coverUrl)
     val fallback = Panel // the text here is always white, so the fallback must be dark whatever the theme
@@ -216,6 +246,8 @@ fun PlayerHost(vm: MainViewModel) {
       Box(
           Modifier.fillMaxSize()
               .onSizeChanged { heightPx = it.height.toFloat() }
+              .nestedScroll(nested)
+              .draggable(orientation = Orientation.Vertical, state = dragState, onDragStopped = { v -> settle(v) })
               .graphicsLayer { translationY = offset.value * size.height },
       ) {
         Column(
@@ -224,14 +256,7 @@ fun PlayerHost(vm: MainViewModel) {
             // The grab area at the top: tap to close, or drag down.
             Box(
                 Modifier.fillMaxWidth().height(40.dp)
-                    .draggable(
-                        orientation = Orientation.Vertical,
-                        state = rememberDraggableState { delta -> scope.launch { offset.snapTo((offset.value + delta / heightPx).coerceAtLeast(0f)) } },
-                        onDragStopped = { velocity ->
-                            if (offset.value > 0.22f || velocity > 1400f) close {}
-                            else scope.launch { offset.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow)) }
-                        },
-                    )
+                    .draggable(orientation = Orientation.Vertical, state = dragState, onDragStopped = { v -> settle(v) })
                     .clickable { close {} },
                 contentAlignment = Alignment.Center,
             ) {
@@ -283,7 +308,7 @@ private fun PlayerBar(page: PlayerPage, onPick: (PlayerPage) -> Unit) {
 /** The small card above the bar on the other pages; tap it to come back to the big player. */
 @Composable
 private fun PlayerMini(vm: MainViewModel, album: Album, track: Track, onOpen: () -> Unit) {
-    val progress by rememberPlaybackProgress(vm, track)
+    val progress = rememberPlaybackProgress(vm, track)
     Surface(
         shape = RoundedCornerShape(16.dp), color = Chip, contentColor = OnPlayer,
         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp).swipeToSkip(vm::next, vm::previous).clickable(onClick = onOpen),
@@ -300,9 +325,37 @@ private fun PlayerMini(vm: MainViewModel, album: Album, track: Track, onOpen: ()
                     Icon(if (vm.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, LocalStrings.current.playPause, tint = OnPlayer)
                 }
             }
-            Box(Modifier.fillMaxWidth().height(2.dp).background(Color.White.copy(alpha = .2f))) {
-                Box(Modifier.fillMaxWidth(progress.first.coerceIn(0f, 1f)).height(2.dp).background(OnPlayer))
-            }
+            Box(Modifier.fillMaxWidth().height(2.dp).background(Color.White.copy(alpha = .2f)).drawBehind {
+                drawRect(OnPlayer, size = size.copy(width = size.width * progress.value.first.coerceIn(0f, 1f)))
+            })
+        }
+    }
+}
+
+/** The seek bar and the two times: the only part of the player that follows the clock, so only it recomposes 4 times a second. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun SeekBar(vm: MainViewModel, track: Track) {
+    val progress by rememberPlaybackProgress(vm, track)
+    var dragging by remember { mutableStateOf(false) }
+    var dragValue by remember { mutableFloatStateOf(0f) }
+    val len = progress.third.coerceAtLeast(1)
+    val posMs = if (dragging) (dragValue * len).toLong() else progress.second
+    Column {
+        Slider(
+            value = if (dragging) dragValue else progress.first.coerceIn(0f, 1f),
+            onValueChange = { dragging = true; dragValue = it },
+            onValueChangeFinished = { vm.seekTo((dragValue * len).toLong()); dragging = false },
+            colors = SliderDefaults.colors(thumbColor = OnPlayer, activeTrackColor = OnPlayer, inactiveTrackColor = Color.White.copy(alpha = .25f)),
+            // Like the Qobuz player: a thin rounded bar with no dot, which only shows a small thumb while it is dragged.
+            thumb = { Box(Modifier.size(if (dragging) 14.dp else 1.dp).clip(CircleShape).background(OnPlayer)) },
+            track = { st ->
+                SliderDefaults.Track(st, Modifier.height(6.dp), colors = SliderDefaults.colors(activeTrackColor = OnPlayer, inactiveTrackColor = Color.White.copy(alpha = .25f)), thumbTrackGapSize = 0.dp, trackInsideCornerSize = 0.dp, drawStopIndicator = null)
+            },
+        )
+        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(clock(posMs), fontSize = 12.sp, color = OnPlayerDim)
+            Text("-" + clock(len - posMs), fontSize = 12.sp, color = OnPlayerDim)
         }
     }
 }
@@ -327,16 +380,11 @@ private fun rememberPlaybackProgress(vm: MainViewModel, track: Track): State<Tri
 private fun NowPlayingPage(vm: MainViewModel, album: Album, track: Track, close: (() -> Unit) -> Unit) {
     val s = LocalStrings.current
     val q = vm.queueState
-    val progress by rememberPlaybackProgress(vm, track)
-    var dragging by remember { mutableStateOf(false) }
-    var dragValue by remember { mutableFloatStateOf(0f) }
     var menu by remember { mutableStateOf(false) }
     var qualityDialog by remember { mutableStateOf(false) }
     var sleepDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val quality = vm.nowQuality
-    val len = progress.third.coerceAtLeast(1)
-    val posMs = if (dragging) (dragValue * len).toLong() else progress.second
 
     if (qualityDialog) QualityDialog(vm.playQuality, { vm.updatePlayQuality(it); qualityDialog = false }, { qualityDialog = false })
     if (sleepDialog) AlertDialog(
@@ -354,27 +402,32 @@ private fun NowPlayingPage(vm: MainViewModel, album: Album, track: Track, close:
         dismissButton = { TextButton({ sleepDialog = false }) { Text(s.cancel) } },
     )
 
-    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    // The padding is inside the scroll area, so the cover can slide out to the very edge of the screen.
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Spacer(Modifier.height(6.dp))
         // The cover follows the finger and, when the song changes, the old one slides out and the new one slides in.
-        var skipDir by remember { mutableIntStateOf(1) }
         var dragX by remember { mutableFloatStateOf(0f) }
         val shownX by animateFloatAsState(dragX, if (dragX == 0f) spring(stiffness = Spring.StiffnessMedium) else snap(), label = "coverDrag")
+        val screenW = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp
+        val density = androidx.compose.ui.platform.LocalDensity.current
         Box(
             Modifier.fillMaxWidth().aspectRatio(1f).graphicsLayer { translationX = shownX }
-                .clip(RoundedCornerShape(16.dp))
-                .swipeToSkip(vm::next, vm::previous, onDrag = { dragX = it }, onSkip = { skipDir = it }),
+                .swipeToSkip(vm::next, vm::previous, onDrag = { dragX = it }),
         ) {
             // Keyed on the song (not the cover URL) so songs of the same album slide too.
             AnimatedContent(
                 targetState = track.id to album.coverUrl,
                 transitionSpec = {
-                    (slideInHorizontally(tween(320, easing = FastOutSlowInEasing)) { it * skipDir } + fadeIn(tween(320))) togetherWith
-                        (slideOutHorizontally(tween(320, easing = FastOutSlowInEasing)) { -it * skipDir } + fadeOut(tween(200)))
+                    // Slides across the whole screen (the page clips at the screen edge, not at the cover), so the old
+                    // cover leaves the screen completely and the new one arrives from the side it was swiped to.
+                    val dir = vm.skipDir
+                    val dist = (screenW * density.density).toInt()
+                    slideInHorizontally(tween(340, easing = FastOutSlowInEasing)) { dist * dir } togetherWith
+                        slideOutHorizontally(tween(340, easing = FastOutSlowInEasing)) { -dist * dir } using SizeTransform(clip = false)
                 },
                 label = "cover",
             ) { (_, url) ->
-                AsyncImage(model = url, contentDescription = album.title, modifier = Modifier.fillMaxSize().background(Chip))
+                AsyncImage(model = url, contentDescription = album.title, modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp)).background(Chip))
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -430,23 +483,7 @@ private fun NowPlayingPage(vm: MainViewModel, album: Album, track: Track, close:
                 }
             }
         }
-        Column {
-            Slider(
-                value = if (dragging) dragValue else progress.first.coerceIn(0f, 1f),
-                onValueChange = { dragging = true; dragValue = it },
-                onValueChangeFinished = { vm.seekTo((dragValue * len).toLong()); dragging = false },
-                colors = SliderDefaults.colors(thumbColor = OnPlayer, activeTrackColor = OnPlayer, inactiveTrackColor = Color.White.copy(alpha = .25f)),
-                // Like the Qobuz player: a thin rounded bar with no dot, which only shows a small thumb while it is dragged.
-                thumb = { Box(Modifier.size(if (dragging) 14.dp else 1.dp).clip(CircleShape).background(OnPlayer)) },
-                track = { st ->
-                    SliderDefaults.Track(st, Modifier.height(6.dp), colors = SliderDefaults.colors(activeTrackColor = OnPlayer, inactiveTrackColor = Color.White.copy(alpha = .25f)), thumbTrackGapSize = 0.dp, trackInsideCornerSize = 0.dp, drawStopIndicator = null)
-                },
-            )
-            Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(clock(posMs), fontSize = 12.sp, color = OnPlayerDim)
-                Text("-" + clock(len - posMs), fontSize = 12.sp, color = OnPlayerDim)
-            }
-        }
+        SeekBar(vm, track)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             ToggleIcon(Icons.Default.Shuffle, s.shuffle, q.shuffle) { vm.toggleShuffle() }
             IconButton({ vm.previous() }, Modifier.size(56.dp)) { Icon(Icons.Default.SkipPrevious, s.previous, Modifier.size(38.dp), tint = OnPlayer) }
@@ -566,7 +603,7 @@ private fun ExplorePage(vm: MainViewModel, album: Album, close: (() -> Unit) -> 
 private fun LyricsPage(vm: MainViewModel, album: Album, track: Track) {
     val s = LocalStrings.current
     LaunchedEffect(track.id) { vm.loadLyrics(album, track) }
-    val progress by rememberPlaybackProgress(vm, track)
+    val progress = rememberPlaybackProgress(vm, track)
     val lyrics = vm.lyrics
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 20.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -581,7 +618,7 @@ private fun LyricsPage(vm: MainViewModel, album: Album, track: Track) {
             vm.lyricsLoading -> Text("…", color = OnPlayerDim, modifier = Modifier.padding(16.dp))
             lyrics == null || lyrics.lines.isEmpty() -> Text(s.lyricsNone, color = OnPlayerDim, modifier = Modifier.padding(16.dp))
             else -> {
-                val current = if (lyrics.synced) LyricsParser.currentIndex(lyrics.lines, progress.second + vm.lyricsOffsetMs) else -1
+                val current by remember(lyrics, progress) { androidx.compose.runtime.derivedStateOf { if (lyrics.synced) LyricsParser.currentIndex(lyrics.lines, progress.value.second + vm.lyricsOffsetMs) else -1 } }
                 val state = androidx.compose.foundation.lazy.rememberLazyListState()
                 // Dragging the list lets the reader browse without being pulled back; "Resincronizar" returns to the line being sung.
                 var browsing by remember(track.id) { mutableStateOf(false) }

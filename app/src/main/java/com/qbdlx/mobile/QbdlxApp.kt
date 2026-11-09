@@ -9,8 +9,11 @@ import androidx.lifecycle.ViewModelStoreOwner
  * queue (and the session it signs requests with) survives the Activity being closed while the
  * foreground [DownloadService] keeps the process alive.
  */
-class QbdlxApp : Application(), ViewModelStoreOwner {
+class QbdlxApp : Application(), ViewModelStoreOwner, coil.ImageLoaderFactory {
     override val viewModelStore = ViewModelStore()
+
+    /** Covers fade in when they arrive from the network or the disk (not from memory, so lists that scroll back do not flicker). */
+    override fun newImageLoader(): coil.ImageLoader = coil.ImageLoader.Builder(this).crossfade(220).build()
 
     override fun onCreate() {
         super.onCreate()

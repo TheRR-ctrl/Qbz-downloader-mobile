@@ -168,6 +168,7 @@ interface Strings {
     fun noteRetrying(n: Int, max: Int): String
     val noteRefreshing: String
     val noteSystemLimit: String
+    val noteWaitingNetwork: String
     fun alreadyQueued(n: Int): String
     fun queuedTracksSkipped(added: Int, skipped: Int): String
     fun preparingAlbums(n: Int): String
@@ -283,6 +284,9 @@ interface Strings {
     val crossfadeOff: String
     val bitPerfectTitle: String
     val usbDiagButton: String
+    val usbDirectTitle: String
+    val usbDirectDesc: String
+    val usbDirectNoDevice: String
     val usbDiagCopy: String
     val usbDiagClose: String
     val bitPerfectDesc: String
@@ -646,6 +650,7 @@ object English : Strings {
     override fun noteRetrying(n: Int, max: Int) = "Connection problem, retrying ($n/$max)…"
     override val noteRefreshing = "Renewing Qobuz credentials…"
     override val noteSystemLimit = "Paused by Android's background limit. Tap Resume."
+    override val noteWaitingNetwork = "No connection. Waiting to continue…"
     override fun alreadyQueued(n: Int) = if (n == 1) "Already queued or downloaded (remove it from Downloads to repeat it)"
         else "$n tracks were already queued or downloaded"
     override fun queuedTracksSkipped(added: Int, skipped: Int) = "${queuedTracks(added)} ($skipped already queued or downloaded)"
@@ -767,6 +772,9 @@ object English : Strings {
     override val crossfadeOff = "Off"
     override val bitPerfectTitle = "Bit-perfect USB output"
     override val usbDiagButton = "Diagnose USB output"
+    override val usbDirectTitle = "Direct USB DAC driver"
+    override val usbDirectDesc = "Talks to the DAC itself over USB, skipping Android's mixer, so the song reaches it exactly as it is (works even where Android offers no bit-perfect mode). Experimental. Android asks for USB permission; a DAC with both USB modes works best in the one that lists your rate (44.1/48 kHz: UAC1; hi-res: UAC2). Volume is then the DAC's own. No fade or equalizer while on."
+    override val usbDirectNoDevice = "No USB DAC found yet: plug it in and accept the permission."
     override val usbDiagCopy = "Copy"
     override val usbDiagClose = "Close"
     override val bitPerfectDesc = "Sends each song to a USB DAC at its own sample rate and bit depth, without Android resampling it. Needs Android 14 or newer and a USB DAC. Turns off the fade and gapless changes of sample rate; for 24-bit pick a Hi-Res quality in the player. Equalizers and sound effects must be off."
@@ -1155,6 +1163,7 @@ object Spanish : Strings {
     override fun noteRetrying(n: Int, max: Int) = "Problema de conexión, reintentando ($n/$max)…"
     override val noteRefreshing = "Renovando credenciales de Qobuz…"
     override val noteSystemLimit = "Pausada por el límite de Android en segundo plano. Pulsa Reanudar."
+    override val noteWaitingNetwork = "Sin conexión. Esperando para continuar…"
     override fun alreadyQueued(n: Int) = if (n == 1) "Ya está en cola o descargada (quítala de Descargas para repetirla)"
         else "$n pistas ya estaban en cola o descargadas"
     override fun queuedTracksSkipped(added: Int, skipped: Int) = "${queuedTracks(added)} ($skipped ya estaban en cola o descargadas)"
@@ -1276,6 +1285,9 @@ object Spanish : Strings {
     override val crossfadeOff = "Desactivado"
     override val bitPerfectTitle = "Salida USB bit-perfect"
     override val usbDiagButton = "Diagnosticar salida USB"
+    override val usbDirectTitle = "Controlador USB directo al DAC"
+    override val usbDirectDesc = "Habla con el DAC él mismo por USB, sin pasar por el mezclador de Android, así la canción llega tal cual (funciona aunque Android no ofrezca bit-perfect). Experimental. Android pedirá permiso USB; si el DAC tiene dos modos USB, va mejor el que lista tu frecuencia (44,1/48 kHz: UAC1; hi-res: UAC2). El volumen pasa a ser el del propio DAC. Sin fundido ni ecualizador mientras esté activo."
+    override val usbDirectNoDevice = "Aún no hay DAC USB: conéctalo y acepta el permiso."
     override val usbDiagCopy = "Copiar"
     override val usbDiagClose = "Cerrar"
     override val bitPerfectDesc = "Envía cada canción a un DAC USB con su propia frecuencia y profundidad de bits, sin que Android la remuestree. Necesita Android 14 o superior y un DAC USB. Quita el fundido y el cambio de frecuencia sin pausa; para 24 bits elige una calidad Hi-Res en el reproductor. Ecualizadores y efectos de sonido deben estar apagados."

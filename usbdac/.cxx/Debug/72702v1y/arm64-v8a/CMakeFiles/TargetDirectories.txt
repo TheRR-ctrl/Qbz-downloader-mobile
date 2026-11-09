@@ -1,0 +1,3 @@
+/home/user/qbz-downloader-mobile/usbdac/.cxx/Debug/72702v1y/arm64-v8a/CMakeFiles/usbnative.dir
+/home/user/qbz-downloader-mobile/usbdac/.cxx/Debug/72702v1y/arm64-v8a/CMakeFiles/edit_cache.dir
+/home/user/qbz-downloader-mobile/usbdac/.cxx/Debug/72702v1y/arm64-v8a/CMakeFiles/rebuild_cache.dir

@@ -7,6 +7,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import com.valentinilk.shimmer.shimmer
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -263,3 +264,14 @@ fun Modifier.swipeToSkip(onNext: () -> Unit, onPrevious: () -> Unit, onDrag: (Fl
 }
 
 private const val SWIPE_SKIP_PX = 120f
+
+/** Dragging up on the mini player opens the full one. */
+fun Modifier.swipeUpToOpen(onOpen: () -> Unit): Modifier = pointerInput(Unit) {
+    var total = 0f
+    detectVerticalDragGestures(
+        onDragStart = { total = 0f },
+        onDragEnd = { if (total < -SWIPE_SKIP_PX / 2) onOpen(); total = 0f },
+        onDragCancel = { total = 0f },
+        onVerticalDrag = { _, dy -> total += dy },
+    )
+}

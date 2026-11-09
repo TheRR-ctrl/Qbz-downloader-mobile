@@ -6,19 +6,33 @@ plugins {
 
 android {
     namespace = "com.qbdlx.scanner"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.qbdlx.scanner"
         minSdk = 29
         targetSdk = 35
-        versionCode = 16
-        versionName = "0.7.0"
+        versionCode = 18
+        versionName = "0.7.2"
     }
 
+    // A release build signed with a key given on the command line (-PreleaseKeystore=... -PreleasePassword=... [-PreleaseAlias=...]);
+    // the key is never stored in the repo. Without it the release APK comes out unsigned.
+    signingConfigs {
+        if (project.hasProperty("releaseKeystore")) create("release") {
+            storeFile = file(project.property("releaseKeystore") as String)
+            storePassword = project.property("releasePassword") as String
+            keyAlias = (project.findProperty("releaseAlias") as String?) ?: "qbdlx"
+            keyPassword = project.property("releasePassword") as String
+        }
+    }
+    // The release-time lint check crashes inside Android lint itself (a detector error, not a problem in the app) and stops
+    // assembleRelease; the build must not depend on it.
+    lint { checkReleaseBuilds = false }
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfigs.findByName("release")?.let { signingConfig = it }
         }
     }
     compileOptions {

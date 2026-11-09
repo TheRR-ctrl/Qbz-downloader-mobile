@@ -6,25 +6,29 @@ plugins {
 
 android {
     namespace = "com.qbdlx.lyrics"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.qbdlx.lyrics"
         minSdk = 29
         targetSdk = 35
-        versionCode = 94
-        versionName = "0.8.69"
+        versionCode = 117
+        versionName = "0.8.92"
     }
 
-    // A release build signed with a key given on the command line (-PreleaseKeystore=... -PreleasePassword=...); never stored in the repo.
+    // A release build signed with a key given on the command line (-PreleaseKeystore=... -PreleasePassword=... [-PreleaseAlias=...]);
+    // the key is never stored in the repo. Without it the release APK comes out unsigned.
     signingConfigs {
         if (project.hasProperty("releaseKeystore")) create("release") {
             storeFile = file(project.property("releaseKeystore") as String)
             storePassword = project.property("releasePassword") as String
-            keyAlias = "qbdlx"
+            keyAlias = (project.findProperty("releaseAlias") as String?) ?: "qbdlx"
             keyPassword = project.property("releasePassword") as String
         }
     }
+    // The release-time lint check crashes inside Android lint itself (a detector error, not a problem in the app) and stops
+    // assembleRelease; the build must not depend on it.
+    lint { checkReleaseBuilds = false }
     buildTypes {
         release {
             isMinifyEnabled = false
