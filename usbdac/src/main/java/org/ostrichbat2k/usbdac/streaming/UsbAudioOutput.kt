@@ -878,8 +878,15 @@ class UsbAudioOutput(
         // pause() released it -- nothing will ever make lastUrbSubmittedAtMs move on its own in
         // this state (streaming itself is false), so the check below alone would never catch it.
         if (!paused && !activated) return true
-        return streamEngine.streaming &&
-            (System.currentTimeMillis() - streamEngine.lastUrbSubmittedAtMs) > UsbAudioTuning.STALL_THRESHOLD_MS
+        val sinceLastUrbMs = System.currentTimeMillis() - streamEngine.lastUrbSubmittedAtMs
+        val stalled = streamEngine.streaming && sinceLastUrbMs > UsbAudioTuning.STALL_THRESHOLD_MS
+        if (stalled) {
+            // DefaultAudioSink will flush and rebuild the output right after this: the audible "jump".
+            usbAudioManager.reportDiagnostic(
+                "UsbAudioOutput.isStalled -> true: ${sinceLastUrbMs}ms sin enviar bloques · espera máxima en reap=${streamEngine.longestReapMs}ms · " +
+                    "último retraso del hilo=${streamEngine.lastLateMs}ms · en búfer=${ringBuffer.availableToRead()} bytes · pausado=$paused")
+        }
+        return stalled
     }
 
     override fun addListener(listener: AudioOutput.Listener) {}
