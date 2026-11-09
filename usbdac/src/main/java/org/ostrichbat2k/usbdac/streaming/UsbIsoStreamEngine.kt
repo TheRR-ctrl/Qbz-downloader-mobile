@@ -77,6 +77,9 @@ internal class UsbIsoStreamEngine(
     /** Diagnostics for the report: the longest wait inside reapIso() and the latest "thread was late" gap, in ms. */
     @Volatile var longestReapMs: Long = 0L
     @Volatile var lastLateMs: Long = 0L
+
+    /** Instante (nanoTime) en que empezó el reapIso en curso; 0 si el hilo no está esperando uno. */
+    @Volatile var reapStartedAtNs: Long = 0L
         private set
 
     // Frames actually handed to the device via a paced, submitted URB -- i.e. audibly played --
@@ -330,7 +333,9 @@ internal class UsbIsoStreamEngine(
                     var reapErrors = 0
                     while (streaming) {
                         val reapStartNs = System.nanoTime()
+                        reapStartedAtNs = reapStartNs
                         val slot = nativeBridge.reapIso(handle)
+                        reapStartedAtNs = 0L
                         val reapMs = (System.nanoTime() - reapStartNs) / 1_000_000L
                         if (reapMs > longestReapMs) longestReapMs = reapMs
                         if (!streaming) break

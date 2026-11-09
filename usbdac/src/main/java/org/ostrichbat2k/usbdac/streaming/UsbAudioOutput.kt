@@ -881,10 +881,13 @@ class UsbAudioOutput(
         val sinceLastUrbMs = System.currentTimeMillis() - streamEngine.lastUrbSubmittedAtMs
         val stalled = streamEngine.streaming && sinceLastUrbMs > UsbAudioTuning.STALL_THRESHOLD_MS
         if (stalled) {
+            val reapNs = streamEngine.reapStartedAtNs
+            val reapEnCursoMs = if (reapNs == 0L) -1L else (System.nanoTime() - reapNs) / 1_000_000L
             // DefaultAudioSink will flush and rebuild the output right after this: the audible "jump".
             usbAudioManager.reportDiagnostic(
                 "UsbAudioOutput.isStalled -> true: ${sinceLastUrbMs}ms sin enviar bloques · espera máxima en reap=${streamEngine.longestReapMs}ms · " +
-                    "último retraso del hilo=${streamEngine.lastLateMs}ms · en búfer=${ringBuffer.availableToRead()} bytes · pausado=$paused")
+                    "último retraso del hilo=${streamEngine.lastLateMs}ms · en búfer=${ringBuffer.availableToRead()} bytes · pausado=$paused · " +
+                    if (reapEnCursoMs >= 0) "esperando al DAC (reap en curso) desde hace ${reapEnCursoMs}ms" else "el hilo NO estaba en reap")
         }
         return stalled
     }
