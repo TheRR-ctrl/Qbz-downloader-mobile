@@ -183,7 +183,9 @@ class RoutingAudioSink(private val usbAudioManager: UsbAudioManager, private val
     // Must check per-format, not just session liveness, or every track gets stuck on whichever
     // delegate resolveActiveSink() handed back regardless of whether it can actually play it.
     private fun AudioSink.reallySupports(format: Format): Boolean =
-        getFormatSupport(format) != AudioSink.SINK_FORMAT_UNSUPPORTED
+        // Compressed input (FLAC...) would reach the USB sink as encoded frames, which it cannot take.
+        (this === fallback || format.sampleMimeType == androidx.media3.common.MimeTypes.AUDIO_RAW) &&
+            getFormatSupport(format) != AudioSink.SINK_FORMAT_UNSUPPORTED
 
     private fun resolveForConfigure(format: Format): AudioSink {
         val existing = delegate

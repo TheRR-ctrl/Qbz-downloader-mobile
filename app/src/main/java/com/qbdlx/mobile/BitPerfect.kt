@@ -81,6 +81,7 @@ fun diagnoseUsb(context: Context): String {
     val am = context.getSystemService(AudioManager::class.java)
     val sb = StringBuilder()
     sb.appendLine("Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}) · ${Build.MANUFACTURER} ${Build.MODEL}")
+    runCatching { sb.appendLine("App ${context.packageManager.getPackageInfo(context.packageName, 0).versionName}") }
     if (Build.VERSION.SDK_INT < 34) sb.appendLine("API < 34: Android no tiene salida bit-perfect.")
     val outs = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
     sb.appendLine("Salidas (${outs.size}):")
