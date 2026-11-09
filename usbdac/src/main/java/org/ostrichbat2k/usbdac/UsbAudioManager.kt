@@ -57,6 +57,9 @@ interface UsbAudioManager : UsbDacPreferences.Listener {
     /** Most-recent-first log of activation events, for a diagnostic/settings screen. */
     val diagnosticLog: StateFlow<List<String>>
 
+    /** Appends a line to [diagnosticLog]. */
+    fun reportDiagnostic(line: String)
+
     /**
      * Live ring-buffer/USB-transfer stats for a "Pipeline" diagnostic screen. Null whenever
      * nothing is actually streaming right now, not just a transient pause-silence gap.

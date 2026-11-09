@@ -210,7 +210,10 @@ class RoutingAudioSink(private val usbAudioManager: UsbAudioManager, private val
             // re-checks liveness once "upgraded". Falling through here re-resolves against
             // what's actually live and actually usable right now, same as a fresh player
             // would.
-            liveUsbSink?.takeIf { it.reallySupports(format) } ?: fallback
+            liveUsbSink?.takeIf { it.reallySupports(format) } ?: run {
+                usbAudioManager.reportDiagnostic("RoutingAudioSink -> fallback: liveUsbSink=${liveUsbSink != null} soporta=${liveUsbSink?.reallySupports(format)} pista=${format.sampleRate}Hz enc=${format.pcmEncoding} ch=${format.channelCount}")
+                fallback
+            }
         }
     }
 

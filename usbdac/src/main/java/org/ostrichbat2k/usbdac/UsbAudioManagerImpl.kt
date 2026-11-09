@@ -138,6 +138,8 @@ class UsbAudioManagerImpl(
     /** Most-recent-first log of activation events, for the USB settings screen. */
     override val diagnosticLog: StateFlow<List<String>> = diagnosticLogger.entries
 
+    override fun reportDiagnostic(line: String) = diagnosticLogger.log(line)
+
     private val _pipelineStats = MutableStateFlow<UsbPipelineStats?>(null)
     /**
      * Live ring-buffer/USB-transfer stats for the "Pipeline" diagnostic screen -- see
@@ -821,8 +823,14 @@ class UsbAudioManagerImpl(
         // before this -- already decided this track's route; substitute that for the user's own
         // bitPerfectMode toggle so the test actually controls what plays, not just what's shown.
         val bitPerfectWanted = if (usbSettings.abxTestMode) abxTester.groundTruth.value == true else usbSettings.bitPerfectMode
-        if (!bitPerfectWanted || !isBitPerfectCapable()) return null
-        val session = activeSession ?: return null
+        if (!bitPerfectWanted || !isBitPerfectCapable()) {
+            diagnosticLogger.log("resolveActiveSink -> null: bitPerfectWanted=$bitPerfectWanted capable=${isBitPerfectCapable()} session=${activeSession != null}")
+            return null
+        }
+        val session = activeSession ?: run {
+            diagnosticLogger.log("resolveActiveSink -> null: no hay sesión activa")
+            return null
+        }
         return DefaultAudioSink.Builder(context)
             .setAudioOutputProvider(UsbAudioOutputProvider(this, session, usbSettings, realBitsPerSample))
             // Off by default in DefaultAudioSink -- without this, getFormatSupport() silently
