@@ -83,21 +83,10 @@ internal class UsbIsoStreamEngine(
     /** Instante (nanoTime) en que empezó el reapIso en curso; 0 si el hilo no está esperando uno. */
     @Volatile var reapStartedAtNs: Long = 0L
 
-    /** Cuántas veces se destrabó un reapIso colgado con cancelIso (sin perder el audio del búfer). */
-    @Volatile var kicks: Int = 0
-
-    /**
-     * Si el hilo lleva más de [minMs] esperando un reapIso, descarta los URB en vuelo: el reap vuelve
-     * con ellos como cancelados y el bucle los reenvía (y re-ancla el ritmo), sin vaciar el búfer.
-     * Devuelve true si lo intentó. Seguro desde otro hilo (cancelIso no toca memoria).
-     */
-    fun kickStuckReap(minMs: Long): Boolean {
+    /** Cuánto lleva el hilo dentro del reapIso en curso (ms); -1 si no está esperando uno. */
+    fun reapEnCursoMs(): Long {
         val started = reapStartedAtNs
-        if (started == 0L || !streaming || isoHandle == 0L) return false
-        if ((System.nanoTime() - started) / 1_000_000L < minMs) return false
-        kicks++
-        nativeBridge.cancelIso(isoHandle)
-        return true
+        return if (started == 0L) -1L else (System.nanoTime() - started) / 1_000_000L
     }
 
     // Frames actually handed to the device via a paced, submitted URB -- i.e. audibly played --

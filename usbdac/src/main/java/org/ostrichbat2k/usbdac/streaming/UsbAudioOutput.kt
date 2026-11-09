@@ -866,7 +866,7 @@ class UsbAudioOutput(
      * sink implementation here never had, which left a genuinely stuck ring buffer with no way
      * back short of the user manually skipping the track.
      */
-    @Volatile private var lastKickAtMs = 0L
+    @Volatile private var lastRecoveryAtMs = 0L
 
     override fun isStalled(): Boolean {
         // play() just handed activateAndStream() off to activationExecutor and hasn't heard back
@@ -881,13 +881,18 @@ class UsbAudioOutput(
         // this state (streaming itself is false), so the check below alone would never catch it.
         if (!paused && !activated) return true
         val sinceLastUrbMs = System.currentTimeMillis() - streamEngine.lastUrbSubmittedAtMs
-        // Antes de dar el atasco por perdido (flush = salto de hasta 5 s): si el hilo está colgado en
-        // reapIso, se intenta destrabar sin tocar el búfer. Una vez por episodio (cada ~1 s como mucho).
-        if (streamEngine.streaming && sinceLastUrbMs > 1000L &&
-            System.currentTimeMillis() - lastKickAtMs > 1000L &&
-            streamEngine.kickStuckReap(1000L)) {
-            lastKickAtMs = System.currentTimeMillis()
-            usbAudioManager.reportDiagnostic("UsbAudioOutput: reapIso colgado ${sinceLastUrbMs}ms -> cancelIso para destrabarlo (intento ${streamEngine.kicks})")
+        // El FiiO deja de completar bloques (reapIso colgado) con el búfer lleno. cancelIso no basta
+        // (suelta unos pocos bloques y vuelve a colgarse, sin llegar nunca al umbral de atasco).
+        // Lo que lo arregla es reactivar el DAC como al pausar y reanudar -- parar el hilo, soltar y
+        // volver a reclamar la interfaz -- que conserva el búfer: sin salto, solo un corte breve.
+        if (streamEngine.streaming && sinceLastUrbMs > 1000L && streamEngine.reapEnCursoMs() > 1000L &&
+            System.currentTimeMillis() - lastRecoveryAtMs > 10_000L) {
+            lastRecoveryAtMs = System.currentTimeMillis()
+            usbAudioManager.reportDiagnostic(
+                "UsbAudioOutput: el DAC lleva ${sinceLastUrbMs}ms sin completar bloques · en búfer=${ringBuffer.availableToRead()} bytes -> se reactiva sin vaciar el búfer")
+            pause()
+            play()
+            return false
         }
         val stalled = streamEngine.streaming && sinceLastUrbMs > UsbAudioTuning.STALL_THRESHOLD_MS
         if (stalled) {
