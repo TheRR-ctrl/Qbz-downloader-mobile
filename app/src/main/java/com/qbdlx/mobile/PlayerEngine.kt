@@ -161,6 +161,14 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
         })
     }
 
+    /** For the diagnostic report: which way this track really goes out (USB driver or Android's mixer) and at what rate. */
+    @androidx.annotation.OptIn(UnstableApi::class)
+    private fun logRoute(p: ExoPlayer) {
+        val fmt = p.audioFormat
+        val usb = if (UsbDirect.prefs(context).enabled) UsbDirect.managerOrNull(context)?.playbackRoute?.value else null
+        PlaybackLog.add(context, "pista ${fmt?.sampleRate ?: "?"} Hz · ${fmt?.sampleMimeType ?: "?"} · salida: ${usb ?: "mezclador de Android (controlador USB apagado)"}")
+    }
+
     private inner class Events(private val player: ExoPlayer) : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) { listener.onPlayingChanged(this@PlayerEngine.isPlaying) }
 
@@ -175,6 +183,7 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
 
         override fun onPlaybackStateChanged(state: Int) {
             PlaybackLog.add(context, "estado ${when (state) { Player.STATE_IDLE -> "IDLE"; Player.STATE_BUFFERING -> "BUFFERING"; Player.STATE_READY -> "READY"; else -> "ENDED" }}${if (player !== active) " (siguiente)" else ""}")
+            if (state == Player.STATE_READY && player === active) logRoute(player)
             if (player !== active || state != Player.STATE_ENDED || fading) return
             // The track ended. If a faded transition was prepared but never started (too late), switch now.
             if (idle?.playbackState == Player.STATE_READY && nextUrl != null) swapNow() else listener.onEnded()
