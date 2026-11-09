@@ -16,4 +16,12 @@ object UsbTelemetry {
      * feedback recogió bloques de audio (128 paquetes) al arrancar cada salida.
      */
     @Volatile var sinFeedback: Boolean = false
+
+    /**
+     * Diagnóstico: no crea la pista silenciosa de 8000 Hz (setDirectPlaybackActive). `dumpsys
+     * media.audio_flinger` mostró que esa pista es la que mantiene AudioOut_15 (USB_HEADSET) fuera de
+     * standby y al HAL escribiendo al mismo DAC que libusbdac maneja directamente. Sin ella se pierde el
+     * enrutado de los botones multimedia; es solo para medir.
+     */
+    @Volatile var sinPistaSilenciosa: Boolean = false
 }
