@@ -752,6 +752,17 @@ fun SettingsScreen(vm: MainViewModel) {
                     Switch(reabrir, { reabrir = it; dp.edit().putBoolean("diag_reabrir_255", it).apply(); org.ostrichbat2k.usbdac.streaming.UsbTelemetry.reabrirAntes255 = it })
                 }
             }
+            run {
+                val dp = ctx.getSharedPreferences("qbdlx", 0)
+                var borde by remember { mutableStateOf(dp.getBoolean("diag_evitar_borde_255", false)) }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Prueba de arreglo sin cortes: esquivar el borde de 255", fontSize = 14.sp)
+                        Text("El bloque que terminaría justo en el borde del anillo USB del teléfono (cada 255 bloques) lleva un paquete más. No reabre nada: no debería oírse. Si con esto no hay cortes en 10 minutos, queda resuelto. Aplica desde la siguiente pista.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(borde, { borde = it; dp.edit().putBoolean("diag_evitar_borde_255", it).apply(); org.ostrichbat2k.usbdac.streaming.UsbTelemetry.evitarBorde255 = it })
+                }
+            }
             TextButton(onClick = { diag = diagnoseUsb(ctx) + (if (usbOn) "\n\n== libusbdac ==\n" + (UsbDirect.managerOrNull(ctx)?.diagnosticLog?.value?.joinToString("\n") ?: UsbDirect.failure.orEmpty()) else "") + java.io.File(ctx.filesDir, QbdlxApp.CRASH_FILE).takeIf { it.exists() }?.let { "\n\n== Último cierre inesperado ==\n" + it.readText().take(3000) }.orEmpty() + "\n\n== Sesión anterior (registro por segundo) ==\n" + DiagnosticLog.previousSession(ctx) + "\n\n== Reproducción (últimos eventos) ==\n" + PlaybackLog.read(ctx).ifEmpty { "(nada todavía)" } }, Modifier.padding(horizontal = 8.dp)) { Text(s.usbDiagButton) }
             diag?.let { txt ->
                 val clip = LocalClipboardManager.current

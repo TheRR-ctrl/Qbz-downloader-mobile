@@ -52,4 +52,13 @@ object UsbTelemetry {
      * podría devolver un bloque suyo en medio del vaciado.
      */
     @Volatile var reabrirAntes255: Boolean = false
+
+    /**
+     * Prueba de arreglo sin cortes: medido, los cuelgues caen en el bloque nº 255·n, que con 128 o 64
+     * paquetes por bloque es el que termina justo en un múltiplo de 255 paquetes (el último hueco de un
+     * segmento del anillo del xHCI de Linux: 256 TRB, uno de enlace). Con esto, ese bloque lleva un
+     * paquete más y termina un hueco después. No reabre nada. Hipótesis: si los cuelgues siguen, el
+     * borde no es la causa.
+     */
+    @Volatile var evitarBorde255: Boolean = false
 }

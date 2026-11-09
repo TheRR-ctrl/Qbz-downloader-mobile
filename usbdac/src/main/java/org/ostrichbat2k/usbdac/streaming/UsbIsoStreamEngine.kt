@@ -106,6 +106,8 @@ internal class UsbIsoStreamEngine(
     @Volatile var urbsEnviados: Long = 0L
     @Volatile var paquetesPorBloque: Int = 0
     /** Reaperturas hechas por [UsbTelemetry.reabrirAntes255] en esta salida, y lo que tardó la última. */
+    /** Bloques que llevaron un paquete de más por [UsbTelemetry.evitarBorde255]. */
+    @Volatile var bloquesAlargados: Long = 0L
     @Volatile var rotaciones: Int = 0
     @Volatile var rotacionUltimaMs: Long = -1L
     @Volatile var rotacionMaxMs: Long = -1L
@@ -141,7 +143,7 @@ internal class UsbIsoStreamEngine(
     fun resumenRitmo(): String =
         "nominal=${sampleRateHz}Hz · feedback del DAC=" +
             (if (feedbackCount == 0) "sin datos [hilo=$feedbackHilo, bloques=$feedbackUrbs, vacíos=$feedbackVacios, rechazados=$feedbackRechazados, errores=$feedbackErrores, último=$feedbackUltimoCrudo]" else "${feedbackHz}Hz (min ${feedbackMinHz}, max ${feedbackMaxHz}, $feedbackCount lecturas)") +
-            " · desvío del envío=${desvioEnvioMs}ms · bloques enviados=$urbsEnviados (+${UsbAudioTuning.NUM_URBS} iniciales, $paquetesPorBloque paquetes/bloque; sinPista=${UsbTelemetry.sinPistaSilenciosa} mitad=${UsbTelemetry.bloquesMitad} p120=${UsbTelemetry.paquetes120} reabrir=${UsbTelemetry.reabrirAntes255}; desde la última reapertura=$bloquesDesdeReapertura con iniciales; reaperturas=$rotaciones (última ${rotacionUltimaMs}ms, máx ${rotacionMaxMs}ms, fallos $rotacionFallos))" +
+            " · desvío del envío=${desvioEnvioMs}ms · bloques enviados=$urbsEnviados (+${UsbAudioTuning.NUM_URBS} iniciales, $paquetesPorBloque paquetes/bloque; sinPista=${UsbTelemetry.sinPistaSilenciosa} mitad=${UsbTelemetry.bloquesMitad} p120=${UsbTelemetry.paquetes120} reabrir=${UsbTelemetry.reabrirAntes255} evitarBorde=${UsbTelemetry.evitarBorde255} alargados=$bloquesAlargados; desde la última reapertura=$bloquesDesdeReapertura con iniciales; reaperturas=$rotaciones (última ${rotacionUltimaMs}ms, máx ${rotacionMaxMs}ms, fallos $rotacionFallos))" +
             " · paquetes con error=$paquetesMalos (bytes cortos=$bytesCortos, último estado=$ultimoEstadoMalo) · errores de reap=$reapErroresVista"
 
     /** Instante (nanoTime) en que empezó el reapIso en curso; 0 si el hilo no está esperando uno. */
@@ -205,7 +207,7 @@ internal class UsbIsoStreamEngine(
         feedbackUltimoCrudo = "-"; feedbackHilo = "no arrancó"
         feedbackHz = 0; feedbackMinHz = 0; feedbackMaxHz = 0; feedbackCount = 0
         desvioEnvioMs = 0L; urbsEnviados = 0L
-        rotaciones = 0; rotacionUltimaMs = -1L; rotacionMaxMs = -1L; rotacionFallos = 0
+        bloquesAlargados = 0L; rotaciones = 0; rotacionUltimaMs = -1L; rotacionMaxMs = -1L; rotacionFallos = 0
         bloquesDesdeReapertura = UsbAudioTuning.NUM_URBS.toLong()
         val usbSpeed = nativeBridge.getUsbSpeed(fd)
         val speedName =
@@ -226,7 +228,7 @@ internal class UsbIsoStreamEngine(
 
         val handle =
             nativeBridge.openIsoStream(
-                fd, format.endpointAddress, format.maxPacketSize, packetsPerUrb, UsbAudioTuning.NUM_URBS)
+                fd, format.endpointAddress, format.maxPacketSize, packetsPerUrb + 1, UsbAudioTuning.NUM_URBS)
         if (handle == 0L) {
             L.w("UsbIsoStreamEngine: failed to open iso stream")
             return
@@ -248,8 +250,14 @@ internal class UsbIsoStreamEngine(
         // the device's isochronous schedule. Sized for the largest a packet can ever be for this
         // sampleRateHz (IsoPacketScheduler's Bresenham remainder adds at most one extra sample).
         val maxBytesPerPacket = (sampleRateHz / packetsPerSecond + 1) * frameBytes
-        val urbBuffer = ByteArray(packetsPerUrb * maxBytesPerPacket)
-        val packetLengths = IntArray(packetsPerUrb)
+        // +1: con UsbTelemetry.evitarBorde255 un bloque de vez en cuando lleva un paquete más.
+        val urbBuffer = ByteArray((packetsPerUrb + 1) * maxBytesPerPacket)
+        val longitudesNormales = IntArray(packetsPerUrb)
+        val longitudesLargas = IntArray(packetsPerUrb + 1)
+        var packetLengths = longitudesNormales
+        // Paquetes enviados desde que se abrió el anillo (arranque o reapertura) y paquetes de cada slot.
+        var paquetesTotales = 0L
+        val slotPackets = IntArray(UsbAudioTuning.NUM_URBS) { packetsPerUrb }
         // What's currently loaded into each URB slot, for framesOutput to credit once reapIso()
         // confirms *that* slot's URB actually completed -- not when it was merely submitted (#71).
         // Reused across this stream's whole lifetime the same way urbBuffer/packetLengths are:
@@ -314,7 +322,16 @@ internal class UsbIsoStreamEngine(
         /** Fills [urbBuffer]/[packetLengths] in place; returns how many bytes of [urbBuffer] are used. */
         fun buildUrb(): Int {
             var total = 0
-            for (p in 0 until packetsPerUrb) {
+            // Medido: los cuelgues caen en el bloque nº 255·n. Con 128 o 64 paquetes por bloque, ese bloque
+            // es justo el que termina en un múltiplo de 255 paquetes: en el último hueco de un segmento del
+            // anillo del xHCI (255 TRB + el de enlace). Si este bloque fuera a terminar ahí, lleva uno más.
+            packetLengths =
+                if (UsbTelemetry.evitarBorde255 && (paquetesTotales + packetsPerUrb) % 255L == 0L) {
+                    bloquesAlargados++
+                    longitudesLargas
+                } else longitudesNormales
+            paquetesTotales += packetLengths.size
+            for (p in 0 until packetLengths.size) {
                 val bytes = scheduler.nextPacketSampleCount() * frameBytes
                 packetLengths[p] = bytes
                 total += bytes
@@ -388,7 +405,7 @@ internal class UsbIsoStreamEngine(
                             // always runs right after start() was called with paused already
                             // confirmed false, so always creditable, same as the old
                             // unconditional credit here.
-                            slotFrames[slot] = (total / frameBytes).toLong()
+                            slotFrames[slot] = (total / frameBytes).toLong(); slotPackets[slot] = packetLengths.size
                             slotCreditable[slot] = true
                         }
                     }
@@ -409,6 +426,7 @@ internal class UsbIsoStreamEngine(
                     var streamStartNs = System.nanoTime()
                     val urbRealTimeNs = packetsPerUrb * packetDurationNs
                     var urbsPaced = 0L
+                    var pacedNs = 0L
                     var submitted = 0
                     var reapErrors = 0
                     while (streaming) {
@@ -447,7 +465,8 @@ internal class UsbIsoStreamEngine(
                         }
 
                         urbsPaced++
-                        val waitNs = (streamStartNs + urbsPaced * urbRealTimeNs) - System.nanoTime()
+                        pacedNs += slotPackets[slot] * packetDurationNs
+                        val waitNs = (streamStartNs + pacedNs) - System.nanoTime()
                         // Far behind schedule = this thread (or the whole phone) stalled. Racing to
                         // catch up would drain the ring buffer faster than real time: the audio
                         // skips ahead and framesOutput (the playback position) jumps by the stall
@@ -455,7 +474,7 @@ internal class UsbIsoStreamEngine(
                         if (waitNs < -LATE_RESYNC_NS) {
                             lastLateMs = -waitNs / 1_000_000L
                             L.w("UsbIsoStreamEngine: stream thread ${-waitNs / 1_000_000L}ms late -- re-anchoring pacing instead of catching up")
-                            streamStartNs = System.nanoTime() - urbsPaced * urbRealTimeNs
+                            streamStartNs = System.nanoTime() - pacedNs
                         } else if (waitNs > 0) {
                             Thread.sleep(waitNs / 1_000_000L, (waitNs % 1_000_000L).toInt())
                         }
@@ -485,6 +504,7 @@ internal class UsbIsoStreamEngine(
                                 break
                             }
                             bloquesDesdeReapertura = 0L
+                            paquetesTotales = 0L
                             // Vuelve a llenar los NUM_URBS slots como al arrancar.
                             var llenos = 0
                             for (sl in 0 until UsbAudioTuning.NUM_URBS) {
@@ -492,7 +512,7 @@ internal class UsbIsoStreamEngine(
                                 if (nativeBridge.submitIso(handle, sl, urbBuffer, packetLengths) ||
                                     nativeBridge.submitIso(handle, sl, urbBuffer, packetLengths)) {
                                     marca("S$sl")
-                                    slotFrames[sl] = (tot / frameBytes).toLong()
+                                    slotFrames[sl] = (tot / frameBytes).toLong(); slotPackets[sl] = packetLengths.size
                                     slotCreditable[sl] = !paused()
                                     bloquesDesdeReapertura++
                                     llenos++
@@ -505,7 +525,7 @@ internal class UsbIsoStreamEngine(
                             marca("ALT/${ms}")
                             if (llenos == 0) { rotacionFallos++; break }
                             // El tiempo del vaciado no es retraso: se re-ancla el ritmo.
-                            streamStartNs = System.nanoTime() - urbsPaced * urbRealTimeNs
+                            streamStartNs = System.nanoTime() - pacedNs
                             lastUrbSubmittedAtMs = System.currentTimeMillis()
                             continue
                         }
@@ -532,7 +552,7 @@ internal class UsbIsoStreamEngine(
                         submitted++
                         bloquesDesdeReapertura++
                         urbsEnviados = submitted.toLong()
-                        desvioEnvioMs = (urbsPaced * urbRealTimeNs - (System.nanoTime() - streamStartNs)) / 1_000_000L
+                        desvioEnvioMs = (pacedNs - (System.nanoTime() - streamStartNs)) / 1_000_000L
                         lastUrbSubmittedAtMs = System.currentTimeMillis()
                         // Recorded now, credited above next time this slot comes back around
                         // through reapIso() confirming it completed. Not creditable while paused:
@@ -541,7 +561,7 @@ internal class UsbIsoStreamEngine(
                         // doc comment. Crediting it would let getPositionUs() catch up to
                         // framesWritten mid-pause and re-trigger the exact premature-isEnded()
                         // stall this counter exists to prevent.
-                        slotFrames[slot] = (total / frameBytes).toLong()
+                        slotFrames[slot] = (total / frameBytes).toLong(); slotPackets[slot] = packetLengths.size
                         slotCreditable[slot] = !paused()
                         // ~20 URBs at this class's ~8ms-of-real-audio-per-URB pacing (see
                         // UsbAudioTuning.BASE_PACKETS_PER_URB) is roughly a 160ms cadence -- frequent enough
@@ -567,7 +587,7 @@ internal class UsbIsoStreamEngine(
                         }
                         if (submitted % 500 == 0) {
                             val realElapsedMs = (System.nanoTime() - streamStartNs) / 1_000_000L
-                            val pacedMs = urbsPaced * urbRealTimeNs / 1_000_000L
+                            val pacedMs = pacedNs / 1_000_000L
                             L.i(
                                 "UsbIsoStreamEngine: $submitted URBs submitted, $reapErrors reap " +
                                     "errors, ${ringBuffer.availableToRead()} bytes buffered, " +
