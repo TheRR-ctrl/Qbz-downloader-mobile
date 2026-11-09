@@ -320,7 +320,7 @@ internal class UsbIsoStreamEngine(
                     // regardless -- it just needs packetDurationNs to be correct for this
                     // device's real negotiated speed (see above) to actually pace against the
                     // real rate instead of papering over the symptom with an equally-wrong delay.
-                    val streamStartNs = System.nanoTime()
+                    var streamStartNs = System.nanoTime()
                     val urbRealTimeNs = packetsPerUrb * packetDurationNs
                     var urbsPaced = 0L
                     var submitted = 0
@@ -356,7 +356,14 @@ internal class UsbIsoStreamEngine(
 
                         urbsPaced++
                         val waitNs = (streamStartNs + urbsPaced * urbRealTimeNs) - System.nanoTime()
-                        if (waitNs > 0) {
+                        // Far behind schedule = this thread (or the whole phone) stalled. Racing to
+                        // catch up would drain the ring buffer faster than real time: the audio
+                        // skips ahead and framesOutput (the playback position) jumps by the stall
+                        // length. Re-anchor the schedule instead and keep playing from where we are.
+                        if (waitNs < -LATE_RESYNC_NS) {
+                            L.w("UsbIsoStreamEngine: stream thread ${-waitNs / 1_000_000L}ms late -- re-anchoring pacing instead of catching up")
+                            streamStartNs = System.nanoTime() - urbsPaced * urbRealTimeNs
+                        } else if (waitNs > 0) {
                             Thread.sleep(waitNs / 1_000_000L, (waitNs % 1_000_000L).toInt())
                         }
 
@@ -607,3 +614,5 @@ internal class UsbIsoStreamEngine(
         }
     }
 }
+
+private const val LATE_RESYNC_NS = 100_000_000L
