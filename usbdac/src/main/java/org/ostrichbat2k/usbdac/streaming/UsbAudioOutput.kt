@@ -891,6 +891,11 @@ class UsbAudioOutput(
             usbAudioManager.reportDiagnostic(
                 "UsbAudioOutput: el DAC lleva ${sinceLastUrbMs}ms sin completar bloques · en búfer=${ringBuffer.availableToRead()} bytes -> se reactiva sin vaciar el búfer")
             pause()
+            // pause() solo programa la liberación con RELEASE_GRACE_MS y play() la cancela: la interfaz
+            // nunca se soltaba de verdad y el DAC seguía colgado. Aquí se suelta ya, para que play() haga
+            // un relock real (alt 0 -> alt 1).
+            usbAudioManager.releaseClaim(delayMs = 0L)
+            usbAudioManager.reportDiagnostic("UsbAudioOutput: interfaz liberada de verdad · hilo detenido=${!streamEngine.streaming} · activado=$activated")
             play()
             return false
         }
