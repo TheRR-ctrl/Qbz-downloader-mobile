@@ -61,4 +61,11 @@ object UsbTelemetry {
      * borde no es la causa.
      */
     @Volatile var evitarBorde255: Boolean = false
+
+    /**
+     * Prueba de arreglo: 12 bloques en vuelo en vez de 4. Medido: con el teléfono quieto, 11 min sin
+     * cortes; al usarlo, el hilo de envío llegó a retrasarse 67 ms, más que los 32-64 ms que cubren 4
+     * bloques, y la cola del controlador se vació justo antes de un cuelgue. Con 12 caben 96-192 ms.
+     */
+    @Volatile var masMargen: Boolean = false
 }

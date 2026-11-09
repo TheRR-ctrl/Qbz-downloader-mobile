@@ -105,6 +105,8 @@ internal class UsbIsoStreamEngine(
     @Volatile var desvioEnvioMs: Long = 0L
     @Volatile var urbsEnviados: Long = 0L
     @Volatile var paquetesPorBloque: Int = 0
+    /** Bloques en vuelo de esta salida: [UsbAudioTuning.NUM_URBS], o 12 con [UsbTelemetry.masMargen]. */
+    @Volatile var bloquesEnVuelo: Int = UsbAudioTuning.NUM_URBS
     /** Reaperturas hechas por [UsbTelemetry.reabrirAntes255] en esta salida, y lo que tardó la última. */
     /** Bloques que llevaron un paquete de más por [UsbTelemetry.evitarBorde255]. */
     @Volatile var bloquesAlargados: Long = 0L
@@ -143,7 +145,7 @@ internal class UsbIsoStreamEngine(
     fun resumenRitmo(): String =
         "nominal=${sampleRateHz}Hz · feedback del DAC=" +
             (if (feedbackCount == 0) "sin datos [hilo=$feedbackHilo, bloques=$feedbackUrbs, vacíos=$feedbackVacios, rechazados=$feedbackRechazados, errores=$feedbackErrores, último=$feedbackUltimoCrudo]" else "${feedbackHz}Hz (min ${feedbackMinHz}, max ${feedbackMaxHz}, $feedbackCount lecturas)") +
-            " · desvío del envío=${desvioEnvioMs}ms · bloques enviados=$urbsEnviados (+${UsbAudioTuning.NUM_URBS} iniciales, $paquetesPorBloque paquetes/bloque; sinPista=${UsbTelemetry.sinPistaSilenciosa} mitad=${UsbTelemetry.bloquesMitad} p120=${UsbTelemetry.paquetes120} reabrir=${UsbTelemetry.reabrirAntes255} evitarBorde=${UsbTelemetry.evitarBorde255} alargados=$bloquesAlargados; desde la última reapertura=$bloquesDesdeReapertura con iniciales; reaperturas=$rotaciones (última ${rotacionUltimaMs}ms, máx ${rotacionMaxMs}ms, fallos $rotacionFallos))" +
+            " · desvío del envío=${desvioEnvioMs}ms · bloques enviados=$urbsEnviados (+$bloquesEnVuelo iniciales, $paquetesPorBloque paquetes/bloque; sinPista=${UsbTelemetry.sinPistaSilenciosa} mitad=${UsbTelemetry.bloquesMitad} p120=${UsbTelemetry.paquetes120} reabrir=${UsbTelemetry.reabrirAntes255} evitarBorde=${UsbTelemetry.evitarBorde255} alargados=$bloquesAlargados; desde la última reapertura=$bloquesDesdeReapertura con iniciales; reaperturas=$rotaciones (última ${rotacionUltimaMs}ms, máx ${rotacionMaxMs}ms, fallos $rotacionFallos))" +
             " · paquetes con error=$paquetesMalos (bytes cortos=$bytesCortos, último estado=$ultimoEstadoMalo) · errores de reap=$reapErroresVista"
 
     /** Instante (nanoTime) en que empezó el reapIso en curso; 0 si el hilo no está esperando uno. */
@@ -208,7 +210,9 @@ internal class UsbIsoStreamEngine(
         feedbackHz = 0; feedbackMinHz = 0; feedbackMaxHz = 0; feedbackCount = 0
         desvioEnvioMs = 0L; urbsEnviados = 0L
         bloquesAlargados = 0L; rotaciones = 0; rotacionUltimaMs = -1L; rotacionMaxMs = -1L; rotacionFallos = 0
-        bloquesDesdeReapertura = UsbAudioTuning.NUM_URBS.toLong()
+        val numUrbs = if (UsbTelemetry.masMargen) 12 else UsbAudioTuning.NUM_URBS
+        bloquesEnVuelo = numUrbs
+        bloquesDesdeReapertura = numUrbs.toLong()
         val usbSpeed = nativeBridge.getUsbSpeed(fd)
         val speedName =
             when (usbSpeed) {
@@ -228,7 +232,7 @@ internal class UsbIsoStreamEngine(
 
         val handle =
             nativeBridge.openIsoStream(
-                fd, format.endpointAddress, format.maxPacketSize, packetsPerUrb + 1, UsbAudioTuning.NUM_URBS)
+                fd, format.endpointAddress, format.maxPacketSize, packetsPerUrb + 1, numUrbs)
         if (handle == 0L) {
             L.w("UsbIsoStreamEngine: failed to open iso stream")
             return
@@ -257,13 +261,13 @@ internal class UsbIsoStreamEngine(
         var packetLengths = longitudesNormales
         // Paquetes enviados desde que se abrió el anillo (arranque o reapertura) y paquetes de cada slot.
         var paquetesTotales = 0L
-        val slotPackets = IntArray(UsbAudioTuning.NUM_URBS) { packetsPerUrb }
+        val slotPackets = IntArray(numUrbs) { packetsPerUrb }
         // What's currently loaded into each URB slot, for framesOutput to credit once reapIso()
         // confirms *that* slot's URB actually completed -- not when it was merely submitted (#71).
         // Reused across this stream's whole lifetime the same way urbBuffer/packetLengths are:
         // indexed by slot, overwritten every time that slot is resubmitted.
-        val slotFrames = LongArray(UsbAudioTuning.NUM_URBS)
-        val slotCreditable = BooleanArray(UsbAudioTuning.NUM_URBS)
+        val slotFrames = LongArray(numUrbs)
+        val slotCreditable = BooleanArray(numUrbs)
 
         /**
          * Ramps the last [UsbAudioTuning.UNDERRUN_FADE_FRAMES] frames of real audio already in [buf] (ending at
@@ -382,7 +386,7 @@ internal class UsbIsoStreamEngine(
                     // audio output thread would.
                     setUrgentAudioPriority()
                     L.i("UsbIsoStreamEngine: streaming thread starting ($sampleRateHz Hz)")
-                    for (slot in 0 until UsbAudioTuning.NUM_URBS) {
+                    for (slot in 0 until numUrbs) {
                         val total = buildUrb()
                         // Retry once immediately before giving up on this slot -- see #59: a
                         // slot that's never submitted here never enters the reap/resubmit
@@ -486,7 +490,7 @@ internal class UsbIsoStreamEngine(
                             (bloquesDesdeReapertura + 1) % 255L >= 255L - MARGEN_REAPERTURA) {
                             val t0 = System.nanoTime()
                             // Este slot ya se recogió y no se reenvía: quedan NUM_URBS-1 en vuelo.
-                            var enVuelo = UsbAudioTuning.NUM_URBS - 1
+                            var enVuelo = numUrbs - 1
                             var ok = true
                             while (enVuelo > 0 && streaming) {
                                 val s2 = nativeBridge.reapIso(handle)
@@ -507,7 +511,7 @@ internal class UsbIsoStreamEngine(
                             paquetesTotales = 0L
                             // Vuelve a llenar los NUM_URBS slots como al arrancar.
                             var llenos = 0
-                            for (sl in 0 until UsbAudioTuning.NUM_URBS) {
+                            for (sl in 0 until numUrbs) {
                                 val tot = buildUrb()
                                 if (nativeBridge.submitIso(handle, sl, urbBuffer, packetLengths) ||
                                     nativeBridge.submitIso(handle, sl, urbBuffer, packetLengths)) {

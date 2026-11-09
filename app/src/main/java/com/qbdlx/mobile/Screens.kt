@@ -763,6 +763,17 @@ fun SettingsScreen(vm: MainViewModel) {
                     Switch(borde, { borde = it; dp.edit().putBoolean("diag_evitar_borde_255", it).apply(); org.ostrichbat2k.usbdac.streaming.UsbTelemetry.evitarBorde255 = it })
                 }
             }
+            run {
+                val dp = ctx.getSharedPreferences("qbdlx", 0)
+                var margen by remember { mutableStateOf(dp.getBoolean("diag_mas_margen", false)) }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Prueba de arreglo: más margen USB (12 bloques en camino)", fontSize = 14.sp)
+                        Text("Los cortes llegan al usar el teléfono: el envío se retrasa más de lo que cubren 4 bloques. Con 12 bloques en camino cabe un retraso 3 veces mayor. Aplica desde la siguiente pista.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(margen, { margen = it; dp.edit().putBoolean("diag_mas_margen", it).apply(); org.ostrichbat2k.usbdac.streaming.UsbTelemetry.masMargen = it })
+                }
+            }
             TextButton(onClick = { diag = diagnoseUsb(ctx) + (if (usbOn) "\n\n== libusbdac ==\n" + (UsbDirect.managerOrNull(ctx)?.diagnosticLog?.value?.joinToString("\n") ?: UsbDirect.failure.orEmpty()) else "") + java.io.File(ctx.filesDir, QbdlxApp.CRASH_FILE).takeIf { it.exists() }?.let { "\n\n== Último cierre inesperado ==\n" + it.readText().take(3000) }.orEmpty() + "\n\n== Sesión anterior (registro por segundo) ==\n" + DiagnosticLog.previousSession(ctx) + "\n\n== Reproducción (últimos eventos) ==\n" + PlaybackLog.read(ctx).ifEmpty { "(nada todavía)" } }, Modifier.padding(horizontal = 8.dp)) { Text(s.usbDiagButton) }
             diag?.let { txt ->
                 val clip = LocalClipboardManager.current

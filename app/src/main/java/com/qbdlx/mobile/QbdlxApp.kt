@@ -26,6 +26,7 @@ class QbdlxApp : Application(), ViewModelStoreOwner, coil.ImageLoaderFactory {
         org.ostrichbat2k.usbdac.streaming.UsbTelemetry.paquetes120 = getSharedPreferences("qbdlx", 0).getBoolean("diag_paquetes_120", false)
         org.ostrichbat2k.usbdac.streaming.UsbTelemetry.reabrirAntes255 = getSharedPreferences("qbdlx", 0).getBoolean("diag_reabrir_255", false)
         org.ostrichbat2k.usbdac.streaming.UsbTelemetry.evitarBorde255 = getSharedPreferences("qbdlx", 0).getBoolean("diag_evitar_borde_255", false)
+        org.ostrichbat2k.usbdac.streaming.UsbTelemetry.masMargen = getSharedPreferences("qbdlx", 0).getBoolean("diag_mas_margen", false)
         // Keep the last crash, so it can be shared from Settings and the cause found.
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { t, e ->
