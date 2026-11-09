@@ -159,28 +159,6 @@ object Tracker {
     /** Whisper: listens to the song's audio file, matches the words it hears to the lyric and times every line. Works on synced or unsynced lyrics. */
     @Volatile private var ytWhy = ""
 
-    /** Guarda la canción sin voz (cancelación del centro) en Música/Q Lyrics. Usa el mismo mensaje de progreso que el resto. */
-    fun exportarSinVoz() {
-        val ctx = app ?: return
-        val t = _state.value.track ?: return
-        if (timingJob?.isActive == true) return
-        timingJob = scope.launch {
-            timing.value = "Buscando el archivo de la canción…"
-            val msg = withContext(Dispatchers.Default) {
-                val uri = AudioTiming.findOrBorrow(ctx, t.title, t.artist, t.durationMs)
-                    ?: return@withContext "No encuentro esta canción como archivo en el teléfono (o falta el permiso de audio)."
-                withContext(Dispatchers.Main) { timing.value = "Leyendo la canción…" }
-                val pcm = com.qbdlx.lyrics.karaoke.PistaSinVoz.decodificar(ctx, uri, { !isActive })
-                    ?: return@withContext if (!isActive) "Cancelado." else "No pude leer el audio de esta canción."
-                withContext(Dispatchers.Main) { timing.value = "Quitando la voz…" }
-                val sin = com.qbdlx.lyrics.karaoke.PistaSinVoz.quitarVoz(pcm)
-                withContext(Dispatchers.Main) { timing.value = "Guardando…" }
-                if (com.qbdlx.lyrics.karaoke.PistaSinVoz.exportar(ctx, sin, t.title, t.artist) != null) "Listo: guardada en Música/Q Lyrics (versión rápida; puede quedar algo de voz)." else "No pude guardar el archivo."
-            }
-            timing.value = msg
-        }
-    }
-
     fun timeFromWhisper(auto: Boolean = false) {
         val ctx = app ?: return
         val t = _state.value.track ?: return

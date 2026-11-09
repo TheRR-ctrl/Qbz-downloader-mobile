@@ -572,7 +572,6 @@ class MainActivity : ComponentActivity() {
                                 if (state.status == Status.SYNCED || state.status == Status.PLAIN) item("Editar letra") { editing = true }
                                 item("Elegir letra") { picking = true }
                                 item("Burbuja flotante") { enterPip() }
-                                item("Guardar sin voz (karaoke)", idle) { Tracker.exportarSinVoz() }
                                 if (state.status == Status.SYNCED && whisperOk) item("Verificar sincronización", idle) { Tracker.verifySync() }
                                 if (state.status == Status.SYNCED) item("Informar mala sincronización") {
                                     val checking = Tracker.reportBadSync()
