@@ -97,6 +97,11 @@ internal class UsbIsoStreamEngine(
     @Volatile var urbsEnviados: Long = 0L
 
     /** Resumen de ritmo para los informes: lo que pide el DAC frente a lo que enviamos. */
+    @Volatile var reapErroresVista = 0
+    @Volatile var paquetesMalos = 0L
+    @Volatile var bytesCortos = 0L
+    @Volatile var ultimoEstadoMalo = 0L
+
     fun resumenRitmo(): String =
         "nominal=${sampleRateHz}Hz · feedback del DAC=" +
             (if (feedbackCount == 0) "sin datos [hilo=$feedbackHilo, bloques=$feedbackUrbs, vacíos=$feedbackVacios, rechazados=$feedbackRechazados, errores=$feedbackErrores, último=$feedbackUltimoCrudo]" else "${feedbackHz}Hz (min ${feedbackMinHz}, max ${feedbackMaxHz}, $feedbackCount lecturas)") +
@@ -158,6 +163,7 @@ internal class UsbIsoStreamEngine(
         // UsbAudioTuning.BASE_PACKETS_PER_URB's doc comment) so the *real* amount of audio -- and host-controller
         // lookahead cushion -- one URB represents stays the same regardless of negotiated speed;
         // only each packet's own content size shrinks to match its true, shorter duration.
+        paquetesMalos = 0L; bytesCortos = 0L; ultimoEstadoMalo = 0L; reapErroresVista = 0
         feedbackUrbs = 0; feedbackVacios = 0; feedbackRechazados = 0; feedbackErrores = 0
         feedbackUltimoCrudo = "-"; feedbackHilo = "no arrancó"
         feedbackHz = 0; feedbackMinHz = 0; feedbackMaxHz = 0; feedbackCount = 0
@@ -450,6 +456,10 @@ internal class UsbIsoStreamEngine(
                         // URB, which happens ~125 times/sec.
                         if (submitted % 20 == 0) {
                             val packetErrorStats = nativeBridge.getPacketErrorStats(handle)
+                            reapErroresVista = reapErrors
+                            paquetesMalos = packetErrorStats[0]
+                            bytesCortos = packetErrorStats[1]
+                            ultimoEstadoMalo = packetErrorStats.getOrElse(2) { 0L }
                             reportPipelineStats(
                                 UsbPipelineStats(
                                     atMs = System.currentTimeMillis(),
