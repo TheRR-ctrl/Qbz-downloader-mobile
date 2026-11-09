@@ -27,6 +27,15 @@ class QbdlxApp : Application(), ViewModelStoreOwner, coil.ImageLoaderFactory {
         org.ostrichbat2k.usbdac.streaming.UsbTelemetry.reabrirAntes255 = getSharedPreferences("qbdlx", 0).getBoolean("diag_reabrir_255", false)
         org.ostrichbat2k.usbdac.streaming.UsbTelemetry.evitarBorde255 = getSharedPreferences("qbdlx", 0).getBoolean("diag_evitar_borde_255", false)
         org.ostrichbat2k.usbdac.streaming.UsbTelemetry.masMargen = getSharedPreferences("qbdlx", 0).getBoolean("diag_mas_margen", false)
+        org.ostrichbat2k.usbdac.streaming.UsbTelemetry.comoDecent = getSharedPreferences("qbdlx", 0).getBoolean("diag_como_decent", false)
+        org.ostrichbat2k.usbdac.streaming.UsbTelemetry.pedirRendimiento = getSharedPreferences("qbdlx", 0).getBoolean("diag_pedir_rendimiento", false)
+        org.ostrichbat2k.usbdac.streaming.UsbTelemetry.abrirSesionRendimiento = { tid, objetivoNs ->
+            if (android.os.Build.VERSION.SDK_INT >= 31) {
+                getSystemService(android.os.PerformanceHintManager::class.java)
+                    ?.createHintSession(intArrayOf(tid), objetivoNs)
+                    ?.let { sesion -> { realNs: Long -> sesion.reportActualWorkDuration(realNs) } }
+            } else null
+        }
         // Keep the last crash, so it can be shared from Settings and the cause found.
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { t, e ->

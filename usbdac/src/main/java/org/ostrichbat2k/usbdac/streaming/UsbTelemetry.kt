@@ -68,4 +68,21 @@ object UsbTelemetry {
      * bloques, y la cola del controlador se vació justo antes de un cuelgue. Con 12 caben 96-192 ms.
      */
     @Volatile var masMargen: Boolean = false
+
+    /**
+     * Prueba de arreglo: la forma de envío de decent-player (MIT), probada por su autor en un Galaxy
+     * S26 Ultra: 80 bloques en vuelo de 1 ms (8 paquetes en USB 2.0), ~80 ms de margen. Manda sobre
+     * «mitad», «120 paquetes» y «más margen».
+     */
+    @Volatile var comoDecent: Boolean = false
+
+    /** Prueba de arreglo: pedir rendimiento al sistema para el hilo de envío (Performance Hint API, Android 12+). */
+    @Volatile var pedirRendimiento: Boolean = false
+
+    /**
+     * La pone la app: abre una sesión de Performance Hint para el hilo [tid] con un objetivo de
+     * [objetivoNs] y devuelve la función que informa del trabajo real (ns), o null si no se pudo.
+     * El módulo no depende de un Context, por eso lo hace la app.
+     */
+    @Volatile var abrirSesionRendimiento: ((tid: Int, objetivoNs: Long) -> ((Long) -> Unit)?)? = null
 }

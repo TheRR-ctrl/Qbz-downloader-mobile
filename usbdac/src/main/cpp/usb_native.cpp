@@ -131,7 +131,7 @@ struct IsoStream {
 // arithmetic that sizes the urb/buffer allocations below, or (b) trigger a multi-gigabyte
 // allocation that looks like a hang rather than a clean, logged failure.
 namespace {
-constexpr jint kMaxNumUrbs = 64;
+constexpr jint kMaxNumUrbs = 128;  // 80 con el modo «como decent-player»
 constexpr jint kMaxPacketsPerUrb = 4096;
 constexpr jint kMaxPacketSize = 4096;
 

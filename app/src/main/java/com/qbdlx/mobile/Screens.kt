@@ -774,6 +774,28 @@ fun SettingsScreen(vm: MainViewModel) {
                     Switch(margen, { margen = it; dp.edit().putBoolean("diag_mas_margen", it).apply(); org.ostrichbat2k.usbdac.streaming.UsbTelemetry.masMargen = it })
                 }
             }
+            run {
+                val dp = ctx.getSharedPreferences("qbdlx", 0)
+                var decent by remember { mutableStateOf(dp.getBoolean("diag_como_decent", false)) }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Prueba de arreglo: enviar como decent-player", fontSize = 14.sp)
+                        Text("80 bloques de 1 ms en camino (~80 ms de margen), como el reproductor libre decent-player, probado en un Galaxy S26 Ultra. Manda sobre «mitad», «120 paquetes» y «más margen». Aplica desde la siguiente pista.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(decent, { decent = it; dp.edit().putBoolean("diag_como_decent", it).apply(); org.ostrichbat2k.usbdac.streaming.UsbTelemetry.comoDecent = it })
+                }
+            }
+            run {
+                val dp = ctx.getSharedPreferences("qbdlx", 0)
+                var rendim by remember { mutableStateOf(dp.getBoolean("diag_pedir_rendimiento", false)) }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Prueba de arreglo: pedir rendimiento al sistema", fontSize = 14.sp)
+                        Text("Le dice a Android que el hilo de envío no puede llegar tarde (Performance Hint, Android 12+), para que suba la frecuencia o use núcleos rápidos. Puede gastar algo más de batería. Aplica desde la siguiente pista.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(rendim, { rendim = it; dp.edit().putBoolean("diag_pedir_rendimiento", it).apply(); org.ostrichbat2k.usbdac.streaming.UsbTelemetry.pedirRendimiento = it })
+                }
+            }
             TextButton(onClick = { diag = diagnoseUsb(ctx) + (if (usbOn) "\n\n== libusbdac ==\n" + (UsbDirect.managerOrNull(ctx)?.diagnosticLog?.value?.joinToString("\n") ?: UsbDirect.failure.orEmpty()) else "") + java.io.File(ctx.filesDir, QbdlxApp.CRASH_FILE).takeIf { it.exists() }?.let { "\n\n== Último cierre inesperado ==\n" + it.readText().take(3000) }.orEmpty() + "\n\n== Sesión anterior (registro por segundo) ==\n" + DiagnosticLog.previousSession(ctx) + "\n\n== Reproducción (últimos eventos) ==\n" + PlaybackLog.read(ctx).ifEmpty { "(nada todavía)" } }, Modifier.padding(horizontal = 8.dp)) { Text(s.usbDiagButton) }
             diag?.let { txt ->
                 val clip = LocalClipboardManager.current
