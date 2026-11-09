@@ -110,6 +110,8 @@ internal class UsbIsoStreamEngine(
     /** Peor retraso del hilo al despertar (ms) desde el arranque, en qué CPU corría y si hay sesión de rendimiento. */
     @Volatile var peorRetrasoMs: Long = 0L
     @Volatile var cpuHilo: Int = -1
+    /** Lo más que tardó una lectura del búfer (ms): con el candado de antes, aquí se veía la espera al decodificador. */
+    @Volatile var peorLecturaMs: Long = 0L
     @Volatile var sesionRendimiento: String = "no pedida"
     /** Reaperturas hechas por [UsbTelemetry.reabrirAntes255] en esta salida, y lo que tardó la última. */
     /** Bloques que llevaron un paquete de más por [UsbTelemetry.evitarBorde255]. */
@@ -149,7 +151,7 @@ internal class UsbIsoStreamEngine(
     fun resumenRitmo(): String =
         "nominal=${sampleRateHz}Hz · feedback del DAC=" +
             (if (feedbackCount == 0) "sin datos [hilo=$feedbackHilo, bloques=$feedbackUrbs, vacíos=$feedbackVacios, rechazados=$feedbackRechazados, errores=$feedbackErrores, último=$feedbackUltimoCrudo]" else "${feedbackHz}Hz (min ${feedbackMinHz}, max ${feedbackMaxHz}, $feedbackCount lecturas)") +
-            " · desvío del envío=${desvioEnvioMs}ms · bloques enviados=$urbsEnviados (+$bloquesEnVuelo iniciales, $paquetesPorBloque paquetes/bloque; sinPista=${UsbTelemetry.sinPistaSilenciosa} mitad=${UsbTelemetry.bloquesMitad} p120=${UsbTelemetry.paquetes120} reabrir=${UsbTelemetry.reabrirAntes255} evitarBorde=${UsbTelemetry.evitarBorde255} alargados=$bloquesAlargados decent=${UsbTelemetry.comoDecent} margen=${UsbTelemetry.masMargen} rendimiento=$sesionRendimiento cpu=$cpuHilo peor retraso=${peorRetrasoMs}ms; desde la última reapertura=$bloquesDesdeReapertura con iniciales; reaperturas=$rotaciones (última ${rotacionUltimaMs}ms, máx ${rotacionMaxMs}ms, fallos $rotacionFallos))" +
+            " · desvío del envío=${desvioEnvioMs}ms · bloques enviados=$urbsEnviados (+$bloquesEnVuelo iniciales, $paquetesPorBloque paquetes/bloque; sinPista=${UsbTelemetry.sinPistaSilenciosa} mitad=${UsbTelemetry.bloquesMitad} p120=${UsbTelemetry.paquetes120} reabrir=${UsbTelemetry.reabrirAntes255} evitarBorde=${UsbTelemetry.evitarBorde255} alargados=$bloquesAlargados decent=${UsbTelemetry.comoDecent} margen=${UsbTelemetry.masMargen} rendimiento=$sesionRendimiento cpu=$cpuHilo peor retraso=${peorRetrasoMs}ms peor lectura=${peorLecturaMs}ms; desde la última reapertura=$bloquesDesdeReapertura con iniciales; reaperturas=$rotaciones (última ${rotacionUltimaMs}ms, máx ${rotacionMaxMs}ms, fallos $rotacionFallos))" +
             " · paquetes con error=$paquetesMalos (bytes cortos=$bytesCortos, último estado=$ultimoEstadoMalo) · errores de reap=$reapErroresVista"
 
     /** Instante (nanoTime) en que empezó el reapIso en curso; 0 si el hilo no está esperando uno. */
@@ -216,7 +218,7 @@ internal class UsbIsoStreamEngine(
         bloquesAlargados = 0L; rotaciones = 0; rotacionUltimaMs = -1L; rotacionMaxMs = -1L; rotacionFallos = 0
         val numUrbs = if (UsbTelemetry.comoDecent) 80 else if (UsbTelemetry.masMargen) 12 else UsbAudioTuning.NUM_URBS
         bloquesEnVuelo = numUrbs
-        peorRetrasoMs = 0L; cpuHilo = -1; sesionRendimiento = "no pedida"
+        peorRetrasoMs = 0L; peorLecturaMs = 0L; cpuHilo = -1; sesionRendimiento = "no pedida"
         bloquesDesdeReapertura = numUrbs.toLong()
         val usbSpeed = nativeBridge.getUsbSpeed(fd)
         val speedName =
@@ -346,7 +348,10 @@ internal class UsbIsoStreamEngine(
                 total += bytes
             }
             if (!paused()) {
+                val t0Lectura = System.nanoTime()
                 val read = ringBuffer.readOrZeroPad(urbBuffer, total)
+                val msLectura = (System.nanoTime() - t0Lectura) / 1_000_000L
+                if (msLectura > peorLecturaMs) peorLecturaMs = msLectura
                 // A genuine underrun (decoder/renderer thread couldn't keep up, ring buffer ran
                 // dry) rather than the deliberate pause-silence case above -- heard as a click/
                 // crackle, since real audio briefly drops to silence mid-stream. Rate-limited:
