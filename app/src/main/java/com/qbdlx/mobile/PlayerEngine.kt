@@ -124,18 +124,19 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
 
     /** Wraps the normal audio output so tracks the USB DAC can take go straight to it (see [UsbDirect]). */
     @androidx.annotation.OptIn(UnstableApi::class)
-    // Lazy: `active` below is built while the class initialises, before this declaration would run.
-    private val renderers by lazy { object : androidx.media3.exoplayer.DefaultRenderersFactory(context) {
+    // A function, not a property: `active` is built while the class initialises, and any property
+    // declared after it (even `by lazy`, whose delegate field) is still null at that point.
+    private fun renderers() = object : androidx.media3.exoplayer.DefaultRenderersFactory(context) {
         override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): AudioSink =
             super.buildAudioSink(context, enableFloatOutput, enableAudioTrackPlaybackParams)!!.let { normal ->
                 // Only wrap when the user turned the driver on; a failure to start it never takes the app down.
                 val usb = if (UsbDirect.prefs(context).enabled) UsbDirect.managerOrNull(context) else null
                 if (usb == null) normal else org.ostrichbat2k.usbdac.streaming.RoutingAudioSink(usb, normal)
             }
-    } }
+    }
 
     @androidx.annotation.OptIn(UnstableApi::class)
-    private fun build(): ExoPlayer = ExoPlayer.Builder(context, renderers)
+    private fun build(): ExoPlayer = ExoPlayer.Builder(context, renderers())
         .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), false)
         .setHandleAudioBecomingNoisy(true) // unplugging headphones pauses
         .build()
