@@ -9,4 +9,11 @@ object UsbTelemetry {
 
     /** Diagnóstico: si es true, un atasco no se recupera solo (ni reactiva ni recrea la salida), para verlo tal cual. */
     @Volatile var sinRecuperacionAutomatica: Boolean = false
+
+    /**
+     * Diagnóstico: no abre el hilo del feedback. Audio y feedback comparten el mismo descriptor USB y
+     * REAPURB devuelve el primer bloque terminado de cualquiera de los dos; en el registro el hilo del
+     * feedback recogió bloques de audio (128 paquetes) al arrancar cada salida.
+     */
+    @Volatile var sinFeedback: Boolean = false
 }

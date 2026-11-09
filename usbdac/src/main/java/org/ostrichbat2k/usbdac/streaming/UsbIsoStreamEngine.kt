@@ -532,6 +532,11 @@ internal class UsbIsoStreamEngine(
     private fun startFeedbackThreadIfApplicable(fd: Int, scheduler: IsoPacketScheduler) {
         val feedback = format.feedbackEndpoint
         if (format.syncType != SyncType.ASYNC || feedback == null) return
+        if (UsbTelemetry.sinFeedback) {
+            feedbackHilo = "desactivado (diagnóstico)"
+            L.w("UsbIsoStreamEngine: feedback desactivado por el interruptor de diagnóstico")
+            return
+        }
 
         val handle =
             nativeBridge.openIsoStream(

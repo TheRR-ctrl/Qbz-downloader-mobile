@@ -697,6 +697,17 @@ fun SettingsScreen(vm: MainViewModel) {
                     Switch(sinRec, { sinRec = it; dp.edit().putBoolean("diag_sin_recuperacion", it).apply(); org.ostrichbat2k.usbdac.streaming.UsbTelemetry.sinRecuperacionAutomatica = it })
                 }
             }
+            run {
+                val dp = ctx.getSharedPreferences("qbdlx", 0)
+                var sinFb by remember { mutableStateOf(dp.getBoolean("diag_sin_feedback", false)) }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Diagnóstico: sin lectura de feedback", fontSize = 14.sp)
+                        Text("No abre el hilo que lee el reloj del DAC. Audio y feedback comparten el descriptor USB y en el registro el hilo del feedback recogía bloques de audio. Aplica desde la siguiente pista.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(sinFb, { sinFb = it; dp.edit().putBoolean("diag_sin_feedback", it).apply(); org.ostrichbat2k.usbdac.streaming.UsbTelemetry.sinFeedback = it })
+                }
+            }
             TextButton(onClick = { diag = diagnoseUsb(ctx) + (if (usbOn) "\n\n== libusbdac ==\n" + (UsbDirect.managerOrNull(ctx)?.diagnosticLog?.value?.joinToString("\n") ?: UsbDirect.failure.orEmpty()) else "") + java.io.File(ctx.filesDir, QbdlxApp.CRASH_FILE).takeIf { it.exists() }?.let { "\n\n== Último cierre inesperado ==\n" + it.readText().take(3000) }.orEmpty() + "\n\n== Sesión anterior (registro por segundo) ==\n" + DiagnosticLog.previousSession(ctx) + "\n\n== Reproducción (últimos eventos) ==\n" + PlaybackLog.read(ctx).ifEmpty { "(nada todavía)" } }, Modifier.padding(horizontal = 8.dp)) { Text(s.usbDiagButton) }
             diag?.let { txt ->
                 val clip = LocalClipboardManager.current
