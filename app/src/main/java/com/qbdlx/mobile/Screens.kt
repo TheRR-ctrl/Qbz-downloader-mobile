@@ -669,7 +669,21 @@ fun SettingsScreen(vm: MainViewModel) {
             }
             var diag by remember { mutableStateOf<String?>(null) }
             val ctx = LocalContext.current
-            TextButton(onClick = { diag = diagnoseUsb(ctx) }, Modifier.padding(horizontal = 8.dp)) { Text(s.usbDiagButton) }
+            var usbOn by remember { mutableStateOf(UsbDirect.prefs(ctx).enabled) }
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(s.usbDirectTitle, fontWeight = FontWeight.Medium)
+                    Text(s.usbDirectDesc, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (usbOn) {
+                        val mgr = remember { UsbDirect.manager(ctx) }
+                        val route by mgr.playbackRoute.collectAsState()
+                        val devs by mgr.devices.collectAsState()
+                        Text(if (devs.isEmpty()) s.usbDirectNoDevice else devs.joinToString { it.displayName } + " · " + route, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+                Switch(usbOn, { usbOn = it; UsbDirect.prefs(ctx).set(it); if (it) UsbDirect.manager(ctx).triggerActivation(); vm.updateUsbDirect(it) })
+            }
+            TextButton(onClick = { diag = diagnoseUsb(ctx) + (if (usbOn) "\n\n== libusbdac ==\n" + UsbDirect.manager(ctx).diagnosticLog.value.joinToString("\n") else "") }, Modifier.padding(horizontal = 8.dp)) { Text(s.usbDiagButton) }
             diag?.let { txt ->
                 val clip = LocalClipboardManager.current
                 AlertDialog(

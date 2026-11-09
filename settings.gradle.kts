@@ -17,3 +17,4 @@ rootProject.name = "QobuzDownloaderX-Mobile"
 include(":app")
 include(":scanner")
 include(":lyrics")
+include(":usbdac")

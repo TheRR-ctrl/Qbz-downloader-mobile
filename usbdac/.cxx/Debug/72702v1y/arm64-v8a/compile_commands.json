@@ -1,0 +1,7 @@
+[
+{
+  "directory": "/home/user/qbz-downloader-mobile/usbdac/.cxx/Debug/72702v1y/arm64-v8a",
+  "command": "/opt/android-sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android29 --sysroot=/opt/android-sdk/ndk/28.2.13676358/toolchains/llvm/prebuilt/linux-x86_64/sysroot -Dusbnative_EXPORTS -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -fno-limit-debug-info  -fPIC -fsanitize=memtag -fno-omit-frame-pointer -march=armv8-a+memtag -o CMakeFiles/usbnative.dir/usb_native.cpp.o -c /home/user/qbz-downloader-mobile/usbdac/src/main/cpp/usb_native.cpp",
+  "file": "/home/user/qbz-downloader-mobile/usbdac/src/main/cpp/usb_native.cpp"
+}
+]

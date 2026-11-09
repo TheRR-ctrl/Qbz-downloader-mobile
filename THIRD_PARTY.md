@@ -38,3 +38,7 @@ Not affiliated with Apple. iPod and iTunes are trademarks of Apple Inc.
 [acoustid/chromaprint](https://github.com/acoustid/chromaprint) (LGPL-2.1-or-later): its frame/chroma pipeline,
 classifier table and fingerprint compression. A unit test checks the output bit for bit against libchromaprint.
 Songs are looked up on [AcoustID](https://acoustid.org), which needs its own free application key.
+
+`usbdac/` is a copy of [ostrichbat2k/libusbdac](https://github.com/ostrichbat2k/libusbdac) (GPL-3.0-or-later, commit 3cc831d):
+direct USB audio output (UAC1/2/3) that skips Android's mixer. Only its Gradle build file and one Room call
+(`fallbackToDestructiveMigration()`) were changed. Its own LICENSE is in that folder.

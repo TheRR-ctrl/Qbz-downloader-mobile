@@ -6,14 +6,14 @@ plugins {
 
 android {
     namespace = "com.qbdlx.mobile"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.qbdlx.mobile"
         minSdk = 29
         targetSdk = 35
-        versionCode = 169
-        versionName = "0.44.7"
+        versionCode = 170
+        versionName = "0.45.0"
     }
 
     // A release build signed with a key given on the command line (-PreleaseKeystore=... -PreleasePassword=... [-PreleaseAlias=...]);
@@ -36,6 +36,7 @@ android {
         }
     }
     compileOptions {
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -56,6 +57,7 @@ tasks.withType<Test>().configureEach {
 }
 
 dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.3")
     val composeBom = platform("androidx.compose:compose-bom:2025.09.00")
     implementation(composeBom)
     implementation("androidx.compose.material3:material3:1.4.0-alpha18")
@@ -66,7 +68,8 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("io.coil-kt:coil-compose:2.7.0")
-    implementation("androidx.media3:media3-exoplayer:1.4.1")
+    implementation("androidx.media3:media3-exoplayer:1.11.0")
+    implementation(project(":usbdac"))
     // Backdrop blur for the translucent bars; 1.1.x matches Compose 1.7 from the BOM above.
     implementation("com.materialkolor:material-kolor:2.1.1")
     implementation("com.airbnb.android:lottie-compose:6.6.2")

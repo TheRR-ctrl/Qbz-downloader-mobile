@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.qbdlx.scanner"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.qbdlx.scanner"

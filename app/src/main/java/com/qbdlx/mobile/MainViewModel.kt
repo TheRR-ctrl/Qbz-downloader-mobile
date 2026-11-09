@@ -2221,6 +2221,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val bitPerfectProbe by lazy { BitPerfectOutput(context) }
 
     // A DAC plugged in (or out) after the screen was opened: look again right away instead of waiting for the next visit.
+    /** Direct USB driver: no fade (the stream must stay untouched). */
+    fun updateUsbDirect(on: Boolean) { engine.fadeMs = if (on) 0 else crossfadeMs }
+
     private val dacCallback = object : android.media.AudioDeviceCallback() {
         override fun onAudioDevicesAdded(added: Array<out android.media.AudioDeviceInfo>) = devicesChanged()
         override fun onAudioDevicesRemoved(removed: Array<out android.media.AudioDeviceInfo>) = devicesChanged()

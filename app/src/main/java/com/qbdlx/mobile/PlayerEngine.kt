@@ -100,6 +100,7 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
                 }
                 AudioManager.AUDIOFOCUS_LOSS -> {
                     resumeOnGain = false; active.pause(); if (fading) idle?.pause()
+                    if (UsbDirect.prefs(context).enabled) UsbDirect.manager(context).releaseClaim(delayMs = 0)
                     audioManager.abandonAudioFocusRequest(focusRequest)
                 }
             }
@@ -121,7 +122,18 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
         )
     }
 
-    private fun build(): ExoPlayer = ExoPlayer.Builder(context)
+    /** Wraps the normal audio output so tracks the USB DAC can take go straight to it (see [UsbDirect]). */
+    @androidx.annotation.OptIn(UnstableApi::class)
+    private val renderers = object : androidx.media3.exoplayer.DefaultRenderersFactory(context) {
+        override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): AudioSink =
+            org.ostrichbat2k.usbdac.streaming.RoutingAudioSink(
+                UsbDirect.manager(context),
+                super.buildAudioSink(context, enableFloatOutput, enableAudioTrackPlaybackParams)!!,
+            )
+    }
+
+    @androidx.annotation.OptIn(UnstableApi::class)
+    private fun build(): ExoPlayer = ExoPlayer.Builder(context, renderers)
         .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), false)
         .setHandleAudioBecomingNoisy(true) // unplugging headphones pauses
         .build()

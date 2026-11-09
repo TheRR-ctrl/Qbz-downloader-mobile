@@ -284,6 +284,9 @@ interface Strings {
     val crossfadeOff: String
     val bitPerfectTitle: String
     val usbDiagButton: String
+    val usbDirectTitle: String
+    val usbDirectDesc: String
+    val usbDirectNoDevice: String
     val usbDiagCopy: String
     val usbDiagClose: String
     val bitPerfectDesc: String
@@ -769,6 +772,9 @@ object English : Strings {
     override val crossfadeOff = "Off"
     override val bitPerfectTitle = "Bit-perfect USB output"
     override val usbDiagButton = "Diagnose USB output"
+    override val usbDirectTitle = "Direct USB DAC driver"
+    override val usbDirectDesc = "Talks to the DAC itself over USB, skipping Android's mixer, so the song reaches it exactly as it is (works even where Android offers no bit-perfect mode). Experimental. Android asks for USB permission; a DAC with both USB modes works best in the one that lists your rate (44.1/48 kHz: UAC1; hi-res: UAC2). Volume is then the DAC's own. No fade or equalizer while on."
+    override val usbDirectNoDevice = "No USB DAC found yet: plug it in and accept the permission."
     override val usbDiagCopy = "Copy"
     override val usbDiagClose = "Close"
     override val bitPerfectDesc = "Sends each song to a USB DAC at its own sample rate and bit depth, without Android resampling it. Needs Android 14 or newer and a USB DAC. Turns off the fade and gapless changes of sample rate; for 24-bit pick a Hi-Res quality in the player. Equalizers and sound effects must be off."
@@ -1279,6 +1285,9 @@ object Spanish : Strings {
     override val crossfadeOff = "Desactivado"
     override val bitPerfectTitle = "Salida USB bit-perfect"
     override val usbDiagButton = "Diagnosticar salida USB"
+    override val usbDirectTitle = "Controlador USB directo al DAC"
+    override val usbDirectDesc = "Habla con el DAC él mismo por USB, sin pasar por el mezclador de Android, así la canción llega tal cual (funciona aunque Android no ofrezca bit-perfect). Experimental. Android pedirá permiso USB; si el DAC tiene dos modos USB, va mejor el que lista tu frecuencia (44,1/48 kHz: UAC1; hi-res: UAC2). El volumen pasa a ser el del propio DAC. Sin fundido ni ecualizador mientras esté activo."
+    override val usbDirectNoDevice = "Aún no hay DAC USB: conéctalo y acepta el permiso."
     override val usbDiagCopy = "Copiar"
     override val usbDiagClose = "Cerrar"
     override val bitPerfectDesc = "Envía cada canción a un DAC USB con su propia frecuencia y profundidad de bits, sin que Android la remuestree. Necesita Android 14 o superior y un DAC USB. Quita el fundido y el cambio de frecuencia sin pausa; para 24 bits elige una calidad Hi-Res en el reproductor. Ecualizadores y efectos de sonido deben estar apagados."
