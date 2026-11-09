@@ -46,6 +46,8 @@ interface Strings {
     val searchHint: String
     val sortBy: String
     val searchLibrary: String
+    val recentSearches: String
+    val recentSearchesClear: String
     val sortAdded: String
     val sortTitle: String
     val sortArtist: String
@@ -529,6 +531,8 @@ object English : Strings {
     override val searchHint = "Search albums and songs"
     override val sortBy = "Sort"
     override val searchLibrary = "Search your library"
+    override val recentSearches = "Recent searches"
+    override val recentSearchesClear = "Clear recent searches"
     override val sortAdded = "As added"
     override val sortTitle = "Title A–Z"
     override val sortArtist = "Artist A–Z"
@@ -1046,6 +1050,8 @@ object Spanish : Strings {
     override val searchHint = "Buscar álbumes y canciones"
     override val sortBy = "Ordenar"
     override val searchLibrary = "Buscar en tu biblioteca"
+    override val recentSearches = "Búsquedas recientes"
+    override val recentSearchesClear = "Borrar búsquedas recientes"
     override val sortAdded = "Como se agregaron"
     override val sortTitle = "Título A–Z"
     override val sortArtist = "Artista A–Z"

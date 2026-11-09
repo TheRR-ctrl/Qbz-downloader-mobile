@@ -1694,8 +1694,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         libraryRefreshed = false; libraryCache.clear()
     }
 
+    /** Búsquedas recientes (lo escrito), la más nueva primero, como en Qobuz. */
+    var recentSearches by mutableStateOf(prefs.getString("recent_searches", "").orEmpty().split('\n').filter { it.isNotBlank() }); private set
+
+    private fun saveRecent(list: List<String>) {
+        recentSearches = list.take(20)
+        prefs.edit().putString("recent_searches", recentSearches.joinToString("\n")).apply()
+    }
+
+    fun removeRecentSearch(q: String) = saveRecent(recentSearches - q)
+    fun clearRecentSearches() = saveRecent(emptyList())
+
     fun search(query: String) {
         if (query.isBlank()) return
+        val q = query.trim().replace('\n', ' ')
+        saveRecent(listOf(q) + recentSearches.filterNot { it.equals(q, ignoreCase = true) })
         run {
             results = api.searchAlbums(query.trim())
             trackResults = runCatching { api.searchTracks(query.trim(), 40) }.getOrDefault(emptyList())

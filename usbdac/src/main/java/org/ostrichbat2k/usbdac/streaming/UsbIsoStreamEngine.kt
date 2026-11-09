@@ -112,6 +112,8 @@ internal class UsbIsoStreamEngine(
     @Volatile var cpuHilo: Int = -1
     /** Lo más que tardó una lectura del búfer (ms): con el candado de antes, aquí se veía la espera al decodificador. */
     @Volatile var peorLecturaMs: Long = 0L
+    /** Lo más que el sistema despertó tarde al hilo tras un sleep (ms): si es grande, la CPU dormía o estaba ocupada. */
+    @Volatile var peorSuenoMs: Long = 0L
     @Volatile var sesionRendimiento: String = "no pedida"
     /** Reaperturas hechas por [UsbTelemetry.reabrirAntes255] en esta salida, y lo que tardó la última. */
     /** Bloques que llevaron un paquete de más por [UsbTelemetry.evitarBorde255]. */
@@ -151,7 +153,7 @@ internal class UsbIsoStreamEngine(
     fun resumenRitmo(): String =
         "nominal=${sampleRateHz}Hz · feedback del DAC=" +
             (if (feedbackCount == 0) "sin datos [hilo=$feedbackHilo, bloques=$feedbackUrbs, vacíos=$feedbackVacios, rechazados=$feedbackRechazados, errores=$feedbackErrores, último=$feedbackUltimoCrudo]" else "${feedbackHz}Hz (min ${feedbackMinHz}, max ${feedbackMaxHz}, $feedbackCount lecturas)") +
-            " · desvío del envío=${desvioEnvioMs}ms · bloques enviados=$urbsEnviados (+$bloquesEnVuelo iniciales, $paquetesPorBloque paquetes/bloque; sinPista=${UsbTelemetry.sinPistaSilenciosa} mitad=${UsbTelemetry.bloquesMitad} p120=${UsbTelemetry.paquetes120} reabrir=${UsbTelemetry.reabrirAntes255} evitarBorde=${UsbTelemetry.evitarBorde255} alargados=$bloquesAlargados decent=${UsbTelemetry.comoDecent} margen=${UsbTelemetry.masMargen} rendimiento=$sesionRendimiento cpu=$cpuHilo peor retraso=${peorRetrasoMs}ms peor lectura=${peorLecturaMs}ms; desde la última reapertura=$bloquesDesdeReapertura con iniciales; reaperturas=$rotaciones (última ${rotacionUltimaMs}ms, máx ${rotacionMaxMs}ms, fallos $rotacionFallos))" +
+            " · desvío del envío=${desvioEnvioMs}ms · bloques enviados=$urbsEnviados (+$bloquesEnVuelo iniciales, $paquetesPorBloque paquetes/bloque; sinPista=${UsbTelemetry.sinPistaSilenciosa} mitad=${UsbTelemetry.bloquesMitad} p120=${UsbTelemetry.paquetes120} reabrir=${UsbTelemetry.reabrirAntes255} evitarBorde=${UsbTelemetry.evitarBorde255} alargados=$bloquesAlargados decent=${UsbTelemetry.comoDecent} margen=${UsbTelemetry.masMargen} rendimiento=$sesionRendimiento cpu=$cpuHilo peor retraso=${peorRetrasoMs}ms peor lectura=${peorLecturaMs}ms peor sueño=${peorSuenoMs}ms peor espera USB=${longestReapMs}ms; desde la última reapertura=$bloquesDesdeReapertura con iniciales; reaperturas=$rotaciones (última ${rotacionUltimaMs}ms, máx ${rotacionMaxMs}ms, fallos $rotacionFallos))" +
             " · paquetes con error=$paquetesMalos (bytes cortos=$bytesCortos, último estado=$ultimoEstadoMalo) · errores de reap=$reapErroresVista"
 
     /** Instante (nanoTime) en que empezó el reapIso en curso; 0 si el hilo no está esperando uno. */
@@ -216,9 +218,9 @@ internal class UsbIsoStreamEngine(
         feedbackHz = 0; feedbackMinHz = 0; feedbackMaxHz = 0; feedbackCount = 0
         desvioEnvioMs = 0L; urbsEnviados = 0L
         bloquesAlargados = 0L; rotaciones = 0; rotacionUltimaMs = -1L; rotacionMaxMs = -1L; rotacionFallos = 0
-        val numUrbs = if (UsbTelemetry.comoDecent) 80 else if (UsbTelemetry.masMargen) 12 else UsbAudioTuning.NUM_URBS
+        val numUrbs = if (UsbTelemetry.comoDecent) 120 else if (UsbTelemetry.masMargen) 12 else UsbAudioTuning.NUM_URBS
         bloquesEnVuelo = numUrbs
-        peorRetrasoMs = 0L; peorLecturaMs = 0L; cpuHilo = -1; sesionRendimiento = "no pedida"
+        peorRetrasoMs = 0L; peorLecturaMs = 0L; peorSuenoMs = 0L; cpuHilo = -1; sesionRendimiento = "no pedida"
         bloquesDesdeReapertura = numUrbs.toLong()
         val usbSpeed = nativeBridge.getUsbSpeed(fd)
         val speedName =
@@ -231,7 +233,7 @@ internal class UsbIsoStreamEngine(
                 6 -> "super+"
                 else -> "unknown"
             }
-        val pacing = IsoPacing.forSpeed(usbSpeed, if (UsbTelemetry.comoDecent) 1 else if (UsbTelemetry.paquetes120) 15 else if (UsbTelemetry.bloquesMitad) UsbAudioTuning.BASE_PACKETS_PER_URB / 2 else UsbAudioTuning.BASE_PACKETS_PER_URB, format.bInterval)
+        val pacing = IsoPacing.forSpeed(usbSpeed, if (UsbTelemetry.comoDecent) 2 else if (UsbTelemetry.paquetes120) 15 else if (UsbTelemetry.bloquesMitad) UsbAudioTuning.BASE_PACKETS_PER_URB / 2 else UsbAudioTuning.BASE_PACKETS_PER_URB, format.bInterval)
         val packetsPerSecond = pacing.packetsPerSecond
         val packetDurationNs = pacing.packetDurationNs
         val packetsPerUrb = pacing.packetsPerUrb
@@ -502,7 +504,10 @@ internal class UsbIsoStreamEngine(
                             L.w("UsbIsoStreamEngine: stream thread ${-waitNs / 1_000_000L}ms late -- re-anchoring pacing instead of catching up")
                             streamStartNs = System.nanoTime() - pacedNs
                         } else if (waitNs > 0) {
+                            val antesNs = System.nanoTime()
                             Thread.sleep(waitNs / 1_000_000L, (waitNs % 1_000_000L).toInt())
+                            val sobraMs = (System.nanoTime() - antesNs - waitNs) / 1_000_000L
+                            if (sobraMs > peorSuenoMs) peorSuenoMs = sobraMs
                         }
                         val despiertoNs = System.nanoTime()
                         // Cuánto tarde despertó el hilo respecto a cuándo tocaba (con o sin sleep).

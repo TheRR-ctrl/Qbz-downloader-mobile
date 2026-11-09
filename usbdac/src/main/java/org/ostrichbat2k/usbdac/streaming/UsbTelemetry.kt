@@ -71,7 +71,7 @@ object UsbTelemetry {
 
     /**
      * Prueba de arreglo: la forma de envío de decent-player (MIT), probada por su autor en un Galaxy
-     * S26 Ultra: 80 bloques en vuelo de 1 ms (8 paquetes en USB 2.0), ~80 ms de margen. Manda sobre
+     * S26 Ultra: 80 bloques en vuelo de 1 ms (8 paquetes en USB 2.0), ~80 ms de margen. Aquí, 120 bloques de 2 ms (~240 ms): al desbloquear el teléfono el hilo llegó a retrasarse 228-994 ms. Manda sobre
      * «mitad», «120 paquetes» y «más margen».
      */
     @Volatile var comoDecent: Boolean = true

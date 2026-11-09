@@ -164,6 +164,10 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
     private fun build(): ExoPlayer = ExoPlayer.Builder(context, renderers())
         .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), false)
         .setHandleAudioBecomingNoisy(true) // unplugging headphones pauses
+        // Mientras suena, CPU y WiFi despiertas (wake lock + WifiLock). Con el controlador USB directo no hay
+        // AudioTrack que lo haga por nosotros: con la pantalla bloqueada la CPU dormía entre envíos y, al
+        // volver a usar el teléfono, el hilo de envío se retrasaba.
+        .setWakeMode(C.WAKE_MODE_NETWORK)
         .build()
         .also { p -> p.addListener(Events(p)); p.addAnalyticsListener(SinkEvents(p)); watchOutput(p); if (!bitPerfect) announceSession(p.audioSessionId, true) }
 

@@ -4,6 +4,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.activity.compose.BackHandler
@@ -152,13 +154,36 @@ fun HomeScreen(vm: MainViewModel) {
 fun SearchScreen(vm: MainViewModel) {
     val s = LocalStrings.current
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
-        Title(s.search)
-        OutlinedTextField(
-            vm.searchQuery, { vm.searchQuery = it }, singleLine = true, label = { Text(s.searchHint) },
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        // Como Qobuz: una barra de búsqueda redonda arriba y, sin búsqueda en curso, las búsquedas recientes.
+        androidx.compose.material3.TextField(
+            vm.searchQuery, { vm.searchQuery = it }, singleLine = true, placeholder = { Text(s.searchHint) },
+            leadingIcon = { Icon(Icons.Default.Search, null) },
+            trailingIcon = { if (vm.searchQuery.isNotEmpty()) IconButton({ vm.searchQuery = "" }) { Icon(Icons.Default.Close, null) } },
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            shape = RoundedCornerShape(28.dp),
+            colors = androidx.compose.material3.TextFieldDefaults.colors(
+                focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
+                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant, unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             keyboardActions = KeyboardActions(onSearch = { vm.search(vm.searchQuery) }),
         )
+        if (vm.searchQuery.isBlank() && vm.recentSearches.isNotEmpty() && !vm.busy) {
+            Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(s.recentSearches, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                IconButton({ vm.clearRecentSearches() }) { Icon(Icons.Default.Delete, s.recentSearchesClear) }
+            }
+            LazyColumn(contentPadding = PaddingValues(bottom = 16.dp + LocalBottomInset.current)) {
+                items(vm.recentSearches, key = { "r$it" }) { q ->
+                    Row(Modifier.fillMaxWidth().clickable { vm.searchQuery = q; vm.search(q) }.padding(start = 16.dp, end = 4.dp, top = 2.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.History, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.width(14.dp))
+                        Text(q, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                        IconButton({ vm.removeRecentSearch(q) }) { Icon(Icons.Default.Close, null) }
+                    }
+                }
+            }
+            return@Column
+        }
         Row(Modifier.padding(horizontal = 16.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             QChip(vm.searchTab == 0, { vm.searchTab = 0 }, label = { Text(s.searchAlbumsTab(vm.results.size)) })
             QChip(vm.searchTab == 1, { vm.searchTab = 1 }, label = { Text(s.searchSongsTab(vm.trackResults.size)) })
@@ -836,7 +861,7 @@ fun SettingsScreen(vm: MainViewModel) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("Prueba de arreglo: enviar como decent-player", fontSize = 14.sp)
-                        Text("80 bloques de 1 ms en camino (~80 ms de margen), como el reproductor libre decent-player, probado en un Galaxy S26 Ultra. Manda sobre «mitad», «120 paquetes» y «más margen». Aplica desde la siguiente pista.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Muchos bloques cortos en camino (120 de 2 ms, ~240 ms de margen), al estilo del reproductor libre decent-player, probado en un Galaxy S26 Ultra. Manda sobre «mitad», «120 paquetes» y «más margen». Aplica desde la siguiente pista.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Switch(decent, { decent = it; dp.edit().putBoolean("diag_como_decent", it).apply(); org.ostrichbat2k.usbdac.streaming.UsbTelemetry.comoDecent = it })
                 }
