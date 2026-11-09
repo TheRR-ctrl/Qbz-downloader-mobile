@@ -331,6 +331,8 @@ class QobuzApi(val http: OkHttpClient = OkHttpClient()) {
         streamable = t.optBoolean("streamable", true),
         quality = qualityLabel(t, "/"),
         hiRes = isHiRes(t),
+        replayGainDb = t.optJSONObject("audio_info")?.takeIf { it.has("replaygain_track_gain") }?.optDouble("replaygain_track_gain")?.takeIf { !it.isNaN() },
+        replayPeak = t.optJSONObject("audio_info")?.takeIf { it.has("replaygain_track_peak") }?.optDouble("replaygain_track_peak")?.takeIf { !it.isNaN() && it > 0 },
     ).withTagDetails(t)
 
     /** [quality] is what Qobuz says the file is (null when it doesn't say); only used to judge upgrades. */

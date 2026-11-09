@@ -4,6 +4,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.ui.graphics.Color
@@ -365,7 +370,7 @@ fun ArtistScreen(vm: MainViewModel) {
     }
 }
 
-private enum class LibraryView { Tracks, Albums, Artists, Playlists, History }
+private enum class LibraryView { Tracks, Albums, Artists, Playlists, History, Folders }
 
 /** The user's Library, like the web player's: their playlists, favorite albums and favorite tracks. */
 @Composable
@@ -400,12 +405,12 @@ fun LibraryScreen(vm: MainViewModel) {
             )
             Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 LibraryView.entries.forEach { v ->
-                    val label = when (v) { LibraryView.Playlists -> s.playlists; LibraryView.Albums -> s.albums; LibraryView.Tracks -> s.tracksTab; LibraryView.Artists -> s.artistsTab; LibraryView.History -> s.history }
+                    val label = when (v) { LibraryView.Playlists -> s.playlists; LibraryView.Albums -> s.albums; LibraryView.Tracks -> s.tracksTab; LibraryView.Artists -> s.artistsTab; LibraryView.History -> s.history; LibraryView.Folders -> s.localFolders }
                     val n = when (v) { LibraryView.Playlists -> vm.myPlaylists?.size; LibraryView.Albums -> vm.favAlbums?.size; LibraryView.Tracks -> vm.favTracks?.size; LibraryView.Artists -> vm.favArtists?.size; else -> null }
                     QChip(view == v, { view = v }, label = { Text(if (n != null) "$label · $n" else label) })
                 }
             }
-            if (view != LibraryView.History && view != LibraryView.Artists) {
+            if (view != LibraryView.History && view != LibraryView.Artists && view != LibraryView.Folders) {
                 var menu by remember { mutableStateOf(false) }
                 val labels = listOf(s.sortAdded, s.sortTitle, s.sortArtist, s.sortNewest, s.sortOldest)
                 Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -488,10 +493,69 @@ fun LibraryScreen(vm: MainViewModel) {
                     }
                 }
             }
+            LibraryView.Folders -> item { LocalFoldersBrowser(vm, query) }
             LibraryView.History -> {
                 val list = vm.history.filter { hit(it.second.displayTitle, it.second.artist, it.first.title) }
                 if (list.isEmpty()) item { EmptyText(s.nothingHere) }
                 itemsIndexed(list) { i, (album, track) -> TrackRow(vm, album, track.copy(number = i + 1), "${track.artist} • ${album.title}", showCover = true, onPlay = { vm.playList(list, i) }) }
+            }
+        }
+    }
+}
+
+/** Carpetas locales (como UAPP): las carpetas elegidas, navegar por ellas y reproducir sus archivos. */
+@Composable
+private fun LocalFoldersBrowser(vm: MainViewModel, query: String) {
+    val s = LocalStrings.current
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    var tree by remember { mutableStateOf<String?>(null) }
+    val path = remember { androidx.compose.runtime.mutableStateListOf<Pair<String, String>>() } // (docId, nombre)
+    var entries by remember { mutableStateOf<List<LocalMusic.Entry>?>(null) }
+    LaunchedEffect(tree, path.size) {
+        val t = tree ?: return@LaunchedEffect
+        entries = null
+        entries = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching { LocalMusic.list(ctx, android.net.Uri.parse(t), path.lastOrNull()?.first) }.getOrDefault(emptyList())
+        }
+    }
+    androidx.activity.compose.BackHandler(tree != null) { if (path.isNotEmpty()) path.removeAt(path.lastIndex) else tree = null }
+    Column(Modifier.fillMaxWidth()) {
+        val t = tree
+        if (t == null) {
+            vm.localRoots.forEach { root ->
+                val name = LocalMusic.rootName(android.net.Uri.parse(root))
+                Row(Modifier.fillMaxWidth().clickable { tree = root; path.clear() }.padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Folder, null, tint = QobuzGold, modifier = Modifier.size(32.dp))
+                    Spacer(Modifier.width(14.dp))
+                    Text(name, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                    IconButton({ vm.removeLocalRoot(root) }) { Icon(Icons.Default.Close, s.localFolderRemove) }
+                }
+            }
+            TextButton({ vm.chooseLocalFolder() }, Modifier.padding(horizontal = 8.dp)) { Icon(Icons.Default.Add, null); Spacer(Modifier.width(6.dp)); Text(s.localFolderAdd) }
+            if (vm.localRoots.isEmpty()) EmptyText(s.localFoldersEmpty)
+            return@Column
+        }
+        val title = path.lastOrNull()?.second ?: LocalMusic.rootName(android.net.Uri.parse(t))
+        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton({ if (path.isNotEmpty()) path.removeAt(path.lastIndex) else tree = null }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, s.back) }
+            Text(title, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        val list = entries
+        if (list == null) { LinearProgressIndicator(Modifier.fillMaxWidth().padding(16.dp)); return@Column }
+        val shown = list.filter { query.isBlank() || it.name.contains(query.trim(), ignoreCase = true) }
+        val audio = shown.filter { !it.isDir }
+        if (shown.isEmpty()) EmptyText(s.nothingHere)
+        if (audio.isNotEmpty()) TextButton({ vm.playLocal(audio, title, 0) }, Modifier.padding(horizontal = 8.dp)) {
+            Icon(Icons.Default.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text(s.localPlayAll(audio.size))
+        }
+        shown.forEach { e ->
+            Row(Modifier.fillMaxWidth().clickable {
+                if (e.isDir) path.add(e.docId to e.name) else vm.playLocal(audio, title, audio.indexOf(e))
+            }.padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(if (e.isDir) Icons.Default.Folder else Icons.Default.MusicNote, null,
+                    tint = if (e.isDir) QobuzGold else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(28.dp))
+                Spacer(Modifier.width(14.dp))
+                Text(e.name, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             }
         }
     }
@@ -738,6 +802,14 @@ fun SettingsScreen(vm: MainViewModel) {
                 CROSSFADE_OPTIONS_MS.forEach { ms ->
                     QChip(vm.crossfadeMs == ms, { vm.updateCrossfade(ms) }, label = { Text(if (ms == 0) s.crossfadeOff else s.seconds(ms / 1000)) })
                 }
+            }
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("ReplayGain", fontWeight = FontWeight.Medium)
+                    Text("Iguala el volumen entre canciones con la ganancia que Qobuz da para cada pista, sin recortar los picos. Mientras esté encendido, la señal deja de ser bit-perfect. Por el mezclador de Android solo puede bajar el volumen; por USB directo también lo sube.",
+                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(vm.replayGain, { vm.updateReplayGain(it) })
             }
             LaunchedEffect(Unit) { vm.refreshBitPerfect() }
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {

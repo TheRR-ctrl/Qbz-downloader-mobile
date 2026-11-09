@@ -123,6 +123,37 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val knownFolder = KnownFolder(app, prefs)
     var knownName by mutableStateOf(knownFolder.name); private set
     var pickKnown by mutableStateOf(false)
+
+    // Carpetas locales: los árboles elegidos (persisten) y qué archivo corresponde a cada id negativo de pista local.
+    var pickLocal by mutableStateOf(false)
+    var localRoots by mutableStateOf(prefs.getString("local_roots", "").orEmpty().split('\n').filter { it.isNotBlank() }); private set
+    private val localUris = HashMap<Long, String>().apply {
+        runCatching { org.json.JSONObject(prefs.getString("local_map", "{}")!!).let { o -> o.keys().forEach { k -> put(k.toLong(), o.getString(k)) } } }
+    }
+
+    fun chooseLocalFolder() { pickLocal = true }
+
+    fun onLocalPicked(uri: Uri) {
+        runCatching { getApplication<Application>().contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+        localRoots = (localRoots + uri.toString()).distinct()
+        prefs.edit().putString("local_roots", localRoots.joinToString("\n")).apply()
+    }
+
+    fun removeLocalRoot(uri: String) {
+        runCatching { getApplication<Application>().contentResolver.releasePersistableUriPermission(Uri.parse(uri), android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+        localRoots = localRoots - uri
+        prefs.edit().putString("local_roots", localRoots.joinToString("\n")).apply()
+    }
+
+    /** Reproduce los archivos de audio de una carpeta desde [start], leyendo sus etiquetas. */
+    fun playLocal(files: List<LocalMusic.Entry>, folder: String, start: Int) {
+        viewModelScope.launch {
+            val items = withContext(Dispatchers.IO) { files.mapIndexed { i, e -> LocalMusic.toItem(getApplication(), e, folder, i) } }
+            files.forEachIndexed { i, e -> localUris[items[i].second.id] = e.uri.toString() }
+            prefs.edit().putString("local_map", org.json.JSONObject(localUris.entries.toList().takeLast(2000).associate { it.key.toString() to it.value }).toString()).apply()
+            playList(items, start)
+        }
+    }
     fun chooseKnownFolder() { pickKnown = true }
     fun onKnownPicked(uri: android.net.Uri) {
         runCatching { knownFolder.save(uri) }.onFailure { error = it.message; return }
@@ -393,6 +424,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** The heart of the player: adds or removes the song in Qobuz, showing the change at once and undoing it if Qobuz refuses. */
     fun toggleFavorite(album: Album, track: Track) {
+        if (track.id < 0) return
         val before = favTracks.orEmpty()
         val adding = before.none { it.second.id == track.id }
         favTracks = if (adding) listOf(album to track) + before else before.filter { it.second.id != track.id }
@@ -1715,7 +1747,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun openAlbum(id: String) = run { detail = api.getAlbum(id) }
+    fun openAlbum(id: String) { if (id.startsWith("local:")) return; run { detail = api.getAlbum(id) } }
 
     /** Covers for playlist mosaics, loaded a few at a time for the playlists whose list entry had only one. */
     val playlistCovers = androidx.compose.runtime.mutableStateMapOf<String, List<String>>()
@@ -1984,6 +2016,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Address and quality to play a track from: the downloaded file when there is one that is good enough, else Qobuz. */
     private fun resolve(trackId: Long): Pair<String, AudioQuality?> {
+        if (trackId < 0) return (localUris[trackId] ?: throw IllegalStateException("Ese archivo local ya no está disponible")) to null
         val local = downloads.tasks.firstOrNull { it.track.id == trackId && it.status == TaskStatus.COMPLETED && it.quality.formatId >= playFormat() && it.savedUri != null }?.savedUri
         if (local != null && runCatching { context.contentResolver.openInputStream(Uri.parse(local))?.close() ?: error("") }.isSuccess) return local to null
         val used = api.appSecret
@@ -2156,7 +2189,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val item = playQueue.current ?: return
         restoredPosMs = -1L
         playJob?.cancel(); prefetchJob?.cancel(); prefetched = null
-        nowPlaying = item; nowQuality = null; refreshQueue()
+        nowPlaying = item; nowQuality = null; refreshQueue(); applyReplayGain(item.second)
         syncNotification()
         playJob = viewModelScope.launch {
             try {
@@ -2190,7 +2223,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         // The queue was edited while the next track was already loading: what plays isn't what the queue says.
         if (ready == null) { playCurrent(); return }
         prefetched = null
-        nowPlaying = item; nowQuality = ready?.second; refreshQueue()
+        nowPlaying = item; nowQuality = ready?.second; refreshQueue(); applyReplayGain(item.second)
         recordHistory(item); saveQueue()
         syncNotification()
         startPrefetch()
@@ -2294,6 +2327,23 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (engineDelegate.isInitialized()) { engine.bitPerfect = on; resetNext() }
         // The song that is playing was made under the old setting: start it again at the same spot.
         if (playQueue.current != null && restoredPosMs < 0 && isPlaying) playCurrent(if (engineDelegate.isInitialized()) engine.position else 0L)
+    }
+
+    /** ReplayGain (como UAPP): iguala el volumen entre canciones con la ganancia que Qobuz da por pista. Apagado de fábrica: con él la señal deja de ser bit-perfect. */
+    var replayGain by mutableStateOf(prefs.getBoolean("replay_gain", false)); private set
+
+    fun updateReplayGain(on: Boolean) {
+        replayGain = on; prefs.edit().putBoolean("replay_gain", on).apply()
+        nowPlaying?.let { applyReplayGain(it.second) }
+    }
+
+    /** Lineal: 10^(dB/20), sin pasar de 1/pico para no recortar. En el mezclador de Android solo puede bajar (ExoPlayer no sube de 1). */
+    private fun applyReplayGain(track: Track) {
+        val g = track.replayGainDb
+        val lin = if (!replayGain || g == null) 1f
+            else Math.pow(10.0, g / 20.0).coerceAtMost(track.replayPeak?.let { 1.0 / it } ?: 1.0).toFloat()
+        org.ostrichbat2k.usbdac.streaming.UsbTelemetry.gananciaReplay = lin
+        if (engineDelegate.isInitialized()) engine.gain = lin.coerceAtMost(1f)
     }
 
     fun updateCrossfade(ms: Int) {

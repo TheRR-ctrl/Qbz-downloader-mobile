@@ -92,4 +92,7 @@ object UsbTelemetry {
      * convertir a entero, como el volumen por software de UAPP.
      */
     @Volatile var volumenSoftware: Float = 1f
+
+    /** Ganancia de ReplayGain de la pista actual (lineal, hasta 1/pico); 1 = sin tocar. La pone la app al cambiar de pista. */
+    @Volatile var gananciaReplay: Float = 1f
 }

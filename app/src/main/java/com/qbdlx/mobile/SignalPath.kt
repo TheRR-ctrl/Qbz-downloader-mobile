@@ -78,6 +78,10 @@ fun signalPath(context: Context, vm: MainViewModel): List<SignalStep> {
             else -> SignalState.Intacta
         })
 
+    val rg = org.ostrichbat2k.usbdac.streaming.UsbTelemetry.gananciaReplay
+    if (vm.replayGain && rg != 1f) steps += SignalStep("ReplayGain", "%+.1f dB para igualar el volumen".format(java.util.Locale.ROOT, 20 * kotlin.math.log10(rg.toDouble())), SignalState.Cambiada)
+    val vs = org.ostrichbat2k.usbdac.streaming.UsbTelemetry.volumenSoftware
+    if (vs < 0.999f) steps += SignalStep("Volumen digital", "${(vs * 100).toInt()} %", SignalState.Cambiada)
     val route = if (UsbDirect.prefs(context).enabled) UsbDirect.managerOrNull(context)?.playbackRoute?.value else null
     when (route) {
         is UsbAudioManager.PlaybackRoute.Direct -> {

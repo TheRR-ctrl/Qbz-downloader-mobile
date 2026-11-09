@@ -77,6 +77,10 @@ class MainActivity : ComponentActivity() {
         if (uri != null) vm.onKnownPicked(uri)
     }
 
+    private val localPicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) vm.onLocalPicked(uri)
+    }
+
     private val folderPicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) vm.onFolderPicked(uri)
     }
@@ -133,6 +137,9 @@ class MainActivity : ComponentActivity() {
                     vm.openListenerSettings = false
                     runCatching { startActivity(android.content.Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
                 }
+            }
+            LaunchedEffect(vm.pickLocal) {
+                if (vm.pickLocal) { vm.pickLocal = false; localPicker.launch(null) }
             }
             LaunchedEffect(vm.pickKnown) {
                 if (vm.pickKnown) { vm.pickKnown = false; knownPicker.launch(null) }

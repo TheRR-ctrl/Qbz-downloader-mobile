@@ -305,11 +305,15 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
         dropFocus(); output.clear()
     }
 
+    /** Ganancia de ReplayGain (0..1) para el mezclador de Android; el controlador USB usa UsbTelemetry.gananciaReplay. */
+    var gain = 1f
+        set(v) { field = v.coerceIn(0f, 1f); if (!fading) active.volume = field }
+
     private fun resetAll() {
         fading = false
         nextUrl = null
         idle?.let { it.stop(); it.clearMediaItems(); it.volume = 0f }
-        active.stop(); active.clearMediaItems(); active.volume = 1f
+        active.stop(); active.clearMediaItems(); active.volume = gain
     }
 
     private fun tick() {
@@ -317,7 +321,7 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
         if (fading) {
             val progress = if (fadeLenMs > 0) next.currentPosition.toDouble() / fadeLenMs else 1.0
             val (out, inn) = fadeGains(progress)
-            active.volume = out; next.volume = inn
+            active.volume = out * gain; next.volume = inn * gain
             if (progress >= 1.0 || next.playbackState == Player.STATE_ENDED) finishFade()
         } else if (crossfading && nextUrl != null && active.isPlaying && next.playbackState == Player.STATE_READY &&
             shouldStartFade(active.currentPosition, active.duration.takeIf { it > 0 } ?: -1, fadeMs)
@@ -341,7 +345,7 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
         active = incoming
         idle = old
         old.stop(); old.clearMediaItems(); old.volume = 1f
-        active.volume = 1f
+        active.volume = gain
         active.repeatMode = if (repeatOne) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
         if (!active.isPlaying) active.play()
         nextUrl = null

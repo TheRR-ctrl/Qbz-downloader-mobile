@@ -48,6 +48,11 @@ interface Strings {
     val searchLibrary: String
     val recentSearches: String
     val recentSearchesClear: String
+    val localFolders: String
+    val localFolderAdd: String
+    val localFolderRemove: String
+    val localFoldersEmpty: String
+    fun localPlayAll(n: Int): String
     val sortAdded: String
     val sortTitle: String
     val sortArtist: String
@@ -533,6 +538,11 @@ object English : Strings {
     override val searchLibrary = "Search your library"
     override val recentSearches = "Recent searches"
     override val recentSearchesClear = "Clear recent searches"
+    override val localFolders = "Folders"
+    override val localFolderAdd = "Add a folder from this phone"
+    override val localFolderRemove = "Remove folder"
+    override val localFoldersEmpty = "Add a folder with your music to play its files here."
+    override fun localPlayAll(n: Int) = "Play all ($n)"
     override val sortAdded = "As added"
     override val sortTitle = "Title A–Z"
     override val sortArtist = "Artist A–Z"
@@ -1052,6 +1062,11 @@ object Spanish : Strings {
     override val searchLibrary = "Buscar en tu biblioteca"
     override val recentSearches = "Búsquedas recientes"
     override val recentSearchesClear = "Borrar búsquedas recientes"
+    override val localFolders = "Carpetas"
+    override val localFolderAdd = "Añadir una carpeta del teléfono"
+    override val localFolderRemove = "Quitar carpeta"
+    override val localFoldersEmpty = "Añade una carpeta con tu música para reproducir sus archivos aquí."
+    override fun localPlayAll(n: Int) = "Reproducir todo ($n)"
     override val sortAdded = "Como se agregaron"
     override val sortTitle = "Título A–Z"
     override val sortArtist = "Artista A–Z"
