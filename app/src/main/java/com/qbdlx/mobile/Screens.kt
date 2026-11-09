@@ -741,6 +741,17 @@ fun SettingsScreen(vm: MainViewModel) {
                     Switch(p120, { p120 = it; dp.edit().putBoolean("diag_paquetes_120", it).apply(); org.ostrichbat2k.usbdac.streaming.UsbTelemetry.paquetes120 = it })
                 }
             }
+            run {
+                val dp = ctx.getSharedPreferences("qbdlx", 0)
+                var reabrir by remember { mutableStateOf(dp.getBoolean("diag_reabrir_255", false)) }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Prueba de arreglo: reabrir el envío antes del bloque 255", fontSize = 14.sp)
+                        Text("Los cortes caen siempre en el bloque nº 255, 510, 765… Cada ~4 s, justo antes, deja terminar los bloques en vuelo y reinicia la conexión de audio del DAC sin perder nada del búfer. Puede oírse un clic breve cada ~4 s: dime si se oye. Necesita «sin lectura de feedback». Aplica desde la siguiente pista.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(reabrir, { reabrir = it; dp.edit().putBoolean("diag_reabrir_255", it).apply(); org.ostrichbat2k.usbdac.streaming.UsbTelemetry.reabrirAntes255 = it })
+                }
+            }
             TextButton(onClick = { diag = diagnoseUsb(ctx) + (if (usbOn) "\n\n== libusbdac ==\n" + (UsbDirect.managerOrNull(ctx)?.diagnosticLog?.value?.joinToString("\n") ?: UsbDirect.failure.orEmpty()) else "") + java.io.File(ctx.filesDir, QbdlxApp.CRASH_FILE).takeIf { it.exists() }?.let { "\n\n== Último cierre inesperado ==\n" + it.readText().take(3000) }.orEmpty() + "\n\n== Sesión anterior (registro por segundo) ==\n" + DiagnosticLog.previousSession(ctx) + "\n\n== Reproducción (últimos eventos) ==\n" + PlaybackLog.read(ctx).ifEmpty { "(nada todavía)" } }, Modifier.padding(horizontal = 8.dp)) { Text(s.usbDiagButton) }
             diag?.let { txt ->
                 val clip = LocalClipboardManager.current

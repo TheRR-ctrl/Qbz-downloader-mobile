@@ -53,6 +53,8 @@ internal class UsbIsoStreamEngine(
     private val nativeBridge: UsbNativeBridge = UsbNativeBridgeImpl,
 ) {
     private companion object {
+        /** Bloques de margen antes de cada múltiplo de 255 (cubre también los dos cortes medidos con resto 2). */
+        const val MARGEN_REAPERTURA = 8L
         // factor(i) = 1.0 - (i+1)/UsbAudioTuning.UNDERRUN_FADE_FRAMES for the common case where a short read's
         // fade window is the full UsbAudioTuning.UNDERRUN_FADE_FRAMES (true whenever the read has at least that
         // many real frames in it, the overwhelming majority of underruns) -- computed once here
@@ -66,6 +68,13 @@ internal class UsbIsoStreamEngine(
     }
 
     private val frameBytes = channels * format.subslotSize
+
+    /** alt 0 y de vuelta al alt de la pista en la misma conexión (sin soltar la interfaz ni tocar el reloj). */
+    private fun reiniciarAlt(): Boolean {
+        val alt0 = session.streamingAltSettings[0] ?: return false
+        val altPista = session.streamingAltSettings[format.alternateSetting] ?: return false
+        return runCatching { session.connection.setInterface(alt0) && session.connection.setInterface(altPista) }.getOrDefault(false)
+    }
 
     private var isoHandle = 0L
     private var streamThread: Thread? = null
@@ -96,6 +105,13 @@ internal class UsbIsoStreamEngine(
     @Volatile var desvioEnvioMs: Long = 0L
     @Volatile var urbsEnviados: Long = 0L
     @Volatile var paquetesPorBloque: Int = 0
+    /** Reaperturas hechas por [UsbTelemetry.reabrirAntes255] en esta salida, y lo que tardó la última. */
+    @Volatile var rotaciones: Int = 0
+    @Volatile var rotacionUltimaMs: Long = -1L
+    @Volatile var rotacionMaxMs: Long = -1L
+    @Volatile var rotacionFallos: Int = 0
+    /** Bloques enviados (contando los iniciales) desde el último arranque o reapertura: el número que importa para 255·n. */
+    @Volatile var bloquesDesdeReapertura: Long = 0L
 
     /** Resumen de ritmo para los informes: lo que pide el DAC frente a lo que enviamos. */
     @Volatile var reapErroresVista = 0
@@ -125,7 +141,7 @@ internal class UsbIsoStreamEngine(
     fun resumenRitmo(): String =
         "nominal=${sampleRateHz}Hz · feedback del DAC=" +
             (if (feedbackCount == 0) "sin datos [hilo=$feedbackHilo, bloques=$feedbackUrbs, vacíos=$feedbackVacios, rechazados=$feedbackRechazados, errores=$feedbackErrores, último=$feedbackUltimoCrudo]" else "${feedbackHz}Hz (min ${feedbackMinHz}, max ${feedbackMaxHz}, $feedbackCount lecturas)") +
-            " · desvío del envío=${desvioEnvioMs}ms · bloques enviados=$urbsEnviados (+${UsbAudioTuning.NUM_URBS} iniciales, $paquetesPorBloque paquetes/bloque; sinPista=${UsbTelemetry.sinPistaSilenciosa} mitad=${UsbTelemetry.bloquesMitad} p120=${UsbTelemetry.paquetes120})" +
+            " · desvío del envío=${desvioEnvioMs}ms · bloques enviados=$urbsEnviados (+${UsbAudioTuning.NUM_URBS} iniciales, $paquetesPorBloque paquetes/bloque; sinPista=${UsbTelemetry.sinPistaSilenciosa} mitad=${UsbTelemetry.bloquesMitad} p120=${UsbTelemetry.paquetes120} reabrir=${UsbTelemetry.reabrirAntes255}; desde la última reapertura=$bloquesDesdeReapertura con iniciales; reaperturas=$rotaciones (última ${rotacionUltimaMs}ms, máx ${rotacionMaxMs}ms, fallos $rotacionFallos))" +
             " · paquetes con error=$paquetesMalos (bytes cortos=$bytesCortos, último estado=$ultimoEstadoMalo) · errores de reap=$reapErroresVista"
 
     /** Instante (nanoTime) en que empezó el reapIso en curso; 0 si el hilo no está esperando uno. */
@@ -189,6 +205,8 @@ internal class UsbIsoStreamEngine(
         feedbackUltimoCrudo = "-"; feedbackHilo = "no arrancó"
         feedbackHz = 0; feedbackMinHz = 0; feedbackMaxHz = 0; feedbackCount = 0
         desvioEnvioMs = 0L; urbsEnviados = 0L
+        rotaciones = 0; rotacionUltimaMs = -1L; rotacionMaxMs = -1L; rotacionFallos = 0
+        bloquesDesdeReapertura = UsbAudioTuning.NUM_URBS.toLong()
         val usbSpeed = nativeBridge.getUsbSpeed(fd)
         val speedName =
             when (usbSpeed) {
@@ -442,6 +460,56 @@ internal class UsbIsoStreamEngine(
                             Thread.sleep(waitNs / 1_000_000L, (waitNs % 1_000_000L).toInt())
                         }
 
+                        // Prueba de arreglo (UsbTelemetry.reabrirAntes255): el bloque que se enviaría ahora
+                        // sería el nº bloquesDesdeReapertura+1. Si eso llega a menos de MARGEN de un múltiplo
+                        // de 255, se vacía lo que queda en vuelo y se reinicia el alt antes de seguir.
+                        if (UsbTelemetry.reabrirAntes255 && UsbTelemetry.sinFeedback &&
+                            (bloquesDesdeReapertura + 1) % 255L >= 255L - MARGEN_REAPERTURA) {
+                            val t0 = System.nanoTime()
+                            // Este slot ya se recogió y no se reenvía: quedan NUM_URBS-1 en vuelo.
+                            var enVuelo = UsbAudioTuning.NUM_URBS - 1
+                            var ok = true
+                            while (enVuelo > 0 && streaming) {
+                                val s2 = nativeBridge.reapIso(handle)
+                                marca("R$s2/v")
+                                if (s2 < 0) { ok = false; break }
+                                if (slotCreditable[s2]) framesOutput += slotFrames[s2]
+                                slotCreditable[s2] = false
+                                enVuelo--
+                            }
+                            if (!streaming) break
+                            if (ok) ok = reiniciarAlt()
+                            if (!ok) {
+                                rotacionFallos++
+                                L.e("UsbIsoStreamEngine: la reapertura antes del bloque 255·n falló -- se para el hilo")
+                                break
+                            }
+                            bloquesDesdeReapertura = 0L
+                            // Vuelve a llenar los NUM_URBS slots como al arrancar.
+                            var llenos = 0
+                            for (sl in 0 until UsbAudioTuning.NUM_URBS) {
+                                val tot = buildUrb()
+                                if (nativeBridge.submitIso(handle, sl, urbBuffer, packetLengths) ||
+                                    nativeBridge.submitIso(handle, sl, urbBuffer, packetLengths)) {
+                                    marca("S$sl")
+                                    slotFrames[sl] = (tot / frameBytes).toLong()
+                                    slotCreditable[sl] = !paused()
+                                    bloquesDesdeReapertura++
+                                    llenos++
+                                } else marca("X$sl")
+                            }
+                            val ms = (System.nanoTime() - t0) / 1_000_000L
+                            rotaciones++
+                            rotacionUltimaMs = ms
+                            if (ms > rotacionMaxMs) rotacionMaxMs = ms
+                            marca("ALT/${ms}")
+                            if (llenos == 0) { rotacionFallos++; break }
+                            // El tiempo del vaciado no es retraso: se re-ancla el ritmo.
+                            streamStartNs = System.nanoTime() - urbsPaced * urbRealTimeNs
+                            lastUrbSubmittedAtMs = System.currentTimeMillis()
+                            continue
+                        }
+
                         val total = buildUrb()
                         // Retry once immediately before giving up on this slot -- see #59: unlike
                         // every other slot, which keeps cycling through reapIso() even after a
@@ -462,6 +530,7 @@ internal class UsbIsoStreamEngine(
                         }
                         marca("S$slot")
                         submitted++
+                        bloquesDesdeReapertura++
                         urbsEnviados = submitted.toLong()
                         desvioEnvioMs = (urbsPaced * urbRealTimeNs - (System.nanoTime() - streamStartNs)) / 1_000_000L
                         lastUrbSubmittedAtMs = System.currentTimeMillis()
@@ -534,7 +603,7 @@ internal class UsbIsoStreamEngine(
     private fun startFeedbackThreadIfApplicable(fd: Int, scheduler: IsoPacketScheduler) {
         val feedback = format.feedbackEndpoint
         if (format.syncType != SyncType.ASYNC || feedback == null) return
-        if (UsbTelemetry.sinFeedback) {
+        if (UsbTelemetry.sinFeedback || UsbTelemetry.reabrirAntes255) {
             feedbackHilo = "desactivado (diagnóstico)"
             L.w("UsbIsoStreamEngine: feedback desactivado por el interruptor de diagnóstico")
             return

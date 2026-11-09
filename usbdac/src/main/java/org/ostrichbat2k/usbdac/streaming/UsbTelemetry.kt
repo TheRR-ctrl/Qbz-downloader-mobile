@@ -41,4 +41,15 @@ object UsbTelemetry {
      * Tiene prioridad sobre [bloquesMitad].
      */
     @Volatile var paquetes120: Boolean = false
+
+    /**
+     * Prueba de arreglo: antes de que el número total de bloques enviados (contando los iniciales)
+     * llegue a un múltiplo de 255 -- medido: ahí caen todos los cuelgues --, el hilo deja de enviar,
+     * espera a que terminen los bloques en vuelo (sin cancelarlos ni perder audio del búfer), pasa la
+     * interfaz a alt 0 y de vuelta al alt de la pista, y sigue. No toca la reclamación ni el reloj.
+     * Supone que el cambio de alt reinicia lo que cuenta hasta 255 (la reactivación completa sí lo
+     * reinicia; esto no está comprobado). Obliga a «sin feedback»: con el hilo del feedback, un reap
+     * podría devolver un bloque suyo en medio del vaciado.
+     */
+    @Volatile var reabrirAntes255: Boolean = false
 }
