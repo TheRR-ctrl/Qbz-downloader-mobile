@@ -675,15 +675,18 @@ fun SettingsScreen(vm: MainViewModel) {
                     Text(s.usbDirectTitle, fontWeight = FontWeight.Medium)
                     Text(s.usbDirectDesc, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (usbOn) {
-                        val mgr = remember { UsbDirect.manager(ctx) }
-                        val route by mgr.playbackRoute.collectAsState()
-                        val devs by mgr.devices.collectAsState()
-                        Text(if (devs.isEmpty()) s.usbDirectNoDevice else devs.joinToString { it.displayName } + " · " + route, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                        val mgr = remember { UsbDirect.managerOrNull(ctx) }
+                        if (mgr == null) Text(UsbDirect.failure?.lineSequence()?.firstOrNull().orEmpty(), fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                        else {
+                            val route by mgr.playbackRoute.collectAsState()
+                            val devs by mgr.devices.collectAsState()
+                            Text(if (devs.isEmpty()) s.usbDirectNoDevice else devs.joinToString { it.displayName } + " · " + route, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                        }
                     }
                 }
-                Switch(usbOn, { usbOn = it; UsbDirect.prefs(ctx).set(it); if (it) UsbDirect.manager(ctx).triggerActivation(); vm.updateUsbDirect(it) })
+                Switch(usbOn, { usbOn = it; UsbDirect.prefs(ctx).set(it); if (it) UsbDirect.managerOrNull(ctx)?.triggerActivation(); vm.updateUsbDirect(it) })
             }
-            TextButton(onClick = { diag = diagnoseUsb(ctx) + (if (usbOn) "\n\n== libusbdac ==\n" + UsbDirect.manager(ctx).diagnosticLog.value.joinToString("\n") else "") }, Modifier.padding(horizontal = 8.dp)) { Text(s.usbDiagButton) }
+            TextButton(onClick = { diag = diagnoseUsb(ctx) + (if (usbOn) "\n\n== libusbdac ==\n" + (UsbDirect.managerOrNull(ctx)?.diagnosticLog?.value?.joinToString("\n") ?: UsbDirect.failure.orEmpty()) else "") + java.io.File(ctx.filesDir, QbdlxApp.CRASH_FILE).takeIf { it.exists() }?.let { "\n\n== Último cierre inesperado ==\n" + it.readText().take(3000) }.orEmpty() }, Modifier.padding(horizontal = 8.dp)) { Text(s.usbDiagButton) }
             diag?.let { txt ->
                 val clip = LocalClipboardManager.current
                 AlertDialog(

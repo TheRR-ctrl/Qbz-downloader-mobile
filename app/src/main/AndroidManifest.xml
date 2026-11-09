@@ -45,6 +45,13 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- A USB DAC was plugged in: Android asks "open QBDLX to manage it?" and, once accepted, grants the USB permission. -->
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
+                android:resource="@xml/usb_device_filter" />
         </activity>
 
         <!-- Also the media browser Android Auto binds to: it lists the recently played songs and shows the player. -->

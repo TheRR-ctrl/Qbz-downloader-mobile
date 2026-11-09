@@ -42,8 +42,20 @@ object UsbDirect {
     fun prefs(context: Context): UsbDirectPrefs =
         prefsRef ?: synchronized(this) { prefsRef ?: UsbDirectPrefs(context.applicationContext).also { prefsRef = it } }
 
-    fun manager(context: Context): UsbAudioManager =
+    /** Null when the driver could not start: the app then plays through the normal path instead of crashing. */
+    fun managerOrNull(context: Context): UsbAudioManager? =
         managerRef ?: synchronized(this) {
-            managerRef ?: UsbAudioManagerImpl(context.applicationContext, prefs(context)).also { it.start(); managerRef = it }
+            managerRef ?: try {
+                UsbAudioManagerImpl(context.applicationContext, prefs(context)).also { it.start(); managerRef = it }
+            } catch (t: Throwable) {
+                failure = android.util.Log.getStackTraceString(t)
+                runCatching { java.io.File(context.filesDir, "usb-driver-error.txt").writeText(failure!!) }
+                null
+            }
         }
+
+    fun manager(context: Context): UsbAudioManager = managerOrNull(context)!!
+
+    /** Why the driver did not start, if it did not. */
+    @Volatile var failure: String? = null
 }

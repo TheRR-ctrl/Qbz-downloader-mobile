@@ -100,7 +100,7 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
                 }
                 AudioManager.AUDIOFOCUS_LOSS -> {
                     resumeOnGain = false; active.pause(); if (fading) idle?.pause()
-                    if (UsbDirect.prefs(context).enabled) UsbDirect.manager(context).releaseClaim(delayMs = 0)
+                    if (UsbDirect.prefs(context).enabled) UsbDirect.managerOrNull(context)?.releaseClaim(delayMs = 0)
                     audioManager.abandonAudioFocusRequest(focusRequest)
                 }
             }
@@ -126,10 +126,11 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
     @androidx.annotation.OptIn(UnstableApi::class)
     private val renderers = object : androidx.media3.exoplayer.DefaultRenderersFactory(context) {
         override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): AudioSink =
-            org.ostrichbat2k.usbdac.streaming.RoutingAudioSink(
-                UsbDirect.manager(context),
-                super.buildAudioSink(context, enableFloatOutput, enableAudioTrackPlaybackParams)!!,
-            )
+            super.buildAudioSink(context, enableFloatOutput, enableAudioTrackPlaybackParams)!!.let { normal ->
+                // Only wrap when the user turned the driver on; a failure to start it never takes the app down.
+                val usb = if (UsbDirect.prefs(context).enabled) UsbDirect.managerOrNull(context) else null
+                if (usb == null) normal else org.ostrichbat2k.usbdac.streaming.RoutingAudioSink(usb, normal)
+            }
     }
 
     @androidx.annotation.OptIn(UnstableApi::class)
