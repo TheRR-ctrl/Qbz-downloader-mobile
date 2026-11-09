@@ -102,6 +102,25 @@ internal class UsbIsoStreamEngine(
     @Volatile var bytesCortos = 0L
     @Volatile var ultimoEstadoMalo = 0L
 
+    // Línea de tiempo de los últimos bloques: S = enviado, R = devuelto por el DAC (con lo que tardó el reap).
+    private val lineaT = arrayOfNulls<String>(120)
+    private var lineaN = 0L
+    private val lineaT0 = System.nanoTime()
+
+    @Synchronized fun marca(evento: String) {
+        val ms = (System.nanoTime() - lineaT0) / 1_000_000L
+        lineaT[(lineaN % lineaT.size).toInt()] = "$ms:$evento"
+        lineaN++
+    }
+
+    /** Los últimos [n] eventos, del más viejo al más nuevo. */
+    @Synchronized fun lineaDeTiempo(n: Int = 40): String {
+        val total = minOf(lineaN, lineaT.size.toLong(), n.toLong()).toInt()
+        val sb = StringBuilder()
+        for (i in total downTo 1) sb.append(lineaT[((lineaN - i) % lineaT.size).toInt()]).append(' ')
+        return "ms desde el arranque del hilo [S=enviado slot, R=devuelto slot/espera ms, X=fallo]: $sb"
+    }
+
     fun resumenRitmo(): String =
         "nominal=${sampleRateHz}Hz · feedback del DAC=" +
             (if (feedbackCount == 0) "sin datos [hilo=$feedbackHilo, bloques=$feedbackUrbs, vacíos=$feedbackVacios, rechazados=$feedbackRechazados, errores=$feedbackErrores, último=$feedbackUltimoCrudo]" else "${feedbackHz}Hz (min ${feedbackMinHz}, max ${feedbackMaxHz}, $feedbackCount lecturas)") +
@@ -338,6 +357,7 @@ internal class UsbIsoStreamEngine(
                         val ok =
                             nativeBridge.submitIso(handle, slot, urbBuffer, packetLengths) ||
                                 nativeBridge.submitIso(handle, slot, urbBuffer, packetLengths)
+                        marca(if (ok) "S$slot" else "X$slot")
                         if (!ok) {
                             L.e(
                                 "UsbIsoStreamEngine: initial submitIso failed twice for slot $slot " +
@@ -378,6 +398,7 @@ internal class UsbIsoStreamEngine(
                         reapStartedAtNs = 0L
                         val reapMs = (System.nanoTime() - reapStartNs) / 1_000_000L
                         if (reapMs > longestReapMs) longestReapMs = reapMs
+                        marca("R$slot/${reapMs}")
                         if (!streaming) break
                         if (slot < 0) {
                             reapErrors++
@@ -437,6 +458,7 @@ internal class UsbIsoStreamEngine(
                                     "$slot -- stopping the streaming thread")
                             break
                         }
+                        marca("S$slot")
                         submitted++
                         urbsEnviados = submitted.toLong()
                         desvioEnvioMs = (urbsPaced * urbRealTimeNs - (System.nanoTime() - streamStartNs)) / 1_000_000L

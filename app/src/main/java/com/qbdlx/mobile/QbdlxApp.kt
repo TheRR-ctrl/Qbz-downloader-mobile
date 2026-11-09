@@ -19,6 +19,7 @@ class QbdlxApp : Application(), ViewModelStoreOwner, coil.ImageLoaderFactory {
         super.onCreate()
         DefaultFolder.init(this)
         DiagnosticLog.start(this)
+        org.ostrichbat2k.usbdac.streaming.UsbTelemetry.sinRecuperacionAutomatica = getSharedPreferences("qbdlx", 0).getBoolean("diag_sin_recuperacion", false)
         // Keep the last crash, so it can be shared from Settings and the cause found.
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { t, e ->

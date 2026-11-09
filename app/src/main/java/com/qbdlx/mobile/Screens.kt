@@ -686,6 +686,17 @@ fun SettingsScreen(vm: MainViewModel) {
                 }
                 Switch(usbOn, { usbOn = it; UsbDirect.prefs(ctx).set(it); if (it) UsbDirect.managerOrNull(ctx)?.triggerActivation(); vm.updateUsbDirect(it) })
             }
+            run {
+                val dp = ctx.getSharedPreferences("qbdlx", 0)
+                var sinRec by remember { mutableStateOf(dp.getBoolean("diag_sin_recuperacion", false)) }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Diagnóstico: sin recuperación automática", fontSize = 14.sp)
+                        Text("Si el DAC se para, no se reactiva ni se recrea la salida: solo se anota el atasco con la línea de tiempo. Úsalo solo para diagnosticar.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(sinRec, { sinRec = it; dp.edit().putBoolean("diag_sin_recuperacion", it).apply(); org.ostrichbat2k.usbdac.streaming.UsbTelemetry.sinRecuperacionAutomatica = it })
+                }
+            }
             TextButton(onClick = { diag = diagnoseUsb(ctx) + (if (usbOn) "\n\n== libusbdac ==\n" + (UsbDirect.managerOrNull(ctx)?.diagnosticLog?.value?.joinToString("\n") ?: UsbDirect.failure.orEmpty()) else "") + java.io.File(ctx.filesDir, QbdlxApp.CRASH_FILE).takeIf { it.exists() }?.let { "\n\n== Último cierre inesperado ==\n" + it.readText().take(3000) }.orEmpty() + "\n\n== Sesión anterior (registro por segundo) ==\n" + DiagnosticLog.previousSession(ctx) + "\n\n== Reproducción (últimos eventos) ==\n" + PlaybackLog.read(ctx).ifEmpty { "(nada todavía)" } }, Modifier.padding(horizontal = 8.dp)) { Text(s.usbDiagButton) }
             diag?.let { txt ->
                 val clip = LocalClipboardManager.current

@@ -6,4 +6,7 @@ package org.ostrichbat2k.usbdac.streaming
  */
 object UsbTelemetry {
     @Volatile var snapshot: (() -> String)? = null
+
+    /** Diagnóstico: si es true, un atasco no se recupera solo (ni reactiva ni recrea la salida), para verlo tal cual. */
+    @Volatile var sinRecuperacionAutomatica: Boolean = false
 }

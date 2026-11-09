@@ -894,11 +894,20 @@ class UsbAudioOutput(
         // (suelta unos pocos bloques y vuelve a colgarse, sin llegar nunca al umbral de atasco).
         // Lo que lo arregla es reactivar el DAC como al pausar y reanudar -- parar el hilo, soltar y
         // volver a reclamar la interfaz -- que conserva el búfer: sin salto, solo un corte breve.
+        if (UsbTelemetry.sinRecuperacionAutomatica) {
+            // Diagnóstico: no se toca nada; solo se deja constancia del atasco (una vez por segundo como mucho).
+            if (streamEngine.streaming && sinceLastUrbMs > 1000L && System.currentTimeMillis() - lastRecoveryAtMs > 1000L) {
+                lastRecoveryAtMs = System.currentTimeMillis()
+                usbAudioManager.reportDiagnostic(
+                    "UsbAudioOutput [SIN RECUPERACIÓN]: ${sinceLastUrbMs}ms sin completar · reap en curso=${streamEngine.reapEnCursoMs()}ms · ${streamEngine.resumenRitmo()} · ${streamEngine.lineaDeTiempo()}")
+            }
+            return false
+        }
         if (streamEngine.streaming && sinceLastUrbMs > 1000L && streamEngine.reapEnCursoMs() > 1000L &&
             System.currentTimeMillis() - lastRecoveryAtMs > 10_000L) {
             lastRecoveryAtMs = System.currentTimeMillis()
             usbAudioManager.reportDiagnostic(
-                "UsbAudioOutput: el DAC lleva ${sinceLastUrbMs}ms sin completar bloques · en búfer=${ringBuffer.availableToRead()} bytes -> se reactiva sin vaciar el búfer · ${streamEngine.resumenRitmo()}")
+                "UsbAudioOutput: el DAC lleva ${sinceLastUrbMs}ms sin completar bloques · en búfer=${ringBuffer.availableToRead()} bytes -> se reactiva sin vaciar el búfer · ${streamEngine.resumenRitmo()} · ${streamEngine.lineaDeTiempo()}")
             pause()
             // pause() solo programa la liberación con RELEASE_GRACE_MS y play() la cancela: la interfaz
             // nunca se soltaba de verdad y el DAC seguía colgado. Aquí se suelta ya, para que play() haga
@@ -915,7 +924,7 @@ class UsbAudioOutput(
             // DefaultAudioSink will flush and rebuild the output right after this: the audible "jump".
             usbAudioManager.reportDiagnostic(
                 "UsbAudioOutput.isStalled -> true: ${sinceLastUrbMs}ms sin enviar bloques · espera máxima en reap=${streamEngine.longestReapMs}ms · " +
-                    "${streamEngine.resumenRitmo()} · último retraso del hilo=${streamEngine.lastLateMs}ms · en búfer=${ringBuffer.availableToRead()} bytes · pausado=$paused · " +
+                    "${streamEngine.resumenRitmo()} · ${streamEngine.lineaDeTiempo(24)} · último retraso del hilo=${streamEngine.lastLateMs}ms · en búfer=${ringBuffer.availableToRead()} bytes · pausado=$paused · " +
                     if (reapEnCursoMs >= 0) "esperando al DAC (reap en curso) desde hace ${reapEnCursoMs}ms" else "el hilo NO estaba en reap")
         }
         return stalled
