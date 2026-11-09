@@ -168,6 +168,7 @@ class RoutingAudioSink(private val usbAudioManager: UsbAudioManager, private val
         val existing = delegate
         if (existing != null && existing !== fallback && existing !== usbAudioManager.resolveActiveSink(trigger = isPlaying)) {
             delegate = null
+            usbAudioManager.reportDiagnostic("RoutingAudioSink.current: la salida USB ya no es la activa -> se pasa a la de Android")
             pendingListener?.let(fallback::setListener)
             lastConfiguredFormat?.let {
                 fallback.configure(it, lastConfiguredBufferSize, lastConfiguredOutputChannels)
@@ -383,8 +384,15 @@ class RoutingAudioSink(private val usbAudioManager: UsbAudioManager, private val
 
     override fun getCurrentPositionUs(sourceEnded: Boolean): Long = current().getCurrentPositionUs(sourceEnded)
 
+    /** Who called us: the 6 frames above the sink, for the diagnostic report (finds what restarts the output mid-track). */
+    private fun quien(que: String) {
+        val marcos = Throwable().stackTrace.drop(2).take(6).joinToString(" < ") { "${it.className.substringAfterLast('.')}.${it.methodName}:${it.lineNumber}" }
+        usbAudioManager.reportDiagnostic("RoutingAudioSink.$que <- $marcos")
+    }
+
     @Deprecated("Deprecated in AudioSink interface itself; this is still the signature callers use.")
     override fun configure(inputFormat: Format, specifiedBufferSize: Int, outputChannels: IntArray?) {
+        quien("configure ${inputFormat.sampleRate}Hz enc=${inputFormat.pcmEncoding} ch=${inputFormat.channelCount}")
         val previousFormat = lastConfiguredFormat
         lastConfiguredFormat = inputFormat
         lastConfiguredBufferSize = specifiedBufferSize
@@ -485,9 +493,10 @@ class RoutingAudioSink(private val usbAudioManager: UsbAudioManager, private val
         current().pause()
     }
 
-    override fun flush() = current().flush()
+    override fun flush() { quien("flush"); current().flush() }
 
     override fun reset() {
+        quien("reset")
         isPlaying = false
         // A deferred switch's old delegate is about to be reset/discarded outright below -- its
         // pending data no longer matters, and committing it later against whatever delegate ends
@@ -500,6 +509,7 @@ class RoutingAudioSink(private val usbAudioManager: UsbAudioManager, private val
     }
 
     override fun release() {
+        quien("release")
         isPlaying = false
         pendingSwitch = null
         delegate?.release()
