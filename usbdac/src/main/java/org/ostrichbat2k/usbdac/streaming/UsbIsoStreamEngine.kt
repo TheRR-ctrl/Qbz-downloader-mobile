@@ -95,6 +95,7 @@ internal class UsbIsoStreamEngine(
     /** Cuánto se ha adelantado (+) o retrasado (-) el envío frente al reloj ideal, en ms. */
     @Volatile var desvioEnvioMs: Long = 0L
     @Volatile var urbsEnviados: Long = 0L
+    @Volatile var paquetesPorBloque: Int = 0
 
     /** Resumen de ritmo para los informes: lo que pide el DAC frente a lo que enviamos. */
     @Volatile var reapErroresVista = 0
@@ -124,7 +125,7 @@ internal class UsbIsoStreamEngine(
     fun resumenRitmo(): String =
         "nominal=${sampleRateHz}Hz · feedback del DAC=" +
             (if (feedbackCount == 0) "sin datos [hilo=$feedbackHilo, bloques=$feedbackUrbs, vacíos=$feedbackVacios, rechazados=$feedbackRechazados, errores=$feedbackErrores, último=$feedbackUltimoCrudo]" else "${feedbackHz}Hz (min ${feedbackMinHz}, max ${feedbackMaxHz}, $feedbackCount lecturas)") +
-            " · desvío del envío=${desvioEnvioMs}ms · bloques enviados=$urbsEnviados" +
+            " · desvío del envío=${desvioEnvioMs}ms · bloques enviados=$urbsEnviados (+${UsbAudioTuning.NUM_URBS} iniciales, $paquetesPorBloque paquetes/bloque; sinPista=${UsbTelemetry.sinPistaSilenciosa} mitad=${UsbTelemetry.bloquesMitad} p120=${UsbTelemetry.paquetes120})" +
             " · paquetes con error=$paquetesMalos (bytes cortos=$bytesCortos, último estado=$ultimoEstadoMalo) · errores de reap=$reapErroresVista"
 
     /** Instante (nanoTime) en que empezó el reapIso en curso; 0 si el hilo no está esperando uno. */
@@ -199,10 +200,11 @@ internal class UsbIsoStreamEngine(
                 6 -> "super+"
                 else -> "unknown"
             }
-        val pacing = IsoPacing.forSpeed(usbSpeed, if (UsbTelemetry.bloquesMitad) UsbAudioTuning.BASE_PACKETS_PER_URB / 2 else UsbAudioTuning.BASE_PACKETS_PER_URB, format.bInterval)
+        val pacing = IsoPacing.forSpeed(usbSpeed, if (UsbTelemetry.paquetes120) 15 else if (UsbTelemetry.bloquesMitad) UsbAudioTuning.BASE_PACKETS_PER_URB / 2 else UsbAudioTuning.BASE_PACKETS_PER_URB, format.bInterval)
         val packetsPerSecond = pacing.packetsPerSecond
         val packetDurationNs = pacing.packetDurationNs
         val packetsPerUrb = pacing.packetsPerUrb
+        paquetesPorBloque = packetsPerUrb
 
         val handle =
             nativeBridge.openIsoStream(

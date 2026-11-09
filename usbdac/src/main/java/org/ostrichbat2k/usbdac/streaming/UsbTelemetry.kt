@@ -32,4 +32,13 @@ object UsbTelemetry {
      * un límite por número de bloques (cuelgue a ~4,1 s) de uno por paquetes o tiempo del bus (~8,2 s).
      */
     @Volatile var bloquesMitad: Boolean = false
+
+    /**
+     * Diagnóstico: 15 paquetes base por bloque (120 en USB 2.0) en vez de 16. Medido: todos los cuelgues
+     * caen en el bloque nº 255·n (contando los 4 iniciales), con 128 y con 64 paquetes por bloque. Si el
+     * disparador es el inicio de un bloque alineado con un segmento de 255 TRB del anillo del xHCI, con
+     * 120 paquetes (mcd(120, 255) = 15) la alineación ocurre cada 17 bloques y el cuelgue caerá en 17·n.
+     * Tiene prioridad sobre [bloquesMitad].
+     */
+    @Volatile var paquetes120: Boolean = false
 }
