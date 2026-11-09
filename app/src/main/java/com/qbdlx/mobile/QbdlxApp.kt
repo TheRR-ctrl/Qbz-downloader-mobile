@@ -22,6 +22,7 @@ class QbdlxApp : Application(), ViewModelStoreOwner, coil.ImageLoaderFactory {
         org.ostrichbat2k.usbdac.streaming.UsbTelemetry.sinRecuperacionAutomatica = getSharedPreferences("qbdlx", 0).getBoolean("diag_sin_recuperacion", false)
         org.ostrichbat2k.usbdac.streaming.UsbTelemetry.sinFeedback = getSharedPreferences("qbdlx", 0).getBoolean("diag_sin_feedback", false)
         org.ostrichbat2k.usbdac.streaming.UsbTelemetry.sinPistaSilenciosa = getSharedPreferences("qbdlx", 0).getBoolean("diag_sin_pista_silenciosa", false)
+        org.ostrichbat2k.usbdac.streaming.UsbTelemetry.bloquesMitad = getSharedPreferences("qbdlx", 0).getBoolean("diag_bloques_mitad", false)
         // Keep the last crash, so it can be shared from Settings and the cause found.
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { t, e ->

@@ -24,4 +24,12 @@ object UsbTelemetry {
      * enrutado de los botones multimedia; es solo para medir.
      */
     @Volatile var sinPistaSilenciosa: Boolean = false
+
+    /**
+     * Diagnóstico: bloques de la mitad de tamaño (8 en vez de 16 paquetes base; 64 en vez de 128 en USB 2.0).
+     * Tras cada arranque el primer cuelgue llegó siempre a ~512 bloques enviados (508 + 4 de inicio), a 48 y
+     * a 88,2 kHz, con y sin feedback: 512 × 128 = 65536 paquetes ≈ 8,19 s. Con bloques a la mitad se separa
+     * un límite por número de bloques (cuelgue a ~4,1 s) de uno por paquetes o tiempo del bus (~8,2 s).
+     */
+    @Volatile var bloquesMitad: Boolean = false
 }

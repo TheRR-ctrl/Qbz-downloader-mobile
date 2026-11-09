@@ -719,6 +719,17 @@ fun SettingsScreen(vm: MainViewModel) {
                     Switch(sinPs, { sinPs = it; dp.edit().putBoolean("diag_sin_pista_silenciosa", it).apply(); org.ostrichbat2k.usbdac.streaming.UsbTelemetry.sinPistaSilenciosa = it })
                 }
             }
+            run {
+                val dp = ctx.getSharedPreferences("qbdlx", 0)
+                var mitad by remember { mutableStateOf(dp.getBoolean("diag_bloques_mitad", false)) }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Diagnóstico: bloques USB de la mitad de tamaño", fontSize = 14.sp)
+                        Text("Envía bloques de 8 ms en vez de 16 ms. Tras cada arranque el DAC se paró siempre a los ~512 bloques (≈8,2 s); esto dice si el límite es de bloques o de tiempo. Aplica desde la siguiente pista.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(mitad, { mitad = it; dp.edit().putBoolean("diag_bloques_mitad", it).apply(); org.ostrichbat2k.usbdac.streaming.UsbTelemetry.bloquesMitad = it })
+                }
+            }
             TextButton(onClick = { diag = diagnoseUsb(ctx) + (if (usbOn) "\n\n== libusbdac ==\n" + (UsbDirect.managerOrNull(ctx)?.diagnosticLog?.value?.joinToString("\n") ?: UsbDirect.failure.orEmpty()) else "") + java.io.File(ctx.filesDir, QbdlxApp.CRASH_FILE).takeIf { it.exists() }?.let { "\n\n== Último cierre inesperado ==\n" + it.readText().take(3000) }.orEmpty() + "\n\n== Sesión anterior (registro por segundo) ==\n" + DiagnosticLog.previousSession(ctx) + "\n\n== Reproducción (últimos eventos) ==\n" + PlaybackLog.read(ctx).ifEmpty { "(nada todavía)" } }, Modifier.padding(horizontal = 8.dp)) { Text(s.usbDiagButton) }
             diag?.let { txt ->
                 val clip = LocalClipboardManager.current
