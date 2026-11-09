@@ -191,6 +191,19 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
     private inner class Events(private val player: ExoPlayer) : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) { listener.onPlayingChanged(this@PlayerEngine.isPlaying) }
 
+        override fun onPositionDiscontinuity(old: Player.PositionInfo, new: Player.PositionInfo, reason: Int) {
+            if (player !== active) return
+            val why = when (reason) {
+                Player.DISCONTINUITY_REASON_AUTO_TRANSITION -> "pasó sola a la siguiente"
+                Player.DISCONTINUITY_REASON_SEEK -> "búsqueda"
+                Player.DISCONTINUITY_REASON_SEEK_ADJUSTMENT -> "ajuste de búsqueda"
+                Player.DISCONTINUITY_REASON_SKIP -> "salto de anuncio"
+                Player.DISCONTINUITY_REASON_REMOVE -> "se quitó el elemento"
+                else -> "interna"
+            }
+            PlaybackLog.add(context, "salto de posición ($why): de ${old.positionMs} ms a ${new.positionMs} ms")
+        }
+
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             if (player !== active || reason != Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) return
             // Gapless: the player moved on to the item that was added behind the finished one.
