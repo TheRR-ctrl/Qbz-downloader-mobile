@@ -2139,6 +2139,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         playJob = viewModelScope.launch {
             try {
                 val (url, q) = withContext(Dispatchers.IO) { resolve(item.second.id) }
+                // The USB driver only upgrades a track at configure(): claim the DAC first, or the first track stays on Android's mixer.
+                if (UsbDirect.prefs(getApplication()).enabled) {
+                    UsbDirect.managerOrNull(getApplication())?.let { m ->
+                        m.triggerActivation()
+                        withContext(Dispatchers.IO) { m.awaitActivation(8000L) }
+                    }
+                }
                 engine.start(url)
                 if (resumeMs > 0) engine.seekTo(resumeMs)
                 nowQuality = q
