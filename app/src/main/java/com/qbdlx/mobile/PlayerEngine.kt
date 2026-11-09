@@ -129,8 +129,10 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
     private fun renderers() = object : androidx.media3.exoplayer.DefaultRenderersFactory(context) {
         override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): AudioSink =
             super.buildAudioSink(context, enableFloatOutput, enableAudioTrackPlaybackParams)!!.let { normal ->
-                // Only wrap when the user turned the driver on; a failure to start it never takes the app down.
-                val usb = if (UsbDirect.prefs(context).enabled) UsbDirect.managerOrNull(context) else null
+                // Always wrap: the player is built once, so deciding here on the switch would ignore turning it on later.
+                // RoutingAudioSink asks the preferences on every track and uses the normal output while it is off.
+                // A failure to start the driver never takes the app down.
+                val usb = UsbDirect.managerOrNull(context)
                 if (usb == null) normal else org.ostrichbat2k.usbdac.streaming.RoutingAudioSink(usb, normal)
             }
     }
