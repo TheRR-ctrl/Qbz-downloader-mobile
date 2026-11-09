@@ -25,6 +25,7 @@ import org.ostrichbat2k.usbdac.protocol.UacStreamFormat
 import org.ostrichbat2k.usbdac.protocol.UsbAudioSession
 import android.media.AudioFormat
 import androidx.media3.common.C
+import androidx.media3.common.Format
 import androidx.media3.exoplayer.audio.AudioOutput
 import androidx.media3.exoplayer.audio.AudioOutputProvider
 import java.util.IdentityHashMap
@@ -264,6 +265,11 @@ class UsbAudioOutputProvider(
 
     override fun getFormatSupport(formatConfig: AudioOutputProvider.FormatConfig): AudioOutputProvider.FormatSupport {
         val format = formatConfig.format
+        // Compressed input (FLAC, AAC...) can't go out over USB as-is: reporting it as supported made the
+        // renderer skip decoding and hand encoded frames to a PCM-only sink ("Unexpected audio encoding").
+        if (format.pcmEncoding == C.ENCODING_INVALID || format.pcmEncoding == Format.NO_VALUE) {
+            return AudioOutputProvider.FormatSupport.UNSUPPORTED
+        }
         val match =
             if (format.pcmEncoding == C.ENCODING_PCM_FLOAT || isPaddedTwentyFourBitContent(format)) {
                 wideIntTargetFormat(format.channelCount, format.sampleRate)
