@@ -53,7 +53,7 @@ fun DiagnosticsScreen(vm: MainViewModel) {
     val header = remember {
         val pkg = runCatching { context.packageManager.getPackageInfo(context.packageName, 0) }.getOrNull()
         "QBDLX Mobile ${pkg?.versionName ?: "?"} (build ${pkg?.longVersionCode ?: "?"})\n" +
-            "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}) · ${Build.MANUFACTURER} ${Build.MODEL}"
+            "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}) · ${Build.MANUFACTURER} ${phoneName(context)} (${Build.MODEL})${usbDacLabel(context)?.let { " · DAC $it" } ?: ""}"
     }
 
     val entries = Diagnostics.entries

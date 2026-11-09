@@ -431,6 +431,7 @@ private fun NowPlayingPage(vm: MainViewModel, album: Album, track: Track, close:
                 AsyncImage(model = url, contentDescription = album.title, modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp)).background(Chip))
             }
         }
+        val ctx = androidx.compose.ui.platform.LocalContext.current
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
             InfoPill(onClick = { qualityDialog = true }) {
                 if (quality?.isHiRes == true || (quality == null && track.hiRes)) HiResBadge("Hi-Res") else Icon(Icons.Default.Album, null, Modifier.size(20.dp))
@@ -438,7 +439,11 @@ private fun NowPlayingPage(vm: MainViewModel, album: Album, track: Track, close:
             }
             InfoPill {
                 Icon(Icons.Default.PhoneAndroid, null, Modifier.size(20.dp))
-                Text(Build.MODEL, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(remember { phoneName(ctx) }, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            val dacLabel = remember(vm.bitPerfect, vm.playQuality) { usbDacLabel(ctx) }
+            if (dacLabel != null) InfoPill {
+                Text("DAC · " + dacLabel, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
