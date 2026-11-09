@@ -699,7 +699,7 @@ fun SettingsScreen(vm: MainViewModel) {
             }
             run {
                 val dp = ctx.getSharedPreferences("qbdlx", 0)
-                var sinFb by remember { mutableStateOf(dp.getBoolean("diag_sin_feedback", false)) }
+                var sinFb by remember { mutableStateOf(dp.getBoolean("diag_sin_feedback", true)) }
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("Diagnóstico: sin lectura de feedback", fontSize = 14.sp)

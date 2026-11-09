@@ -11,11 +11,11 @@ object UsbTelemetry {
     @Volatile var sinRecuperacionAutomatica: Boolean = false
 
     /**
-     * Diagnóstico: no abre el hilo del feedback. Audio y feedback comparten el mismo descriptor USB y
+     * Por omisión true (medido: con el hilo del feedback el cuelgue era cada ~8 s; sin él, uno en ~11 min). No abre el hilo del feedback. Audio y feedback comparten el mismo descriptor USB y
      * REAPURB devuelve el primer bloque terminado de cualquiera de los dos; en el registro el hilo del
      * feedback recogió bloques de audio (128 paquetes) al arrancar cada salida.
      */
-    @Volatile var sinFeedback: Boolean = false
+    @Volatile var sinFeedback: Boolean = true
 
     /**
      * Diagnóstico: no crea la pista silenciosa de 8000 Hz (setDirectPlaybackActive). `dumpsys
