@@ -82,6 +82,7 @@ data class Discover(
 
 /** Qobuz `format_id` values, as offered by the quality picker. */
 enum class Quality(val formatId: Int, val label: String) {
+    HI_RES_MAX(27, "Hi-Res máx."),
     HI_RES(7, "Hi-Res"),
     LOSSLESS(6, "Lossless"),
     MP3(5, "MP3"),

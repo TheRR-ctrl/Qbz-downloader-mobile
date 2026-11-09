@@ -127,6 +127,25 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
     // A function, not a property: `active` is built while the class initialises, and any property
     // declared after it (even `by lazy`, whose delegate field) is still null at that point.
     private fun renderers() = object : androidx.media3.exoplayer.DefaultRenderersFactory(context) {
+        // The stock renderer asks the codec for float whenever the sink accepts float, even for a 16-bit file. Some
+        // codecs (seen on a Galaxy S26 with FLAC) then hand back 16-bit PCM that gets read as float: NaN and 1e38
+        // peaks at the USB DAC. 16-bit sources are asked for 16-bit; wider ones keep the float round trip (lossless).
+        override fun buildAudioRenderers(
+            context: Context, extensionRendererMode: Int, mediaCodecSelector: androidx.media3.exoplayer.mediacodec.MediaCodecSelector,
+            enableDecoderFallback: Boolean, audioSink: AudioSink, eventHandler: Handler,
+            eventListener: androidx.media3.exoplayer.audio.AudioRendererEventListener, out: java.util.ArrayList<androidx.media3.exoplayer.Renderer>,
+        ) {
+            out.add(object : androidx.media3.exoplayer.audio.MediaCodecAudioRenderer(
+                context, mediaCodecSelector, enableDecoderFallback, eventHandler, eventListener, audioSink,
+            ) {
+                override fun getMediaFormat(format: androidx.media3.common.Format, codecMimeType: String, codecMaxInputSize: Int, codecOperatingRate: Float): android.media.MediaFormat =
+                    super.getMediaFormat(format, codecMimeType, codecMaxInputSize, codecOperatingRate).also {
+                        if (format.pcmEncoding == C.ENCODING_PCM_16BIT && android.os.Build.VERSION.SDK_INT >= 24)
+                            it.setInteger(android.media.MediaFormat.KEY_PCM_ENCODING, android.media.AudioFormat.ENCODING_PCM_16BIT)
+                    }
+            })
+        }
+
         override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): AudioSink =
             super.buildAudioSink(context, enableFloatOutput, enableAudioTrackPlaybackParams)!!.let { normal ->
                 // Always wrap: the player is built once, so deciding here on the switch would ignore turning it on later.
@@ -155,7 +174,7 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
                 if (r.changed && !restartedItem) {
                     restartedItem = true
                     // The track was made under the old mixer: make it again under the new one, at the same spot.
-                    main.post { val pos = p.currentPosition; p.stop(); p.prepare(); p.seekTo(pos) }
+                    main.post { val pos = p.currentPosition; PlaybackLog.add(context, "se vuelve a crear la pista en $pos ms (cambió el mezclador)"); p.stop(); p.prepare(); p.seekTo(pos) }
                 }
             }
         })
@@ -166,7 +185,7 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
     private fun logRoute(p: ExoPlayer) {
         val fmt = p.audioFormat
         val usb = if (UsbDirect.prefs(context).enabled) UsbDirect.managerOrNull(context)?.playbackRoute?.value else null
-        PlaybackLog.add(context, "pista ${fmt?.sampleRate ?: "?"} Hz · ${fmt?.sampleMimeType ?: "?"} · salida: ${usb ?: "mezclador de Android (controlador USB apagado)"}")
+        PlaybackLog.add(context, "pista ${fmt?.sampleRate ?: "?"} Hz · ${fmt?.pcmEncoding ?: "?"} (codificación) · ${fmt?.sampleMimeType ?: "?"} · posición ${p.currentPosition} ms · salida: ${usb ?: "mezclador de Android (controlador USB apagado)"}")
     }
 
     private inner class Events(private val player: ExoPlayer) : Player.Listener {

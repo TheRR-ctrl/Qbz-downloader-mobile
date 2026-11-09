@@ -190,7 +190,7 @@ private fun DownloadTask.fileFormat(): String {
     val flac = ext == "flac" || (ext !in setOf("mp3", "m4a") && quality != Quality.MP3)
     return when {
         !flac -> ext.uppercase().ifBlank { "MP3" }
-        quality == Quality.HI_RES -> "FLAC Hi-Res"
+        quality == Quality.HI_RES || quality == Quality.HI_RES_MAX -> "FLAC Hi-Res"
         else -> "FLAC"
     }
 }
@@ -217,7 +217,7 @@ private fun TrackRow(vm: MainViewModel, album: Album, track: Track, subtitle: St
                 // Downloaded songs show the format of the file on the device, then the quality Qobuz streams.
                 val fmt = if (item?.status == TaskStatus.COMPLETED) item.fileFormat() else null
                 // Both: what is on the device, then the best Qobuz offers (so a song saved as MP3 still shows it could be 24/44).
-                if (fmt != null) { Spacer(Modifier.width(6.dp)); QualityBadge(fmt, item!!.quality == Quality.HI_RES) }
+                if (fmt != null) { Spacer(Modifier.width(6.dp)); QualityBadge(fmt, item!!.quality == Quality.HI_RES || item!!.quality == Quality.HI_RES_MAX) }
                 if (track.quality.isNotBlank()) { Spacer(Modifier.width(6.dp)); QualityBadge(track.quality, track.hiRes) }
             }
         }
@@ -553,7 +553,7 @@ private fun DownloadRow(vm: MainViewModel, task: DownloadTask) {
                 TaskStatus.DOWNLOADING -> {
                     LinearProgressIndicator(progress = { task.progress }, Modifier.fillMaxWidth().padding(vertical = 4.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        QualityBadge(task.quality.label, task.quality == Quality.HI_RES)
+                        QualityBadge(task.quality.label, task.quality == Quality.HI_RES || task.quality == Quality.HI_RES_MAX)
                         Text("${(task.progress * 100).toInt()}%", fontSize = 11.sp)
                     }
                 }

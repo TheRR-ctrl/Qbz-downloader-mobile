@@ -779,6 +779,8 @@ class UsbAudioManagerImpl(
      * `forceReconfigureOnDacStateChange` already watches for and upgrades on, without this call
      * itself blocking the first audible frame on HAL while that happens.
      */
+    @Volatile private var lastResolveNullMsg: String? = null
+
     override fun triggerActivation() = ensureActivated()
 
     /**
@@ -824,9 +826,12 @@ class UsbAudioManagerImpl(
         // bitPerfectMode toggle so the test actually controls what plays, not just what's shown.
         val bitPerfectWanted = if (usbSettings.abxTestMode) abxTester.groundTruth.value == true else usbSettings.bitPerfectMode
         if (!bitPerfectWanted || !isBitPerfectCapable()) {
-            diagnosticLogger.log("resolveActiveSink -> null: bitPerfectWanted=$bitPerfectWanted capable=${isBitPerfectCapable()} session=${activeSession != null}")
+            // Same message back to back used to fill the whole diagnostic log (a dozen a second) and push out the activation lines.
+            val msg = "resolveActiveSink -> null: bitPerfectWanted=$bitPerfectWanted capable=${isBitPerfectCapable()} session=${activeSession != null}"
+            if (msg != lastResolveNullMsg) { lastResolveNullMsg = msg; diagnosticLogger.log(msg) }
             return null
         }
+        lastResolveNullMsg = null
         val session = activeSession ?: run {
             diagnosticLogger.log("resolveActiveSink -> null: no hay sesión activa")
             return null

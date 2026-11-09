@@ -203,7 +203,13 @@ fun SectionHeading(text: String, modifier: Modifier = Modifier) =
 
 /** The "Select Quality" sheet from the Android mockups. */
 @Composable
-fun QualityDialog(current: Quality, onPick: (Quality) -> Unit, onCancel: () -> Unit) {
+fun QualityDialog(
+    current: Quality, onPick: (Quality) -> Unit, onCancel: () -> Unit,
+    /** When given, the dialog offers one choice for Wi-Fi and another for mobile data: (Wi-Fi, data, on Wi-Fi now, pick for Wi-Fi?). */
+    perNetwork: Triple<Quality, Quality, Boolean>? = null, onPickFor: ((Quality, Boolean) -> Unit)? = null,
+) {
+    var tabWifi by remember { mutableStateOf(perNetwork?.third ?: true) }
+    val shown = if (perNetwork == null) current else if (tabWifi) perNetwork.first else perNetwork.second
     Dialog(onCancel) {
         // Blur the screen behind the dialog where the device supports cross-window blur (Android 12+).
         val window = (LocalView.current.parent as? DialogWindowProvider)?.window
@@ -219,13 +225,23 @@ fun QualityDialog(current: Quality, onPick: (Quality) -> Unit, onCancel: () -> U
             Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(LocalStrings.current.selectQuality, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 Text(LocalStrings.current.chooseQuality, fontSize = 13.sp, color = Color.White.copy(alpha = .7f))
+                if (perNetwork != null && onPickFor != null) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(true to LocalStrings.current.qualityOnWifi, false to LocalStrings.current.qualityOnData).forEach { (w, label) ->
+                        val on = tabWifi == w
+                        Text(
+                            label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = if (on) Color.Black else Color.White,
+                            modifier = Modifier.clip(RoundedCornerShape(50)).background(if (on) Cyan else Color.White.copy(alpha = .1f))
+                                .clickable { tabWifi = w }.padding(horizontal = 14.dp, vertical = 8.dp),
+                        )
+                    }
+                }
                 Quality.entries.forEach { q ->
-                    val accent = when (q) { Quality.HI_RES -> Gold; Quality.LOSSLESS -> Cyan; Quality.MP3 -> Cyan.copy(alpha = .55f) }
+                    val accent = when (q) { Quality.HI_RES_MAX, Quality.HI_RES -> Gold; Quality.LOSSLESS -> Cyan; Quality.MP3 -> Cyan.copy(alpha = .55f) }
                     Row(
                         Modifier.fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
-                            .border(BorderStroke(if (q == current) 2.dp else 1.dp, accent), RoundedCornerShape(12.dp))
-                            .clickable { onPick(q) }
+                            .border(BorderStroke(if (q == shown) 2.dp else 1.dp, accent), RoundedCornerShape(12.dp))
+                            .clickable { if (perNetwork != null && onPickFor != null) onPickFor(q, tabWifi) else onPick(q) }
                             .padding(14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
