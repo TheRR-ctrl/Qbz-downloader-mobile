@@ -105,7 +105,8 @@ internal class UsbIsoStreamEngine(
     fun resumenRitmo(): String =
         "nominal=${sampleRateHz}Hz · feedback del DAC=" +
             (if (feedbackCount == 0) "sin datos [hilo=$feedbackHilo, bloques=$feedbackUrbs, vacíos=$feedbackVacios, rechazados=$feedbackRechazados, errores=$feedbackErrores, último=$feedbackUltimoCrudo]" else "${feedbackHz}Hz (min ${feedbackMinHz}, max ${feedbackMaxHz}, $feedbackCount lecturas)") +
-            " · desvío del envío=${desvioEnvioMs}ms · bloques enviados=$urbsEnviados"
+            " · desvío del envío=${desvioEnvioMs}ms · bloques enviados=$urbsEnviados" +
+            " · paquetes con error=$paquetesMalos (bytes cortos=$bytesCortos, último estado=$ultimoEstadoMalo) · errores de reap=$reapErroresVista"
 
     /** Instante (nanoTime) en que empezó el reapIso en curso; 0 si el hilo no está esperando uno. */
     @Volatile var reapStartedAtNs: Long = 0L
