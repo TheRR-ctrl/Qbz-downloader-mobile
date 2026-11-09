@@ -906,7 +906,8 @@ class UsbAudioManagerImpl(
      * gates whether the "Bit-perfect mode" toggle is interactable at all; false if nothing is
      * active right now.
      */
-    override fun isBitPerfectCapable(): Boolean = controlState.value?.volumeRange != null
+    // DACs without a hardware volume (e.g. FiiO BTR5) are still capable: volume is just not adjustable.
+    override fun isBitPerfectCapable(): Boolean = controlState.value != null || activeSession != null
 
     /**
      * Reads the active session's Power Domain state right now (one of
