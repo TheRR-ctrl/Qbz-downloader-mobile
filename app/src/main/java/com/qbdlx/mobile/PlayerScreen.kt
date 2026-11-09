@@ -17,6 +17,8 @@ import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import android.content.Context
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.expandVertically
@@ -441,7 +443,21 @@ private fun NowPlayingPage(vm: MainViewModel, album: Album, track: Track, close:
                 Icon(Icons.Default.PhoneAndroid, null, Modifier.size(20.dp))
                 Text(remember { phoneName(ctx) }, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            val dacLabel = remember(vm.bitPerfect, vm.playQuality) { usbDacLabel(ctx) }
+            // Recalculated when a USB device is plugged/unplugged (and when the player's route changes),
+            // not only when the quality changes: the DAC can show up after this screen was composed.
+            var usbTick by remember { mutableIntStateOf(0) }
+            DisposableEffect(ctx) {
+                val rx = object : android.content.BroadcastReceiver() {
+                    override fun onReceive(c: Context, i: android.content.Intent) { usbTick++ }
+                }
+                val f = android.content.IntentFilter().apply {
+                    addAction(android.hardware.usb.UsbManager.ACTION_USB_DEVICE_ATTACHED)
+                    addAction(android.hardware.usb.UsbManager.ACTION_USB_DEVICE_DETACHED)
+                }
+                androidx.core.content.ContextCompat.registerReceiver(ctx, rx, f, androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
+                onDispose { runCatching { ctx.unregisterReceiver(rx) } }
+            }
+            val dacLabel = remember(vm.bitPerfect, vm.playQuality, usbTick, vm.nowPlaying) { usbDacLabel(ctx) }
             if (dacLabel != null) InfoPill {
                 Text("DAC · " + dacLabel, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
