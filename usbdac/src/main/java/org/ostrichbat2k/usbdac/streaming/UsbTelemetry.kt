@@ -85,4 +85,11 @@ object UsbTelemetry {
      * El módulo no depende de un Context, por eso lo hace la app.
      */
     @Volatile var abrirSesionRendimiento: ((tid: Int, objetivoNs: Long) -> ((Long) -> Unit)?)? = null
+
+    /**
+     * Volumen digital (0..1) del controlador USB propio, para DAC que no exponen volumen por hardware
+     * (el BTR5 no lo hace). Con 1 la señal va tal cual (bit-perfect); por debajo se escala antes de
+     * convertir a entero, como el volumen por software de UAPP.
+     */
+    @Volatile var volumenSoftware: Float = 1f
 }

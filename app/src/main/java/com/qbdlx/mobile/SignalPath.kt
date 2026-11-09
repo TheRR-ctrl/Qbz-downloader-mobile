@@ -18,7 +18,15 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -135,4 +143,87 @@ fun SignalPathDialog(vm: MainViewModel, onClose: () -> Unit) {
         }) else null,
         shape = RoundedCornerShape(20.dp),
     )
+}
+
+/** «Hasta 32-Bit - 384 kHz» para la salida USB, sacado del DAC y de lo que Android anuncia de él. */
+fun usbCapacity(context: Context): String? {
+    val am = context.getSystemService(AudioManager::class.java) ?: return null
+    val usb = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS).firstOrNull {
+        it.type == AudioDeviceInfo.TYPE_USB_HEADSET || it.type == AudioDeviceInfo.TYPE_USB_DEVICE
+    } ?: return null
+    val bits = UsbDirect.managerOrNull(context)?.controlState?.value?.formats?.maxOfOrNull { it.bitResolution }?.takeIf { it > 0 }
+        ?: if (usb.encodings.any { it == android.media.AudioFormat.ENCODING_PCM_32BIT || it == android.media.AudioFormat.ENCODING_PCM_24BIT_PACKED }) 24 else 16
+    val rate = usb.sampleRates.maxOrNull() ?: return "Hasta $bits-Bit"
+    return "Hasta $bits-Bit - ${khz(rate)}"
+}
+
+/** La hoja de «Selecciona tu salida de audio», como la de Qobuz: el aparato, su capacidad, el volumen y la ruta de la señal. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+fun OutputSheet(vm: MainViewModel, onSignalPath: () -> Unit, onClose: () -> Unit) {
+    val ctx = LocalContext.current
+    val am = remember(ctx) { ctx.getSystemService(AudioManager::class.java) }
+    val manager = if (UsbDirect.prefs(ctx).enabled) UsbDirect.managerOrNull(ctx) else null
+    val route = manager?.playbackRoute?.collectAsState()?.value
+    val control = manager?.controlState?.collectAsState()?.value
+    val direct = route is UsbAudioManager.PlaybackRoute.Direct
+    val dev = androidOutput(ctx)
+    val dac = usbDacLabel(ctx)?.substringBefore(" · ")
+    val via = when {
+        direct -> "USB directo / ${dac ?: "DAC USB"}"
+        dev?.type == AudioDeviceInfo.TYPE_USB_HEADSET || dev?.type == AudioDeviceInfo.TYPE_USB_DEVICE -> "USB / ${dev.productName}"
+        dev?.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP || dev?.type == AudioDeviceInfo.TYPE_BLE_HEADSET -> "Bluetooth / ${dev.productName}"
+        else -> "Altavoz del teléfono"
+    }
+    val capacity = remember(dac, route) { if (dac != null) usbCapacity(ctx) else null }
+    val sheet = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onClose, sheetState = sheet, containerColor = Color(0xFF151515)) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Text("Dispositivo seleccionado", fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Color(0xFF2B2416)).padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                androidx.compose.material3.Icon(Icons.Default.PhoneAndroid, null, tint = QobuzGold, modifier = Modifier.size(30.dp))
+                Column {
+                    Text(remember { phoneName(ctx) }, color = QobuzGold, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                    Text(via, fontSize = 14.sp)
+                    if (capacity != null) Text(capacity, fontSize = 14.sp)
+                }
+            }
+            androidx.compose.material3.OutlinedButton(onClick = onSignalPath, modifier = Modifier.fillMaxWidth()) { Text("Ruta de la señal") }
+            // Volumen: el del DAC si lo expone; si no, digital (deja de ser bit-perfect bajo el 100 %); con el mezclador de Android, el del sistema.
+            val range = control?.volumeRange
+            when {
+                direct && range != null && control.volume != null -> {
+                    var db by remember(control.volume) { mutableFloatStateOf(control.volume!!.toFloat()) }
+                    VolumeRow("Volumen del DAC", db, range.first.toFloat()..range.second.toFloat(), { db = it }, { manager.setVolume(db.toInt()) })
+                }
+                direct -> {
+                    var v by remember { mutableFloatStateOf(org.ostrichbat2k.usbdac.streaming.UsbTelemetry.volumenSoftware) }
+                    VolumeRow(if (v >= 0.999f) "Volumen digital · 100 % (bit-perfect)" else "Volumen digital · ${(v * 100).toInt()} % (no bit-perfect)", v, 0f..1f, {
+                        v = it; org.ostrichbat2k.usbdac.streaming.UsbTelemetry.volumenSoftware = it
+                    }, { ctx.getSharedPreferences("qbdlx", 0).edit().putFloat("vol_software", v).apply() })
+                    Text("Este DAC no deja cambiar su volumen por USB: usa sus botones para no perder bit-perfect.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                am != null -> {
+                    val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC).toFloat()
+                    var v by remember { mutableFloatStateOf(am.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat()) }
+                    VolumeRow("Volumen", v, 0f..max, { v = it; am.setStreamVolume(AudioManager.STREAM_MUSIC, it.toInt(), 0) }, {})
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun VolumeRow(label: String, value: Float, range: ClosedFloatingPointRange<Float>, onChange: (Float) -> Unit, onDone: () -> Unit) {
+    Column {
+        Text(label, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            androidx.compose.material3.Icon(Icons.Default.VolumeUp, null)
+            androidx.compose.material3.Slider(value, onChange, Modifier.weight(1f), valueRange = range, onValueChangeFinished = onDone,
+                colors = androidx.compose.material3.SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = QobuzGold))
+        }
+    }
 }

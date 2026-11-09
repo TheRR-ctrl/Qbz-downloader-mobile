@@ -385,7 +385,9 @@ private fun NowPlayingPage(vm: MainViewModel, album: Album, track: Track, close:
     var menu by remember { mutableStateOf(false) }
     var qualityDialog by remember { mutableStateOf(false) }
     var signalDialog by remember { mutableStateOf(false) }
+    var outputSheet by remember { mutableStateOf(false) }
     if (signalDialog) SignalPathDialog(vm) { signalDialog = false }
+    if (outputSheet) OutputSheet(vm, onSignalPath = { outputSheet = false; signalDialog = true }) { outputSheet = false }
     var sleepDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val quality = vm.nowQuality
@@ -441,7 +443,7 @@ private fun NowPlayingPage(vm: MainViewModel, album: Album, track: Track, close:
                 if (quality?.isHiRes == true || (quality == null && track.hiRes)) HiResBadge("Hi-Res") else Icon(Icons.Default.Album, null, Modifier.size(20.dp))
                 Text(quality?.label() ?: qualityText(track.quality), fontSize = 14.sp)
             }
-            InfoPill(onClick = { signalDialog = true }) {
+            InfoPill(onClick = { outputSheet = true }) {
                 Icon(Icons.Default.PhoneAndroid, null, Modifier.size(20.dp))
                 Text(remember { phoneName(ctx) }, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }

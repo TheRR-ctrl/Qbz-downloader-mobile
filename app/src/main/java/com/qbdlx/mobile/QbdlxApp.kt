@@ -36,6 +36,7 @@ class QbdlxApp : Application(), ViewModelStoreOwner, coil.ImageLoaderFactory {
                     ?.let { sesion -> { realNs: Long -> sesion.reportActualWorkDuration(realNs) } }
             } else null
         }
+        org.ostrichbat2k.usbdac.streaming.UsbTelemetry.volumenSoftware = getSharedPreferences("qbdlx", 0).getFloat("vol_software", 1f)
         // Keep the last crash, so it can be shared from Settings and the cause found.
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { t, e ->

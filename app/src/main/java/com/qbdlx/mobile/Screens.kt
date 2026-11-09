@@ -1,5 +1,9 @@
 package com.qbdlx.mobile
 
+import androidx.compose.ui.draw.clip
+import androidx.compose.material.icons.filled.ViewList
+import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.activity.compose.BackHandler
@@ -343,6 +347,11 @@ private enum class LibraryView { Tracks, Albums, Artists, Playlists, History }
 fun LibraryScreen(vm: MainViewModel) {
     val s = LocalStrings.current
     var view by remember { mutableStateOf(LibraryView.Tracks) }
+    // Como la biblioteca de Qobuz: buscar dentro de ella y ver álbumes y listas en lista o en cuadrícula.
+    var query by remember { mutableStateOf("") }
+    val ctxLib = androidx.compose.ui.platform.LocalContext.current
+    var grid by remember { mutableStateOf(ctxLib.getSharedPreferences("qbdlx", 0).getBoolean("library_grid", false)) }
+    fun hit(vararg t: String) = query.isBlank() || t.any { it.contains(query.trim(), ignoreCase = true) }
     LaunchedEffect(Unit) { vm.loadLibrary() }
 
     LazyColumn(Modifier.fillMaxSize().statusBarsPadding(), contentPadding = PaddingValues(bottom = 16.dp + LocalBottomInset.current)) {
@@ -352,6 +361,18 @@ fun LibraryScreen(vm: MainViewModel) {
                 IconButton({ vm.openSearch() }) { Icon(Icons.Default.Search, s.search) }
                 IconButton({ vm.loadLibrary(force = true) }, enabled = !vm.libraryLoading) { Icon(Icons.Default.Refresh, s.refresh) }
             }
+            androidx.compose.material3.TextField(
+                query, { query = it },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+                placeholder = { Text(s.searchLibrary) },
+                leadingIcon = { Icon(Icons.Default.Search, null) },
+                trailingIcon = { if (query.isNotEmpty()) IconButton({ query = "" }) { Icon(Icons.Default.Close, null) } },
+                singleLine = true,
+                shape = RoundedCornerShape(28.dp),
+                colors = androidx.compose.material3.TextFieldDefaults.colors(
+                    focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
+                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant, unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant),
+            )
             Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 LibraryView.entries.forEach { v ->
                     val label = when (v) { LibraryView.Playlists -> s.playlists; LibraryView.Albums -> s.albums; LibraryView.Tracks -> s.tracksTab; LibraryView.Artists -> s.artistsTab; LibraryView.History -> s.history }
@@ -362,21 +383,37 @@ fun LibraryScreen(vm: MainViewModel) {
             if (view != LibraryView.History && view != LibraryView.Artists) {
                 var menu by remember { mutableStateOf(false) }
                 val labels = listOf(s.sortAdded, s.sortTitle, s.sortArtist, s.sortNewest, s.sortOldest)
-                Box(Modifier.padding(horizontal = 8.dp)) {
-                    TextButton({ menu = true }) { Text("${s.sortBy}: ${labels[vm.librarySort.coerceIn(0, labels.lastIndex)]}") }
+                Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (view == LibraryView.Playlists || view == LibraryView.Albums) {
+                        Row(Modifier.clip(RoundedCornerShape(20.dp)).background(MaterialTheme.colorScheme.surfaceVariant)) {
+                            listOf(false to Icons.Default.ViewList, true to Icons.Default.GridView).forEach { (g, icon) ->
+                                Box(Modifier.clip(RoundedCornerShape(20.dp)).background(if (grid == g) Color.White else Color.Transparent)
+                                    .clickable { grid = g; ctxLib.getSharedPreferences("qbdlx", 0).edit().putBoolean("library_grid", g).apply() }
+                                    .padding(horizontal = 14.dp, vertical = 8.dp)) {
+                                    Icon(icon, null, tint = if (grid == g) Color.Black else MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(20.dp))
+                                }
+                            }
+                        }
+                        Spacer(Modifier.width(8.dp))
+                    }
+                Box {
+                    TextButton({ menu = true }) { Text(labels[vm.librarySort.coerceIn(0, labels.lastIndex)] + " ▾", color = MaterialTheme.colorScheme.onSurface) }
                     androidx.compose.material3.DropdownMenu(menu, { menu = false }) {
                         labels.forEachIndexed { i, l -> androidx.compose.material3.DropdownMenuItem({ Text(l) }, { vm.updateLibrarySort(i); menu = false }) }
                     }
+                }
                 }
             }
             if (vm.libraryLoading) LinearProgressIndicator(Modifier.fillMaxWidth().padding(16.dp))
         }
         when (view) {
             LibraryView.Playlists -> {
-                val list = vm.myPlaylists.orEmpty().let { l -> when (vm.librarySort) { 1 -> l.sortedBy { it.name.lowercase() }; 2 -> l.sortedBy { it.owner.lowercase() }; else -> l } }
+                val list = vm.myPlaylists.orEmpty().filter { hit(it.name, it.owner) }.let { l -> when (vm.librarySort) { 1 -> l.sortedBy { it.name.lowercase() }; 2 -> l.sortedBy { it.owner.lowercase() }; else -> l } }
                 if (list.isEmpty() && !vm.libraryLoading) item { EmptyText(s.nothingHere) }
                 if (list.isNotEmpty()) item { DownloadAllButton(vm) { vm.requestDownload(DownloadRequest.Playlists(list)) } }
-                items(list, key = { "p" + it.id }) { pl ->
+                if (grid) items(list.chunked(2), key = { "pg" + it.first().id }) { row ->
+                    GridRow(row.map { pl -> GridCell(pl.coverUrl, pl.name, pl.owner) { vm.openPlaylist(pl.id) } })
+                } else items(list, key = { "p" + it.id }) { pl ->
                     // The list entry may carry only one cover: ask for the rest of the mosaic once the row is on screen.
                     LaunchedEffect(pl.id) { vm.ensurePlaylistCovers(pl) }
                     LibraryRow(pl.coverUrl, pl.name, listOf(pl.owner, if (pl.tracksCount > 0) s.tracks(pl.tracksCount) else "").filter { it.isNotBlank() }.joinToString(" • "),
@@ -385,17 +422,19 @@ fun LibraryScreen(vm: MainViewModel) {
                 }
             }
             LibraryView.Albums -> {
-                val list = vm.favAlbums.orEmpty().let { l -> when (vm.librarySort) { 1 -> l.sortedBy { it.title.lowercase() }; 2 -> l.sortedBy { it.artist.lowercase() }; 3 -> l.sortedByDescending { it.year }; 4 -> l.sortedBy { it.year.ifBlank { "9999" } }; else -> l } }
+                val list = vm.favAlbums.orEmpty().filter { hit(it.title, it.artist) }.let { l -> when (vm.librarySort) { 1 -> l.sortedBy { it.title.lowercase() }; 2 -> l.sortedBy { it.artist.lowercase() }; 3 -> l.sortedByDescending { it.year }; 4 -> l.sortedBy { it.year.ifBlank { "9999" } }; else -> l } }
                 if (list.isEmpty() && !vm.libraryLoading) item { EmptyText(s.nothingHere) }
                 if (list.isNotEmpty()) item { DownloadAllButton(vm) { vm.requestDownload(DownloadRequest.Albums(list)) } }
-                items(list, key = { "a" + it.id }) { al ->
+                if (grid) items(list.chunked(2), key = { "ag" + it.first().id }) { row ->
+                    GridRow(row.map { al -> GridCell(al.coverUrl, al.title, al.artist) { vm.openAlbum(al.id) } })
+                } else items(list, key = { "a" + it.id }) { al ->
                     LibraryRow(al.coverUrl, al.title, listOf("Álbum", al.artist).filter { it.isNotBlank() }.joinToString(" • "),
                         onClick = { vm.openAlbum(al.id) },
                         badge = al.quality, hiRes = al.hiRes) { open, close -> CollectionMenu(vm, al, null, open, close) }
                 }
             }
             LibraryView.Tracks -> {
-                val list = vm.favTracks.orEmpty().let { l -> when (vm.librarySort) { 1 -> l.sortedBy { it.second.displayTitle.lowercase() }; 2 -> l.sortedBy { it.second.artist.lowercase() }; 3 -> l.sortedByDescending { it.first.year }; 4 -> l.sortedBy { it.first.year.ifBlank { "9999" } }; else -> l } }
+                val list = vm.favTracks.orEmpty().filter { hit(it.second.displayTitle, it.second.artist, it.first.title) }.let { l -> when (vm.librarySort) { 1 -> l.sortedBy { it.second.displayTitle.lowercase() }; 2 -> l.sortedBy { it.second.artist.lowercase() }; 3 -> l.sortedByDescending { it.first.year }; 4 -> l.sortedBy { it.first.year.ifBlank { "9999" } }; else -> l } }
                 if (list.isEmpty() && !vm.libraryLoading) item { EmptyText(s.nothingHere) }
                 if (list.isNotEmpty()) item { DownloadAllButton(vm) { vm.requestDownload(DownloadRequest.Tracks(list.filter { it.second.streamable })) } }
                 itemsIndexed(list) { i, (album, track) -> TrackRow(vm, album, track.copy(number = i + 1), "${track.artist} • ${album.title}", showCover = true, onPlay = { vm.playList(list, i) }) }
@@ -408,7 +447,7 @@ fun LibraryScreen(vm: MainViewModel) {
                 vm.favArtists.orEmpty().forEach { f -> entry(f.name, f.cover).also { e -> if (f.cover != null) e.cover = f.cover; e.followed = true } }
                 vm.favAlbums.orEmpty().filter { it.artist.isNotBlank() }.forEach { entry(it.artist, it.coverUrl).albums += it.id }
                 vm.favTracks.orEmpty().filter { it.second.artist.isNotBlank() }.forEach { (al, tr) -> entry(tr.artist, al.coverUrl).also { e -> e.albums += al.id; e.tracks++ } }
-                val artists = byName.values.sortedWith(compareByDescending<Entry> { it.followed }.thenByDescending { it.tracks + it.albums.size }.thenBy { it.name.lowercase() })
+                val artists = byName.values.filter { hit(it.name) }.sortedWith(compareByDescending<Entry> { it.followed }.thenByDescending { it.tracks + it.albums.size }.thenBy { it.name.lowercase() })
                 if (artists.isEmpty() && !vm.libraryLoading) item { EmptyText(s.nothingHere) }
                 items(artists, key = { "ar" + it.name.lowercase() }) { a ->
                     Row(Modifier.fillMaxWidth().clickable { vm.openArtist(a.name) }.padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -425,11 +464,28 @@ fun LibraryScreen(vm: MainViewModel) {
                 }
             }
             LibraryView.History -> {
-                val list = vm.history
+                val list = vm.history.filter { hit(it.second.displayTitle, it.second.artist, it.first.title) }
                 if (list.isEmpty()) item { EmptyText(s.nothingHere) }
                 itemsIndexed(list) { i, (album, track) -> TrackRow(vm, album, track.copy(number = i + 1), "${track.artist} • ${album.title}", showCover = true, onPlay = { vm.playList(list, i) }) }
             }
         }
+    }
+}
+
+private class GridCell(val cover: String?, val title: String, val subtitle: String, val onClick: () -> Unit)
+
+/** Dos portadas por fila, como la vista en cuadrícula de la biblioteca de Qobuz. */
+@Composable
+private fun GridRow(cells: List<GridCell>) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        cells.forEach { c ->
+            Column(Modifier.weight(1f).clip(RoundedCornerShape(8.dp)).clickable(onClick = c.onClick)) {
+                AsyncImage(c.cover, c.title, Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+                Text(c.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
+                Text(c.subtitle, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        if (cells.size == 1) Spacer(Modifier.weight(1f))
     }
 }
 
