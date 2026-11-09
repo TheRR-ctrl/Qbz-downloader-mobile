@@ -52,6 +52,7 @@ internal object FeedbackRateDecoder {
     // integer part alone is already ~rate/1000 (e.g. ~44 for a 44100Hz device), so converting back
     // to Hz means multiplying by the 1ms frame rate, not just dividing by the fixed-point scale.
     private const val FRAMES_PER_SECOND = 1000
+    private const val MICROFRAMES_PER_SECOND = 8000
 
     private const val FULL_SPEED_PAYLOAD_BYTES = 3
     private const val HIGH_SPEED_PAYLOAD_BYTES = 4
@@ -68,14 +69,19 @@ internal object FeedbackRateDecoder {
         nominalRateHz: Int,
         toleranceFraction: Double = UsbAudioTuning.FEEDBACK_RATE_TOLERANCE_FRACTION,
     ): Int? {
-        val candidates =
+        val formats =
             when (raw.size) {
-                FULL_SPEED_PAYLOAD_BYTES -> listOf(decodeFixedPoint(raw, FRACTIONAL_BITS_10_14))
-                HIGH_SPEED_PAYLOAD_BYTES ->
-                    listOf(decodeFixedPoint(raw, FRACTIONAL_BITS_16_16), decodeFixedPoint(raw, FRACTIONAL_BITS_10_14))
+                FULL_SPEED_PAYLOAD_BYTES -> listOf(FRACTIONAL_BITS_10_14)
+                HIGH_SPEED_PAYLOAD_BYTES -> listOf(FRACTIONAL_BITS_16_16, FRACTIONAL_BITS_10_14)
                 else -> return null
             }
-        return candidates.firstOrNull { isWithinTolerance(it, nominalRateHz, toleranceFraction) }
+        // El valor puede venir en muestras por trama (1 ms) o por microtrama (125 us, lo que dice
+        // UAC2 en alta velocidad): x1000 o x8000. Solo valía x1000, y un DAC de alta velocidad
+        // (como el FiiO) quedaba siempre fuera de tolerancia y nunca daba lecturas.
+        val candidates =
+            formats.flatMap { bits -> listOf(FRAMES_PER_SECOND, MICROFRAMES_PER_SECOND).map { decodeFixedPoint(raw, bits, it) } }
+        return candidates.filter { isWithinTolerance(it, nominalRateHz, toleranceFraction) }
+            .minByOrNull { abs(it - nominalRateHz) }
     }
 
     private fun isWithinTolerance(candidateHz: Int, nominalRateHz: Int, toleranceFraction: Double): Boolean {
@@ -83,11 +89,11 @@ internal object FeedbackRateDecoder {
         return abs(candidateHz - nominalRateHz) <= nominalRateHz * toleranceFraction
     }
 
-    private fun decodeFixedPoint(raw: ByteArray, fractionalBits: Int): Int {
+    private fun decodeFixedPoint(raw: ByteArray, fractionalBits: Int, perSecond: Int): Int {
         var rawValue = 0L
         for (i in raw.indices) {
             rawValue = rawValue or (raw.u8(i).toLong() shl (BITS_PER_BYTE * i))
         }
-        return (rawValue.toDouble() * FRAMES_PER_SECOND / (1L shl fractionalBits)).roundToInt()
+        return (rawValue.toDouble() * perSecond / (1L shl fractionalBits)).roundToInt()
     }
 }

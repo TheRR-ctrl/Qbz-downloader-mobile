@@ -85,6 +85,13 @@ internal class UsbIsoStreamEngine(
     @Volatile var feedbackMinHz: Int = 0
     @Volatile var feedbackMaxHz: Int = 0
     @Volatile var feedbackCount: Int = 0
+    /** Por qué no hay lecturas: cuántos bloques de feedback llegaron, vacíos, rechazados y el último crudo. */
+    @Volatile var feedbackUrbs: Int = 0
+    @Volatile var feedbackVacios: Int = 0
+    @Volatile var feedbackRechazados: Int = 0
+    @Volatile var feedbackErrores: Int = 0
+    @Volatile var feedbackUltimoCrudo: String = "-"
+    @Volatile var feedbackHilo: String = "no arrancó"
     /** Cuánto se ha adelantado (+) o retrasado (-) el envío frente al reloj ideal, en ms. */
     @Volatile var desvioEnvioMs: Long = 0L
     @Volatile var urbsEnviados: Long = 0L
@@ -92,7 +99,7 @@ internal class UsbIsoStreamEngine(
     /** Resumen de ritmo para los informes: lo que pide el DAC frente a lo que enviamos. */
     fun resumenRitmo(): String =
         "nominal=${sampleRateHz}Hz · feedback del DAC=" +
-            (if (feedbackCount == 0) "sin datos" else "${feedbackHz}Hz (min ${feedbackMinHz}, max ${feedbackMaxHz}, $feedbackCount lecturas)") +
+            (if (feedbackCount == 0) "sin datos [hilo=$feedbackHilo, bloques=$feedbackUrbs, vacíos=$feedbackVacios, rechazados=$feedbackRechazados, errores=$feedbackErrores, último=$feedbackUltimoCrudo]" else "${feedbackHz}Hz (min ${feedbackMinHz}, max ${feedbackMaxHz}, $feedbackCount lecturas)") +
             " · desvío del envío=${desvioEnvioMs}ms · bloques enviados=$urbsEnviados"
 
     /** Instante (nanoTime) en que empezó el reapIso en curso; 0 si el hilo no está esperando uno. */
@@ -151,6 +158,8 @@ internal class UsbIsoStreamEngine(
         // UsbAudioTuning.BASE_PACKETS_PER_URB's doc comment) so the *real* amount of audio -- and host-controller
         // lookahead cushion -- one URB represents stays the same regardless of negotiated speed;
         // only each packet's own content size shrinks to match its true, shorter duration.
+        feedbackUrbs = 0; feedbackVacios = 0; feedbackRechazados = 0; feedbackErrores = 0
+        feedbackUltimoCrudo = "-"; feedbackHilo = "no arrancó"
         feedbackHz = 0; feedbackMinHz = 0; feedbackMaxHz = 0; feedbackCount = 0
         desvioEnvioMs = 0L; urbsEnviados = 0L
         val usbSpeed = nativeBridge.getUsbSpeed(fd)
@@ -499,6 +508,7 @@ internal class UsbIsoStreamEngine(
                 UsbAudioTuning.FEEDBACK_PACKETS_PER_URB,
                 UsbAudioTuning.FEEDBACK_NUM_URBS)
         if (handle == 0L) {
+            feedbackHilo = "no se pudo abrir el endpoint"
             L.w("UsbIsoStreamEngine: failed to open feedback iso stream -- continuing without rate correction")
             return
         }
@@ -536,13 +546,16 @@ internal class UsbIsoStreamEngine(
 
         setUrgentAudioPriority()
         L.i("UsbIsoStreamEngine: feedback thread starting")
+        feedbackHilo = "en marcha"
         for (slot in 0 until UsbAudioTuning.FEEDBACK_NUM_URBS) resubmit(slot)
 
         while (feedbackStreaming) {
             val slot = nativeBridge.reapIso(handle)
             if (!feedbackStreaming) break
             if (slot < 0) {
+                feedbackErrores++
                 if (slot == UsbNativeBridge.REAP_ERROR_FATAL) {
+                    feedbackHilo = "murió (error fatal)"
                     L.e(
                         "UsbIsoStreamEngine: feedback reapIso() reported a fatal error -- stopping " +
                             "the feedback thread only")
@@ -551,8 +564,13 @@ internal class UsbIsoStreamEngine(
                 continue
             }
             val bytesRead = nativeBridge.readIsoSlotData(handle, slot, buffer)
+            feedbackUrbs++
+            if (bytesRead <= 0) feedbackVacios++
             if (bytesRead > 0) {
-                val decoded = FeedbackRateDecoder.decode(buffer.copyOf(bytesRead), sampleRateHz)
+                val crudo = buffer.copyOf(bytesRead)
+                feedbackUltimoCrudo = "${bytesRead}B " + crudo.joinToString("") { "%02x".format(it) }
+                val decoded = FeedbackRateDecoder.decode(crudo, sampleRateHz)
+                if (decoded == null) feedbackRechazados++
                 if (decoded != null) {
                     scheduler.updateRate(decoded)
                     feedbackHz = decoded
