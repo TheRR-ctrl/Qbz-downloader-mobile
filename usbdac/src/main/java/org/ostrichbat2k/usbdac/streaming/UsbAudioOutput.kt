@@ -122,6 +122,7 @@ class UsbAudioOutput(
     // way UsbAudioOutput's own URB buffers are, to avoid allocating on every single call. Grown
     // (never shrunk) to fit the largest buffer ExoPlayer has handed write() so far.
     private var floatConversionBuffer = ByteArray(0)
+    private var diagWrites = 0
     private var paddingDropBuffer = ByteArray(0)
 
     // Owns the native handle(s), the URB submit/reap loop(s), and frames-output position
@@ -356,8 +357,13 @@ class UsbAudioOutput(
                 "UsbAudioOutput: failed to set DAC clock to $sampleRateHz Hz after $clockSetAttempt " +
                     "retry(s): $clockResult")
             return false
-        } else if (clockSetAttempt > 0) {
-            L.i("UsbAudioOutput: set DAC clock to $sampleRateHz Hz after $clockSetAttempt retry(s)")
+        } else {
+            if (clockSetAttempt > 0) {
+                L.i("UsbAudioOutput: set DAC clock to $sampleRateHz Hz after $clockSetAttempt retry(s)")
+            }
+            usbAudioManager.reportDiagnostic(
+                "Reloj del DAC fijado a $sampleRateHz Hz (reintentos=$clockSetAttempt) · formato ${format.bitResolution} bits " +
+                    "subslot=${format.subslotSize} alt=${format.alternateSetting} · entrada=$inputConversion canales=$channels")
         }
 
         // See UsbAudioManager.activateDac's comment on wakePowerDomain for why: a clean,
@@ -686,6 +692,19 @@ class UsbAudioOutput(
         val limit = buffer.limit()
         val availableFloats = (limit - pos) / 4
         if (availableFloats == 0) return true
+        if (diagWrites < 4) {
+            diagWrites++
+            var peak = 0f
+            var nan = 0
+            var zeros = 0
+            for (i in 0 until availableFloats) {
+                val f = buffer.getFloat(pos + i * 4)
+                if (f.isNaN() || f.isInfinite()) nan++ else peak = maxOf(peak, kotlin.math.abs(f))
+                if (f == 0f) zeros++
+            }
+            usbAudioManager.reportDiagnostic(
+                "Bloque $diagWrites: floats=$availableFloats pico=$peak NaN=$nan ceros=$zeros orden=${buffer.order()} sube=${buffer.isDirect}")
+        }
 
         val neededBytes = availableFloats * subslot
         if (floatConversionBuffer.size < neededBytes) {
