@@ -110,6 +110,10 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
     private fun takeFocus() { audioManager.requestAudioFocus(focusRequest) }
     private fun dropFocus() { resumeOnGain = false; audioManager.abandonAudioFocusRequest(focusRequest) }
 
+    /** Lo que sale del decodificador ahora mismo (frecuencia, codificación PCM y tipo), para la ruta de la señal. */
+    @androidx.annotation.OptIn(UnstableApi::class)
+    fun decodedFormat(): Triple<Int, Int, String>? = active.audioFormat?.let { Triple(it.sampleRate, it.pcmEncoding, it.sampleMimeType ?: "") }
+
     /** The audio session of the player that is playing, for the phone's equalizer. */
     val audioSessionId: Int get() = active.audioSessionId
 
