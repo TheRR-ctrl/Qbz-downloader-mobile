@@ -61,8 +61,40 @@ class Archivo:
                 os.fsync(self.f.fileno())
 
 
-def hilo_logcat(carpeta, parar):
+CLAVES_USB = ("UsbNative", "UsbAudio", "UsbIso", "usbdac", "UsbUI", "xhci", "dwc3", "snd-usb", "snd_usb",
+              "AHAL_BluetoothAudioPort", "btif_a2dp", "A2dp", "A2DP", "AudioFlinger: ", "APM_AudioPolicyManager",
+              "thermal", "Thermal", "StuckPlayer", "qbdlx")
+DISPARADORES = ("status=-2 actual_length", "sin completar bloques", "isStalled -> true", "SIN RECUPERACI")
+ultimo_disparo = [0.0]
+
+
+def instantanea(carpeta, motivo, eventos):
+    """Foto de lo que el teléfono deja ver sin root: estado USB, Bluetooth, audio y (si lo permite) el kernel."""
+    destino = os.path.join(carpeta, "instantaneas")
+    os.makedirs(destino, exist_ok=True)
+    marca = datetime.datetime.now().strftime("%H%M%S")
+    partes = [("usb", ["shell", "dumpsys", "usb"]),
+              ("bluetooth", ["shell", "dumpsys", "bluetooth_manager"]),
+              ("audio_flinger", ["shell", "dumpsys", "media.audio_flinger"]),
+              ("dmesg", ["shell", "dmesg"]),
+              ("sysfs_usb", ["shell", "ls", "-R", "/sys/bus/usb/devices"])]
+    for nombre, args in partes:
+        try:
+            r = adb(*args, timeout=20)
+            texto = r.stdout if r.stdout.strip() else f"(sin salida) {r.stderr.strip()}"
+        except Exception as e:
+            texto = f"(falló: {e})"
+        if nombre == "dmesg" and ("denied" in texto.lower() or "(sin salida)" in texto):
+            eventos.escribe(f"{ahora()} dmesg no permitido sin root: {texto[:80]!r}\n", True)
+            continue
+        with open(os.path.join(destino, f"{marca}-{nombre}.txt"), "w", encoding="utf-8", errors="replace") as f:
+            f.write(f"# {ahora()} motivo: {motivo}\n{texto}")
+    eventos.escribe(f"{ahora()} instantánea ({motivo})\n", True)
+
+
+def hilo_logcat(carpeta, parar, eventos):
     salida = Archivo(os.path.join(carpeta, "logcat.txt"))
+    filtrado = Archivo(os.path.join(carpeta, "logcat_usb_audio.txt"))
     while not parar.is_set():
         if not conectado():
             time.sleep(1)
@@ -73,6 +105,11 @@ def hilo_logcat(carpeta, parar):
         try:
             for linea in p.stdout:
                 salida.escribe(linea)
+                if any(c in linea for c in CLAVES_USB):
+                    filtrado.escribe(linea)
+                    if any(d in linea for d in DISPARADORES) and time.time() - ultimo_disparo[0] > 15:
+                        ultimo_disparo[0] = time.time()
+                        threading.Thread(target=instantanea, args=(carpeta, linea.strip()[:90], eventos), daemon=True).start()
                 if parar.is_set():
                     break
         finally:
@@ -106,9 +143,10 @@ def main():
     estado = Archivo(os.path.join(carpeta, "estado.txt"))
     eventos = Archivo(os.path.join(carpeta, "eventos.txt"))
     parar = threading.Event()
-    threading.Thread(target=hilo_logcat, args=(carpeta, parar), daemon=True).start()
+    threading.Thread(target=hilo_logcat, args=(carpeta, parar, eventos), daemon=True).start()
     print(f"Guardando en {carpeta}/  ·  Ctrl+C para terminar")
     estaba = None
+    ultima_copia = [0.0]
     try:
         while True:
             ok = conectado()
@@ -125,13 +163,18 @@ def main():
                     estado.escribe(f"--- {ahora()}\n{t.stdout}", True)
                 except Exception as e:
                     estado.escribe(f"--- {ahora()} consulta fallida: {e}\n", True)
+            if ok and time.time() - ultima_copia[0] > 60:
+                ultima_copia[0] = time.time()
+                trae_registros_de_la_app(carpeta, eventos)
             time.sleep(2)
     except KeyboardInterrupt:
         pass
     parar.set()
     if conectado():
         trae_registros_de_la_app(carpeta, eventos)
-    print("Terminado. Comprime la carpeta", carpeta, "y pásamela.")
+    import shutil
+    zip_ = shutil.make_archive(carpeta, "zip", carpeta)
+    print("Terminado. Pásame este archivo:", zip_, "(y logcat_usb_audio.txt, que es el pequeño, si el zip pesa mucho)")
 
 
 if __name__ == "__main__":
