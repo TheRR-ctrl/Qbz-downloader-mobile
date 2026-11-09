@@ -60,7 +60,7 @@ object UsbTelemetry {
      * paquete más y termina un hueco después. No reabre nada. Hipótesis: si los cuelgues siguen, el
      * borde no es la causa.
      */
-    @Volatile var evitarBorde255: Boolean = false
+    @Volatile var evitarBorde255: Boolean = true
 
     /**
      * Prueba de arreglo: 12 bloques en vuelo en vez de 4. Medido: con el teléfono quieto, 11 min sin
@@ -74,10 +74,10 @@ object UsbTelemetry {
      * S26 Ultra: 80 bloques en vuelo de 1 ms (8 paquetes en USB 2.0), ~80 ms de margen. Manda sobre
      * «mitad», «120 paquetes» y «más margen».
      */
-    @Volatile var comoDecent: Boolean = false
+    @Volatile var comoDecent: Boolean = true
 
     /** Prueba de arreglo: pedir rendimiento al sistema para el hilo de envío (Performance Hint API, Android 12+). */
-    @Volatile var pedirRendimiento: Boolean = false
+    @Volatile var pedirRendimiento: Boolean = true
 
     /**
      * La pone la app: abre una sesión de Performance Hint para el hilo [tid] con un objetivo de

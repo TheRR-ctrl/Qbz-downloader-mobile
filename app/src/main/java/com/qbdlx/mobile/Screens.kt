@@ -754,7 +754,7 @@ fun SettingsScreen(vm: MainViewModel) {
             }
             run {
                 val dp = ctx.getSharedPreferences("qbdlx", 0)
-                var borde by remember { mutableStateOf(dp.getBoolean("diag_evitar_borde_255", false)) }
+                var borde by remember { mutableStateOf(dp.getBoolean("diag_evitar_borde_255", true)) }
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("Prueba de arreglo sin cortes: esquivar el borde de 255", fontSize = 14.sp)
@@ -776,7 +776,7 @@ fun SettingsScreen(vm: MainViewModel) {
             }
             run {
                 val dp = ctx.getSharedPreferences("qbdlx", 0)
-                var decent by remember { mutableStateOf(dp.getBoolean("diag_como_decent", false)) }
+                var decent by remember { mutableStateOf(dp.getBoolean("diag_como_decent", true)) }
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("Prueba de arreglo: enviar como decent-player", fontSize = 14.sp)
@@ -787,7 +787,7 @@ fun SettingsScreen(vm: MainViewModel) {
             }
             run {
                 val dp = ctx.getSharedPreferences("qbdlx", 0)
-                var rendim by remember { mutableStateOf(dp.getBoolean("diag_pedir_rendimiento", false)) }
+                var rendim by remember { mutableStateOf(dp.getBoolean("diag_pedir_rendimiento", true)) }
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("Prueba de arreglo: pedir rendimiento al sistema", fontSize = 14.sp)
