@@ -161,7 +161,7 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
         .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), false)
         .setHandleAudioBecomingNoisy(true) // unplugging headphones pauses
         .build()
-        .also { p -> p.addListener(Events(p)); watchOutput(p); if (!bitPerfect) announceSession(p.audioSessionId, true) }
+        .also { p -> p.addListener(Events(p)); p.addAnalyticsListener(SinkEvents(p)); watchOutput(p); if (!bitPerfect) announceSession(p.audioSessionId, true) }
 
     /** Once the player has created its AudioTrack we know the real format: match the USB mixer to it. */
     @androidx.annotation.OptIn(UnstableApi::class)
@@ -186,6 +186,24 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
         val fmt = p.audioFormat
         val usb = if (UsbDirect.prefs(context).enabled) UsbDirect.managerOrNull(context)?.playbackRoute?.value else null
         PlaybackLog.add(context, "pista ${fmt?.sampleRate ?: "?"} Hz · ${fmt?.pcmEncoding ?: "?"} (codificación) · ${fmt?.sampleMimeType ?: "?"} · posición ${p.currentPosition} ms · salida: ${usb ?: "mezclador de Android (controlador USB apagado)"}")
+    }
+
+    /** Logs when the audio output is created, released or runs dry, to find what restarts it mid-track. */
+    @androidx.annotation.OptIn(UnstableApi::class)
+    private inner class SinkEvents(private val player: ExoPlayer) : AnalyticsListener {
+        private fun tag() = if (player === active) "" else " (siguiente)"
+        override fun onAudioTrackInitialized(eventTime: AnalyticsListener.EventTime, audioTrackConfig: AudioSink.AudioTrackConfig) {
+            PlaybackLog.add(context, "salida de audio creada${tag()} · ${audioTrackConfig.sampleRate} Hz · posición ${player.currentPosition} ms")
+        }
+        override fun onAudioTrackReleased(eventTime: AnalyticsListener.EventTime, audioTrackConfig: AudioSink.AudioTrackConfig) {
+            PlaybackLog.add(context, "salida de audio cerrada${tag()} · posición ${player.currentPosition} ms")
+        }
+        override fun onAudioUnderrun(eventTime: AnalyticsListener.EventTime, bufferSize: Int, bufferSizeMs: Long, elapsedSinceLastFeedMs: Long) {
+            PlaybackLog.add(context, "audio sin datos${tag()}: ${elapsedSinceLastFeedMs} ms desde la última entrega · posición ${player.currentPosition} ms")
+        }
+        override fun onAudioSinkError(eventTime: AnalyticsListener.EventTime, audioSinkError: Exception) {
+            PlaybackLog.add(context, "error de la salida de audio${tag()}: ${audioSinkError.javaClass.simpleName}: ${audioSinkError.message}")
+        }
     }
 
     private inner class Events(private val player: ExoPlayer) : Player.Listener {
