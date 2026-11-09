@@ -220,7 +220,7 @@ fun QualityDialog(current: Quality, onPick: (Quality) -> Unit, onCancel: () -> U
                 Text(LocalStrings.current.selectQuality, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 Text(LocalStrings.current.chooseQuality, fontSize = 13.sp, color = Color.White.copy(alpha = .7f))
                 Quality.entries.forEach { q ->
-                    val accent = when (q) { Quality.HI_RES -> Gold; Quality.LOSSLESS -> Cyan; Quality.MP3 -> Cyan.copy(alpha = .55f) }
+                    val accent = when (q) { Quality.HI_RES_MAX, Quality.HI_RES -> Gold; Quality.LOSSLESS -> Cyan; Quality.MP3 -> Cyan.copy(alpha = .55f) }
                     Row(
                         Modifier.fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))

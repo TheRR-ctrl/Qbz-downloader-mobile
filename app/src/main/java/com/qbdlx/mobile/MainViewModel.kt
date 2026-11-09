@@ -2139,6 +2139,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         playJob = viewModelScope.launch {
             try {
                 val (url, q) = withContext(Dispatchers.IO) { resolve(item.second.id) }
+                PlaybackLog.add(getApplication(), "calidad pedida formato ${playFormat()} (${if (url.startsWith("http")) "Qobuz" else "archivo bajado"}) · recibida ${q?.let { "${it.bitDepth}-bit/${it.sampleRate} Hz" + if (it.mp3) " MP3" else "" } ?: "?"} · desde ${resumeMs} ms")
                 // The USB driver only upgrades a track at configure(): claim the DAC first, or the first track stays on Android's mixer.
                 if (UsbDirect.prefs(getApplication()).enabled) {
                     UsbDirect.managerOrNull(getApplication())?.let { m ->

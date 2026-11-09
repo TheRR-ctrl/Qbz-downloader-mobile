@@ -6,7 +6,7 @@ import java.io.File
 /** The last playback events (state changes and errors), kept in a small file so "why does it not play" can be read from the diagnostic report. */
 object PlaybackLog {
     private const val FILE = "playback-log.txt"
-    private const val MAX = 40
+    private const val MAX = 80
 
     @Synchronized fun add(context: Context, line: String) {
         runCatching {

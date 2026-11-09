@@ -174,7 +174,7 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
                 if (r.changed && !restartedItem) {
                     restartedItem = true
                     // The track was made under the old mixer: make it again under the new one, at the same spot.
-                    main.post { val pos = p.currentPosition; p.stop(); p.prepare(); p.seekTo(pos) }
+                    main.post { val pos = p.currentPosition; PlaybackLog.add(context, "se vuelve a crear la pista en $pos ms (cambió el mezclador)"); p.stop(); p.prepare(); p.seekTo(pos) }
                 }
             }
         })
@@ -185,7 +185,7 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
     private fun logRoute(p: ExoPlayer) {
         val fmt = p.audioFormat
         val usb = if (UsbDirect.prefs(context).enabled) UsbDirect.managerOrNull(context)?.playbackRoute?.value else null
-        PlaybackLog.add(context, "pista ${fmt?.sampleRate ?: "?"} Hz · ${fmt?.sampleMimeType ?: "?"} · salida: ${usb ?: "mezclador de Android (controlador USB apagado)"}")
+        PlaybackLog.add(context, "pista ${fmt?.sampleRate ?: "?"} Hz · ${fmt?.pcmEncoding ?: "?"} (codificación) · ${fmt?.sampleMimeType ?: "?"} · posición ${p.currentPosition} ms · salida: ${usb ?: "mezclador de Android (controlador USB apagado)"}")
     }
 
     private inner class Events(private val player: ExoPlayer) : Player.Listener {

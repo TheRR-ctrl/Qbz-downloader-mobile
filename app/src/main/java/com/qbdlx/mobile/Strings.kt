@@ -593,6 +593,7 @@ object English : Strings {
     override val chooseQuality = "Choose your preferred audio quality"
     override val cancel = "Cancel"
     override fun qualityDescription(q: Quality) = when (q) {
+        Quality.HI_RES_MAX -> "24-bit up to 192kHz"
         Quality.HI_RES -> "24-bit up to 96kHz"
         Quality.LOSSLESS -> "16-bit 44.1kHz"
         Quality.MP3 -> "320kbps"
@@ -1106,6 +1107,7 @@ object Spanish : Strings {
     override val chooseQuality = "Elige la calidad de audio que prefieras"
     override val cancel = "Cancelar"
     override fun qualityDescription(q: Quality) = when (q) {
+        Quality.HI_RES_MAX -> "24 bits hasta 192 kHz"
         Quality.HI_RES -> "24 bits hasta 96 kHz"
         Quality.LOSSLESS -> "16 bits 44,1 kHz"
         Quality.MP3 -> "320 kbps"
