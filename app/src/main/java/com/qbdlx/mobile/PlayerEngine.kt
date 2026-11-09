@@ -171,12 +171,14 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
         }
 
         override fun onPlaybackStateChanged(state: Int) {
+            PlaybackLog.add(context, "estado ${when (state) { Player.STATE_IDLE -> "IDLE"; Player.STATE_BUFFERING -> "BUFFERING"; Player.STATE_READY -> "READY"; else -> "ENDED" }}${if (player !== active) " (siguiente)" else ""}")
             if (player !== active || state != Player.STATE_ENDED || fading) return
             // The track ended. If a faded transition was prepared but never started (too late), switch now.
             if (idle?.playbackState == Player.STATE_READY && nextUrl != null) swapNow() else listener.onEnded()
         }
 
         override fun onPlayerError(error: PlaybackException) {
+            PlaybackLog.add(context, "ERROR ${error.errorCodeName}: ${error.message} / ${error.cause?.javaClass?.simpleName}: ${error.cause?.message}")
             if (player === active) listener.onError(error)
             else { nextUrl = null; idle?.stop(); idle?.clearMediaItems() } // the prepared track failed: the app fetches it normally later
         }
@@ -184,6 +186,7 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
 
     /** Replaces everything with [url] and plays it from the start. */
     fun start(url: String) {
+        PlaybackLog.add(context, "start ${url.substringBefore('?').takeLast(60)}")
         resetAll()
         restartedItem = false
         active.repeatMode = if (repeatOne) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
