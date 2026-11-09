@@ -115,6 +115,8 @@ interface Strings {
     // Quality
     val selectQuality: String
     val chooseQuality: String
+    val qualityOnWifi: String
+    val qualityOnData: String
     val cancel: String
     fun qualityDescription(q: Quality): String
 
@@ -591,6 +593,8 @@ object English : Strings {
 
     override val selectQuality = "Select Quality"
     override val chooseQuality = "Choose your preferred audio quality"
+    override val qualityOnWifi = "On Wi-Fi"
+    override val qualityOnData = "On mobile data"
     override val cancel = "Cancel"
     override fun qualityDescription(q: Quality) = when (q) {
         Quality.HI_RES_MAX -> "24-bit up to 192kHz"
@@ -1105,6 +1109,8 @@ object Spanish : Strings {
 
     override val selectQuality = "Seleccionar calidad"
     override val chooseQuality = "Elige la calidad de audio que prefieras"
+    override val qualityOnWifi = "Con WiFi"
+    override val qualityOnData = "Con datos"
     override val cancel = "Cancelar"
     override fun qualityDescription(q: Quality) = when (q) {
         Quality.HI_RES_MAX -> "24 bits hasta 192 kHz"

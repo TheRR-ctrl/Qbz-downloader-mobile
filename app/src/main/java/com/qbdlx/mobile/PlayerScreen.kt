@@ -386,7 +386,8 @@ private fun NowPlayingPage(vm: MainViewModel, album: Album, track: Track, close:
     val context = LocalContext.current
     val quality = vm.nowQuality
 
-    if (qualityDialog) QualityDialog(vm.playQuality, { vm.updatePlayQuality(it); qualityDialog = false }, { qualityDialog = false })
+    if (qualityDialog) QualityDialog(vm.playQuality, { vm.updatePlayQuality(it); qualityDialog = false }, { qualityDialog = false },
+        perNetwork = Triple(vm.playQualityWifi, vm.playQualityData, vm.onWifiNow), onPickFor = { q, w -> vm.updatePlayQuality(q, w); qualityDialog = false })
     if (sleepDialog) AlertDialog(
         onDismissRequest = { sleepDialog = false },
         title = { Text(s.sleepTimer) },

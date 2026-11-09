@@ -1408,9 +1408,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         // Wi-Fi only: pause when it drops, carry on when it is back.
         runCatching {
             context.getSystemService(android.net.ConnectivityManager::class.java)?.registerDefaultNetworkCallback(object : android.net.ConnectivityManager.NetworkCallback() {
-                override fun onAvailable(network: android.net.Network) { if (wifiOnly) downloads.recheckAllowed() }
-                override fun onCapabilitiesChanged(network: android.net.Network, caps: android.net.NetworkCapabilities) { if (wifiOnly) downloads.recheckAllowed() }
-                override fun onLost(network: android.net.Network) { if (wifiOnly) downloads.recheckAllowed() }
+                override fun onAvailable(network: android.net.Network) { onWifiNow = onWifi(); if (wifiOnly) downloads.recheckAllowed() }
+                override fun onCapabilitiesChanged(network: android.net.Network, caps: android.net.NetworkCapabilities) { onWifiNow = onWifi(); if (wifiOnly) downloads.recheckAllowed() }
+                override fun onLost(network: android.net.Network) { onWifiNow = onWifi(); if (wifiOnly) downloads.recheckAllowed() }
             })
         }
     }
@@ -1950,13 +1950,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private var prefetched: Pair<Pair<Album, Track>, AudioQuality?>? = null
 
     /** The quality songs are streamed in; chosen from the quality box in the player (not the same as the download quality). */
-    var playQuality by mutableStateOf(Quality.entries.firstOrNull { it.formatId == prefs.getInt("play_quality", 6) } ?: Quality.LOSSLESS); private set
+    private fun qualityPref(key: String, def: Int) = Quality.entries.firstOrNull { it.formatId == prefs.getInt(key, def) } ?: Quality.LOSSLESS
+    /** The highest quality to stream with Wi-Fi (the old single setting); with mobile data it is its own setting, equal to this one until changed. */
+    var playQualityWifi by mutableStateOf(qualityPref("play_quality", 6)); private set
+    var playQualityData by mutableStateOf(qualityPref("play_quality_data", prefs.getInt("play_quality", 6))); private set
+    /** Whether the phone is on Wi-Fi/Ethernet right now (kept up to date by the network callback). */
+    var onWifiNow by mutableStateOf(onWifi()); private set
+    /** The quality that applies on the current connection. */
+    val playQuality: Quality get() = if (onWifiNow) playQualityWifi else playQualityData
     private fun playFormat() = if (carStream) Quality.MP3.formatId else playQuality.formatId
 
     /** Changes the listening quality and restarts the current song at the same spot in the new quality. */
-    fun updatePlayQuality(q: Quality) {
-        if (q == playQuality) return
-        playQuality = q; prefs.edit().putInt("play_quality", q.formatId).apply()
+    fun updatePlayQuality(q: Quality, forWifi: Boolean = onWifiNow) {
+        val before = playQuality
+        if (forWifi) { playQualityWifi = q; prefs.edit().putInt("play_quality", q.formatId).apply() }
+        else { playQualityData = q; prefs.edit().putInt("play_quality_data", q.formatId).apply() }
+        if (playQuality == before) return
         if (playQueue.current != null && restoredPosMs < 0) playCurrent(if (engineDelegate.isInitialized()) engine.position else 0L)
     }
 
