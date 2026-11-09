@@ -107,6 +107,16 @@ fun diagnoseUsb(context: Context): String {
             sb.appendLine("    mezclador fijado ahora: " + (cur.getOrNull()?.let { "${it.format.sampleRate} Hz ${encName(it.format.encoding)} (${if (it.mixerBehavior == android.media.AudioMixerAttributes.MIXER_BEHAVIOR_BIT_PERFECT) "bit-perfect" else "defecto"})" } ?: (cur.exceptionOrNull()?.let { "error ${it.message}" } ?: "ninguno")))
         }
     }
+    // What the USB bus itself sees, independent of Android's audio layer.
+    runCatching {
+        val usbList = context.getSystemService(android.hardware.usb.UsbManager::class.java).deviceList.values
+        sb.appendLine("\nDispositivos USB conectados (${usbList.size}):")
+        for (u in usbList) {
+            val audio = (0 until u.interfaceCount).any { u.getInterface(it).interfaceClass == 1 }
+            sb.appendLine("- ${u.productName ?: "?"} (${u.manufacturerName ?: "?"}) id=%04x:%04x%s".format(u.vendorId, u.productId, if (audio) "  ← clase audio" else ""))
+        }
+        if (usbList.isEmpty()) sb.appendLine("  ninguno: el teléfono no detecta nada por USB (cable/adaptador sin datos, o el DAC no está en modo USB)")
+    }
     if (outs.none { it.type == AudioDeviceInfo.TYPE_USB_DEVICE || it.type == AudioDeviceInfo.TYPE_USB_HEADSET })
         sb.appendLine("\n⚠ Android no ve ningún DAC USB como salida de audio (revisa cable, adaptador y el modo USB del BTR5).")
     if (Build.VERSION.SDK_INT >= 33) {
@@ -130,7 +140,7 @@ class BitPerfectOutput(context: Context) {
     private var applied: MixerFormat? = null
 
     private fun usb(): List<AudioDeviceInfo> = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
-        .filter { it.type == AudioDeviceInfo.TYPE_USB_DEVICE || it.type == AudioDeviceInfo.TYPE_USB_HEADSET }
+        .filter { it.type == AudioDeviceInfo.TYPE_USB_DEVICE || it.type == AudioDeviceInfo.TYPE_USB_HEADSET || it.type == AudioDeviceInfo.TYPE_USB_ACCESSORY }
 
     private fun name(d: AudioDeviceInfo) = d.productName?.toString().orEmpty()
 

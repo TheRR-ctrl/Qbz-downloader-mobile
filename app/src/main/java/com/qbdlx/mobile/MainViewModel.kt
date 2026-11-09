@@ -2220,6 +2220,23 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var bitPerfectState by mutableStateOf(BitPerfectState(BitPerfectKind.OFF)); private set
     private val bitPerfectProbe by lazy { BitPerfectOutput(context) }
 
+    // A DAC plugged in (or out) after the screen was opened: look again right away instead of waiting for the next visit.
+    private val dacCallback = object : android.media.AudioDeviceCallback() {
+        override fun onAudioDevicesAdded(added: Array<out android.media.AudioDeviceInfo>) = devicesChanged()
+        override fun onAudioDevicesRemoved(removed: Array<out android.media.AudioDeviceInfo>) = devicesChanged()
+    }
+    private fun devicesChanged() {
+        if (!bitPerfect) return
+        val seen = bitPerfectProbe.probe()
+        val settled = bitPerfectState.kind == BitPerfectKind.ACTIVE || bitPerfectState.kind == BitPerfectKind.NO_MATCH || bitPerfectState.kind == BitPerfectKind.REFUSED
+        if (seen.kind == BitPerfectKind.NO_USB || !settled) bitPerfectState = seen
+    }
+    init {
+        context.getSystemService(android.media.AudioManager::class.java)
+            .registerAudioDeviceCallback(dacCallback, android.os.Handler(android.os.Looper.getMainLooper()))
+        if (bitPerfect) bitPerfectState = bitPerfectProbe.probe()
+    }
+
     /** What the Settings line says before anything plays: is it possible, is a DAC connected? */
     fun refreshBitPerfect() {
         if (!bitPerfect) { bitPerfectState = BitPerfectState(BitPerfectKind.OFF); return }
