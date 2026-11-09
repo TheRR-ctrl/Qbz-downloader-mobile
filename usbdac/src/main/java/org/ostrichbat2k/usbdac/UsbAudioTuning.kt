@@ -93,7 +93,7 @@ internal object UsbAudioTuning {
      * not assumed) changes. See [UsbAudioOutput]'s `startStreamingThread`'s
      * packetsPerUrb/packetsPerSecond.
      */
-    const val BASE_PACKETS_PER_URB = 32
+    const val BASE_PACKETS_PER_URB = 16
     const val NUM_URBS = 4
 
     /**
