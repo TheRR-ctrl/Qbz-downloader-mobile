@@ -18,10 +18,12 @@ class QbdlxApp : Application(), ViewModelStoreOwner, coil.ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         DefaultFolder.init(this)
+        DiagnosticLog.start(this)
         // Keep the last crash, so it can be shared from Settings and the cause found.
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { t, e ->
             runCatching {
+                DiagnosticLog.event("CRASH ${t.name}: ${e}")
                 java.io.File(filesDir, CRASH_FILE).writeText("${java.util.Date()} thread ${t.name}\n${android.util.Log.getStackTraceString(e)}")
             }
             previous?.uncaughtException(t, e)

@@ -140,6 +140,13 @@ class UsbAudioOutput(
             reportPipelineStats = usbAudioManager::reportPipelineStats,
         )
 
+    private val telemetriaPropia: () -> String = {
+        val sinceUrb = System.currentTimeMillis() - streamEngine.lastUrbSubmittedAtMs
+        "streaming=${streamEngine.streaming} · pausado=$paused · sinceUrb=${sinceUrb}ms · reapEnCurso=${streamEngine.reapEnCursoMs()}ms · " +
+            "búfer=${ringBuffer.availableToRead()}B · ${streamEngine.resumenRitmo()}"
+    }
+    init { UsbTelemetry.snapshot = telemetriaPropia }
+
     // The isochronous schedule can't actually stop (the USB clock must keep ticking), so "pause"
     // means substituting silence for whatever's next, *without* draining it out of [ringBuffer] --
     // otherwise up to UsbAudioTuning.RING_BUFFER_MS of already-decoded audio keeps playing out audibly after
@@ -797,6 +804,8 @@ class UsbAudioOutput(
         // instance (a track skip landing mid-relock) hand back its claim instead of starting a
         // stream nothing will ever read from.
         released = true
+        // Solo la quita si sigue siendo la suya: ya puede haber una salida nueva (otra frecuencia) registrada.
+        if (UsbTelemetry.snapshot === telemetriaPropia) UsbTelemetry.snapshot = null
         synchronized(activationLock) {
             stopStreamingThread()
             if (activated) {
