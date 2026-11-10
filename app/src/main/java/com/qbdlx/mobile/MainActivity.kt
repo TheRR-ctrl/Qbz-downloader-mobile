@@ -297,7 +297,7 @@ private fun AppShell(vm: MainViewModel) {
                 val st = LocalStrings.current
                 AlertDialog(
                     onDismissRequest = { vm.pendingBulk = null },
-                    title = { Text(when (r) { is DownloadRequest.Albums -> st.confirmBulkAlbums(r.albums.size); is DownloadRequest.Playlists -> st.confirmBulkPlaylists(r.playlists.size); else -> "" }) },
+                    title = { Text(when (r) { is DownloadRequest.Albums -> st.confirmBulkAlbums(r.albums.size); is DownloadRequest.Playlists -> st.confirmBulkPlaylists(r.playlists.size); is DownloadRequest.Everything -> st.everythingConfirm; else -> "" }) },
                     confirmButton = { TextButton({ vm.confirmBulk() }) { Text(st.confirmBulkYes) } },
                     dismissButton = { TextButton({ vm.pendingBulk = null }) { Text(st.cancel) } },
                 )

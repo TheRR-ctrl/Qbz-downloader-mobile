@@ -30,6 +30,8 @@ import androidx.media3.exoplayer.audio.AudioSink
 class PlayerEngine(private val context: Context, private val listener: Listener) {
     interface Listener {
         fun onPlayingChanged(playing: Boolean)
+        /** El motor espera datos con la reproducción pedida: la interfaz enseña un círculo girando en el botón. */
+        fun onBufferingChanged(buffering: Boolean) {}
         /** The engine moved on to the prepared next track by itself. */
         fun onAdvanced()
         /** The track ended and no next track was prepared. */
@@ -151,7 +153,15 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
         }
 
         override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): AudioSink =
-            MeterSink(super.buildAudioSink(context, enableFloatOutput, enableAudioTrackPlaybackParams)!!).let { normal ->
+            MeterSink(
+                // Colchón de salida 4 veces mayor que el de fábrica: al cambiar de app el sistema retrasa un instante
+                // el hilo que entrega audio, y con el colchón corto la salida se quedaba sin datos (el corte).
+                androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context)
+                    .setEnableFloatOutput(enableFloatOutput)
+                    .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                    .setAudioTrackBufferSizeProvider(androidx.media3.exoplayer.audio.DefaultAudioTrackBufferSizeProvider.Builder().setPcmBufferMultiplicationFactor(8).build())
+                    .build(),
+            ).let { normal ->
                 // Always wrap: the player is built once, so deciding here on the switch would ignore turning it on later.
                 // RoutingAudioSink asks the preferences on every track and uses the normal output while it is off.
                 // A failure to start the driver never takes the app down.
@@ -242,6 +252,7 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
         override fun onPlaybackStateChanged(state: Int) {
             PlaybackLog.add(context, "estado ${when (state) { Player.STATE_IDLE -> "IDLE"; Player.STATE_BUFFERING -> "BUFFERING"; Player.STATE_READY -> "READY"; else -> "ENDED" }}${if (player !== active) " (siguiente)" else ""}")
             if (state == Player.STATE_READY && player === active) logRoute(player)
+            if (player === active) listener.onBufferingChanged(state == Player.STATE_BUFFERING && player.playWhenReady)
             if (player !== active || state != Player.STATE_ENDED || fading) return
             // The track ended. If a faded transition was prepared but never started (too late), switch now.
             if (idle?.playbackState == Player.STATE_READY && nextUrl != null) swapNow() else listener.onEnded()

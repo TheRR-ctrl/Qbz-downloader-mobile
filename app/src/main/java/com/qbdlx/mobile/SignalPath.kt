@@ -139,7 +139,9 @@ fun SignalPathDialog(vm: MainViewModel, onClose: () -> Unit) {
             }
         },
         confirmButton = { TextButton(onClose) { Text("Cerrar") } },
-        dismissButton = if (bt) ({
+        dismissButton = if (vm.downloadedQualityOfCurrent().let { it != null && it != Quality.HI_RES_MAX }) ({
+            TextButton({ vm.upgradeCurrentDownload(); onClose() }) { Text("Mejorar calidad") }
+        }) else if (bt) ({
             TextButton({
                 runCatching { ctx.startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
                     .onFailure { vm.notice = "Activa las Opciones de desarrollador para ver el códec Bluetooth" }

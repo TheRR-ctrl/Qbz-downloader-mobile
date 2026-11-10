@@ -20,6 +20,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -337,6 +339,19 @@ fun GenreSheet(genres: List<Pair<String, String>>, selected: String?, onPick: (S
                 modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(50)).border(BorderStroke(1.dp, Color.White.copy(alpha = .5f)), RoundedCornerShape(50))
                     .clickable { onPick(null) }.padding(vertical = 14.dp),
             )
+        }
+    }
+}
+
+
+/** Icono de play/pausa que, mientras carga el búfer, lleva un círculo girando alrededor. */
+@Composable
+fun PlayPauseIcon(vm: MainViewModel, size: androidx.compose.ui.unit.Dp, tint: Color) {
+    val s = LocalStrings.current
+    Box(Modifier.size(size), contentAlignment = Alignment.Center) {
+        Icon(if (vm.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, s.playPause, Modifier.size(size * 0.8f), tint = tint)
+        androidx.compose.animation.AnimatedVisibility(vm.buffering, enter = androidx.compose.animation.fadeIn(), exit = androidx.compose.animation.fadeOut()) {
+            androidx.compose.material3.CircularProgressIndicator(Modifier.size(size), color = tint, strokeWidth = 2.dp)
         }
     }
 }

@@ -13,6 +13,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.ui.graphics.Color
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -32,6 +34,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Search
@@ -340,7 +344,7 @@ fun AlbumScreen(vm: MainViewModel) {
                     if (r.missing.isNotEmpty()) vm.downloads.forgetFiles(r.missing)
                     if (r.unreadable.isNotEmpty()) android.widget.Toast.makeText(context, s.shareUnreadable(r.unreadable.size), android.widget.Toast.LENGTH_LONG).show()
                 }) { Text(s.shareGeneric, maxLines = 1, softWrap = false) }
-                TextButton({ vm.ipodSendDownloaded(done) }) { Text(s.ipodSendDownloaded, maxLines = 1, softWrap = false) }
+                if (vm.ipodPlugged || vm.ipodProgress != null) TextButton({ vm.ipodSendDownloaded(done) }) { Text(s.ipodSendDownloaded, maxLines = 1, softWrap = false) }
             }
         }
         val albumItems = d.tracks.map { d.album to it }
@@ -367,20 +371,67 @@ fun PlaylistScreen(vm: MainViewModel) {
     }
 }
 
-/** An artist's page: their picture, a button to download everything, and their albums (newest first). */
+/** An artist's page, like Qobuz's: most listened, albums, EPs and singles, live, similar artists. */
 @Composable
 fun ArtistScreen(vm: MainViewModel) {
     val a = vm.artistPage ?: return
+    val s = LocalStrings.current
     BackHandler { vm.closeArtist() }
+    fun type(al: Album) = al.productType.lowercase()
+    fun isLive(al: Album) = Regex("\\b(live|en vivo|en directo|unplugged)\\b", RegexOption.IGNORE_CASE).containsMatchIn(al.title + " " + al.version)
+    fun isEp(al: Album) = type(al).let { it.contains("single") || it.contains("ep") } || (al.tracksCount in 1..6 && !type(al).contains("album"))
+    val live = a.albums.filter { isLive(it) }
+    val eps = a.albums.filter { !isLive(it) && isEp(it) }
+    val albums = a.albums.filter { !isLive(it) && !isEp(it) }
+    var topAll by remember(a.name) { mutableStateOf(false) }
+    var bioOpen by remember(a.name) { mutableStateOf(false) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp + LocalBottomInset.current)) {
         item {
-            DetailHeader(a.image, a.name, listOf(LocalStrings.current.artistsTab, "${a.albums.size} ${LocalStrings.current.albums.lowercase()}"), null,
+            DetailHeader(a.image, a.name, listOf(s.artistsTab, "${a.albums.size} ${s.albums.lowercase()}"), null,
                 onBack = { vm.closeArtist() }, onDownload = { vm.requestDownload(DownloadRequest.Albums(a.albums)) })
+            if (a.bio.isNotBlank()) {
+                Text(a.bio, Modifier.padding(horizontal = 16.dp, vertical = 8.dp).clickable { bioOpen = !bioOpen }, fontSize = 13.sp,
+                    maxLines = if (bioOpen) Int.MAX_VALUE else 3, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (!bioOpen) Text(s.readMore, Modifier.padding(horizontal = 16.dp).clickable { bioOpen = true }, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
         }
-        items(a.albums, key = { "aa" + it.id }) { al ->
-            LibraryRow(al.coverUrl, al.title, al.year,
-                onClick = { vm.openAlbum(al.id) }, badge = al.quality, hiRes = al.hiRes) { open, close -> CollectionMenu(vm, al, null, open, close) }
+        if (a.topTracks.isNotEmpty()) {
+            item { ArtistSectionHeader(s.topSongs, if (a.topTracks.size > 5) (if (topAll) "▲" else s.seeAll) else null) { topAll = !topAll } }
+            val shown = if (topAll) a.topTracks else a.topTracks.take(5)
+            itemsIndexed(shown, key = { _, t -> "at" + t.second.id }) { i, (album, track) ->
+                TrackRow(vm, album, track.copy(number = i + 1), "${track.artist} • ${album.title}", showCover = true, onPlay = { vm.playList(a.topTracks, i) })
+            }
         }
+        fun section(title: String, list: List<Album>) {
+            if (list.isEmpty()) return
+            item(key = "sec$title") {
+                ArtistSectionHeader(title, null) {}
+                Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    list.forEach { al ->
+                        Column(Modifier.width(140.dp).clickable { vm.openAlbum(al.id) }) {
+                            Cover(al.coverUrl, 140)
+                            Text(al.title, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
+                            Text(al.year, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+        }
+        section(s.albums, albums); section(s.epsSingles, eps); section(s.liveAlbums, live)
+        if (a.similar.isNotEmpty()) item {
+            ArtistSectionHeader(s.similarArtists, null) {}
+            Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                a.similar.forEach { n -> QChip(false, { vm.openArtist(n) }, label = { Text(n) }) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ArtistSectionHeader(title: String, action: String?, onAction: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 20.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(title, Modifier.weight(1f), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        if (action != null) TextButton(onAction) { Text(action, fontSize = 12.sp) }
     }
 }
 
@@ -390,9 +441,10 @@ private enum class LibraryView { Tracks, Albums, Artists, Playlists, History, Fo
 @Composable
 fun LibraryScreen(vm: MainViewModel) {
     val s = LocalStrings.current
-    var view by remember { mutableStateOf(LibraryView.Tracks) }
+    var view by remember { mutableStateOf(LibraryView.entries.getOrElse(vm.libraryViewIdx) { LibraryView.Tracks }) }
     // Como la biblioteca de Qobuz: buscar dentro de ella y ver álbumes y listas en lista o en cuadrícula.
-    var query by remember { mutableStateOf("") }
+    var query by remember { mutableStateOf(vm.libraryQuery) }
+    LaunchedEffect(query) { vm.libraryQuery = query }
     val ctxLib = androidx.compose.ui.platform.LocalContext.current
     var grid by remember { mutableStateOf(ctxLib.getSharedPreferences("qbdlx", 0).getBoolean("library_grid", false)) }
     fun hit(vararg t: String) = query.isBlank() || t.any { it.contains(query.trim(), ignoreCase = true) }
@@ -421,7 +473,7 @@ fun LibraryScreen(vm: MainViewModel) {
                 LibraryView.entries.forEach { v ->
                     val label = when (v) { LibraryView.Playlists -> s.playlists; LibraryView.Albums -> s.albums; LibraryView.Tracks -> s.tracksTab; LibraryView.Artists -> s.artistsTab; LibraryView.History -> s.history; LibraryView.Folders -> s.localFolders }
                     val n = when (v) { LibraryView.Playlists -> vm.myPlaylists?.size; LibraryView.Albums -> vm.favAlbums?.size; LibraryView.Tracks -> vm.favTracks?.size; LibraryView.Artists -> vm.favArtists?.size; else -> null }
-                    QChip(view == v, { view = v }, label = { Text(if (n != null) "$label · $n" else label) })
+                    QChip(view == v, { view = v; vm.libraryViewIdx = v.ordinal }, label = { Text(if (n != null) "$label · $n" else label) })
                 }
             }
             if (view != LibraryView.History && view != LibraryView.Artists && view != LibraryView.Folders) {
@@ -445,6 +497,14 @@ fun LibraryScreen(vm: MainViewModel) {
                     androidx.compose.material3.DropdownMenu(menu, { menu = false }) {
                         labels.forEachIndexed { i, l -> androidx.compose.material3.DropdownMenuItem({ Text(l) }, { vm.updateLibrarySort(i); menu = false }) }
                     }
+                }
+                if (view == LibraryView.Tracks) {
+                    Spacer(Modifier.weight(1f))
+                    // Reproducción aleatoria como la de Qobuz: baraja lo que se ve (con el filtro y el orden de ahora).
+                    Box(Modifier.size(44.dp).clip(CircleShape).background(Color.White).clickable {
+                        val l = vm.favTracks.orEmpty().filter { hit(it.second.displayTitle, it.second.artist, it.first.title) }.shuffled()
+                        if (l.isNotEmpty()) vm.playList(l, 0)
+                    }, contentAlignment = Alignment.Center) { Icon(Icons.Default.Shuffle, s.shuffle, tint = Color.Black) }
                 }
                 }
             }
@@ -592,6 +652,24 @@ private fun GridRow(cells: List<GridCell>) {
     }
 }
 
+/** «Descargar toda mi cuenta»: la flecha cae una y otra vez hacia la bandeja mientras busca y encola todo. */
+@Composable
+private fun DownloadEverythingButton(vm: MainViewModel) {
+    val busy = vm.everythingBusy
+    val t = androidx.compose.animation.core.rememberInfiniteTransition(label = "todo")
+    val fall by t.animateFloat(0f, 1f, androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(if (busy) 900 else 2200, easing = androidx.compose.animation.core.LinearEasing)), label = "caida")
+    val color = MaterialTheme.colorScheme.onPrimary
+    Button({ if (!busy) vm.requestDownload(DownloadRequest.Everything) }, Modifier.padding(horizontal = 16.dp).fillMaxWidth().height(56.dp)) {
+        Box(Modifier.size(28.dp), contentAlignment = Alignment.Center) {
+            // La bandeja de abajo y la flecha que cae hasta ella, desvaneciéndose al llegar.
+            Box(Modifier.align(Alignment.BottomCenter).width(22.dp).height(3.dp).clip(RoundedCornerShape(2.dp)).background(color))
+            Icon(Icons.Default.Download, null, Modifier.size(20.dp).graphicsLayer { translationY = (fall * 8f - 6f) * density; alpha = if (fall < 0.8f) 1f else (1f - fall) / 0.2f }, tint = color)
+        }
+        Spacer(Modifier.width(12.dp))
+        Text(if (busy) "…" else LocalStrings.current.everythingButton, fontWeight = FontWeight.SemiBold)
+    }
+}
+
 /** The "Descargar todo" button at the top of each Library list. */
 @Composable
 private fun DownloadAllButton(vm: MainViewModel, onClick: () -> Unit) {
@@ -681,7 +759,7 @@ fun DownloadsScreen(vm: MainViewModel) {
                         Icon(Icons.Default.Share, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(s.shareDrive)
                     }
                     TextButton({ showShareAny = true }, enabled = items.isNotEmpty()) { Text(s.shareGeneric) }
-                    TextButton({ vm.ipodSendDownloaded() }, enabled = items.isNotEmpty()) { Text(s.ipodSendDownloaded) }
+                    if (vm.ipodPlugged || vm.ipodProgress != null) TextButton({ vm.ipodSendDownloaded() }, enabled = items.isNotEmpty()) { Text(s.ipodSendDownloaded) }
                     TextButton({ dl.clearCompleted() }, enabled = items.isNotEmpty()) {
                         Icon(Icons.Default.DeleteSweep, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(s.dlClearDone, maxLines = 1, softWrap = false)
                     }
@@ -772,6 +850,7 @@ fun SettingsScreen(vm: MainViewModel) {
                 }
             }
         }
+        SettingsGroup(s.everythingTitle, s.everythingHelp) { DownloadEverythingButton(vm) }
         SettingsGroup(s.maxConcurrentTitle, s.maxConcurrentHelp) {
             Row(Modifier.padding(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 MAX_CONCURRENT_OPTIONS.forEach { n -> QChip(vm.maxConcurrent == n, { vm.updateMaxConcurrent(n) }, label = { Text("$n") }) }
@@ -1109,7 +1188,7 @@ fun MiniPlayer(vm: MainViewModel) {
                     Text(album.artist, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 IconButton({ vm.togglePlay() }) {
-                    Icon(if (vm.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, LocalStrings.current.playPause, Modifier.size(32.dp), tint = MaterialTheme.colorScheme.onSurface)
+                    PlayPauseIcon(vm, 36.dp, MaterialTheme.colorScheme.onSurface)
                 }
             }
             LinearProgressIndicator(

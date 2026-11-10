@@ -177,9 +177,9 @@ object Tracker {
                 ytWhy = ""; var offer: String? = null
                 // The voice is out of reach of this lyric (other alphabet, or too little matched): every other source is tried and the first one
                 // whose words do match what was heard replaces it. A lyric the user chose or edited by hand is never swapped here (it is only offered below).
-                // without times of its own the lyric cannot be left as it is, even if the user picked it: a source with times replaces it below
+                // a lyric the user picked is never swapped for another source, with or without times of its own
                 val untimed = _state.value.status == Status.PLAIN
-                if ((timed == null || WhisperAlign.approximate) && (!LyricEdit.isEdited(_state.value.source) || untimed) && !declined(t.storeKey)) {
+                if ((timed == null || WhisperAlign.approximate) && !LyricEdit.isEdited(_state.value.source) && !declined(t.storeKey)) {
                     withContext(Dispatchers.Main) { timing.value = "La letra no coincide con la voz: probando otras fuentes…" }
                     val curPlain = lines.joinToString("\n")
                     var best: Triple<List<LyricLine>, String, Double>? = null
@@ -232,7 +232,7 @@ object Tracker {
                 }
                 // Nothing matches and no other lyric helps: what Whisper heard becomes the lyric, with its real times.
                 // a lyric the user chose or edited is never replaced by what Whisper heard: that brought the old (wrong) text back
-                if ((timed == null || WhisperAlign.approximate) && untimed) audioFallback(ctx, t, uri, lines) { !isActive }?.let { return@withContext it }
+                if ((timed == null || WhisperAlign.approximate) && untimed && !LyricEdit.isEdited(_state.value.source)) audioFallback(ctx, t, uri, lines) { !isActive }?.let { return@withContext it }
                 if (timed == null && (LyricEdit.isEdited(_state.value.source) || _state.value.source?.startsWith(YtMusic.SOURCE) == true)) return@withContext "La letra que tienes está en otro alfabeto que la voz (o se entendió muy poco), así que no pude ajustar los tiempos. Se queda tu letra tal cual."
                 if (timed == null && asr.words.size >= 8) {
                     val heard = WhisperAlign.linesFromHeard(asr.words)

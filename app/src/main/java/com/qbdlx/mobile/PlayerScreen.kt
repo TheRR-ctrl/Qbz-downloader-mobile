@@ -326,7 +326,7 @@ private fun PlayerMini(vm: MainViewModel, album: Album, track: Track, onOpen: ()
                     Text(album.artist, fontSize = 12.sp, color = OnPlayerDim, maxLines = 1, overflow = TextOverflow.Clip, modifier = Modifier.basicMarquee())
                 }
                 IconButton({ vm.togglePlay() }) {
-                    Icon(if (vm.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, LocalStrings.current.playPause, tint = OnPlayer)
+                    PlayPauseIcon(vm, 28.dp, OnPlayer)
                 }
             }
             Box(Modifier.fillMaxWidth().height(2.dp).background(Color.White.copy(alpha = .2f)).drawBehind {
@@ -520,7 +520,7 @@ private fun NowPlayingPage(vm: MainViewModel, album: Album, track: Track, close:
             ToggleIcon(Icons.Default.Shuffle, s.shuffle, q.shuffle) { vm.toggleShuffle() }
             IconButton({ vm.previous() }, Modifier.size(56.dp)) { Icon(Icons.Default.SkipPrevious, s.previous, Modifier.size(38.dp), tint = OnPlayer) }
             IconButton({ vm.togglePlay() }, Modifier.size(76.dp)) {
-                Icon(if (vm.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, s.playPause, Modifier.size(64.dp), tint = OnPlayer)
+                PlayPauseIcon(vm, 72.dp, OnPlayer)
             }
             IconButton({ vm.next() }, Modifier.size(56.dp)) { Icon(Icons.Default.SkipNext, s.next, Modifier.size(38.dp), tint = OnPlayer) }
             ToggleIcon(if (q.repeat == RepeatMode.ONE) Icons.Default.RepeatOne else Icons.Default.Repeat, s.repeat, q.repeat != RepeatMode.OFF) { vm.cycleRepeat() }

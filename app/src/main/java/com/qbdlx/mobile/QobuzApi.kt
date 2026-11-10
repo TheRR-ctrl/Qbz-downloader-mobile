@@ -186,7 +186,20 @@ class QobuzApi(val http: OkHttpClient = OkHttpClient()) {
             offset += 100
         }
         val list = albums.distinctBy { it.id }.sortedByDescending { it.releaseDate.ifBlank { it.year } }
-        return ArtistPage(name, image ?: list.firstOrNull()?.coverUrl, list)
+        // Lo extra (más escuchado, biografía, artistas similares) viene de `artist/page`; si Qobuz no lo da, la página queda con lo de siempre.
+        var bio = ""; var top = emptyList<Pair<Album, Track>>(); var similar = emptyList<String>()
+        runCatching {
+            val pg = get("artist/page", mapOf("artist_id" to "$id", "sort" to "release_date"))
+            bio = (pg.optJSONObject("biography")?.optString("content") ?: "").replace(Regex("<[^>]*>"), " ").replace(Regex("\\s+"), " ").trim()
+            top = pg.optJSONArray("top_tracks").mapObjects { t ->
+                val album = t.optJSONObject("album")?.let { runCatching { parseAlbum(it) }.getOrNull() } ?: return@mapObjects null
+                album to parseTrack(t, 0, album.artist)
+            }.distinctBy { it.second.id }
+            similar = (pg.optJSONObject("similar_artists")?.optJSONArray("items") ?: pg.optJSONArray("similar_artists")).mapObjects { a ->
+                nameOf(a).takeIf { it.isNotBlank() }?.let { n -> JSONObject().put("n", n) }
+            }.map { it.getString("n") }
+        }
+        return ArtistPage(name, image ?: list.firstOrNull()?.coverUrl, list, bio, top, similar)
     }
 
     /** Tracks matching [query] (as (album, track) pairs, like a playlist's), for the player's Explore page. */
@@ -583,5 +596,8 @@ class QobuzApi(val http: OkHttpClient = OkHttpClient()) {
 }
 
 /** An artist followed in the Qobuz library. */
-data class ArtistPage(val name: String, val image: String?, val albums: List<Album>)
+data class ArtistPage(
+    val name: String, val image: String?, val albums: List<Album>,
+    val bio: String = "", val topTracks: List<Pair<Album, Track>> = emptyList(), val similar: List<String> = emptyList(),
+)
 data class FavArtist(val name: String, val cover: String?)
