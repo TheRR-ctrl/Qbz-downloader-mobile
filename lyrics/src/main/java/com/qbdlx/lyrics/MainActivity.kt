@@ -437,6 +437,7 @@ class MainActivity : ComponentActivity() {
                         var fAlpha by remember { mutableFloatStateOf(sp.getInt("float_alpha", 100).toFloat()) }
                         var fScale by remember { mutableFloatStateOf(sp.getFloat("float_scale", 1f)) }
                         var fWidth by remember { mutableFloatStateOf(sp.getInt("float_w", (resources.displayMetrics.widthPixels * 0.86f).toInt()).toFloat()) }
+                        var fHeight by remember { mutableFloatStateOf(sp.getInt("float_h", 0).toFloat()) }
                         var fBubble by remember { mutableFloatStateOf(sp.getInt("float_bubble_dp", 60).toFloat()) }
                         var fFolded by remember { mutableStateOf(sp.getBoolean("float_min", false)) }
                         var fNext by remember { mutableStateOf(sp.getBoolean("float_next", true)) }
@@ -452,6 +453,7 @@ class MainActivity : ComponentActivity() {
                         slider("Transparencia del fondo: ${100 - fAlpha.toInt()} %", fAlpha, 0f..100f) { fAlpha = it; sp.edit().putInt("float_alpha", it.toInt()).apply() }
                         slider("Tamaño del texto: ${(fScale * 100).toInt()} %", fScale, 0.6f..2.2f) { fScale = it; sp.edit().putFloat("float_scale", it).apply() }
                         slider("Ancho: ${(fWidth / resources.displayMetrics.density).toInt()} dp", fWidth.coerceIn(minW, maxW), minW..maxW) { fWidth = it; sp.edit().putInt("float_w", it.toInt()).apply() }
+                        slider(if (fHeight < 1f) "Alto: automático" else "Alto: ${(fHeight / resources.displayMetrics.density).toInt()} dp", fHeight, 0f..(resources.displayMetrics.heightPixels * 0.6f)) { fHeight = if (it < 40 * resources.displayMetrics.density) 0f else it; sp.edit().putInt("float_h", fHeight.toInt()).apply() }
                         slider("Tamaño de la burbuja: ${fBubble.toInt()} dp", fBubble, 28f..80f) { fBubble = it; sp.edit().putInt("float_bubble_dp", it.toInt()).apply() }
                         @Composable fun toggle(label: String, on: Boolean, key: String, set: (Boolean) -> Unit) = Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                             Text(label, Modifier.weight(1f), fontSize = 13.sp)
@@ -464,7 +466,7 @@ class MainActivity : ComponentActivity() {
                         toggle("Pegarse al borde al soltarla", fSnap, "float_snap") { fSnap = it }
                         Text("En la ventana, arrastra ⤡ para cambiar el ancho (izquierda/derecha) y el texto (arriba/abajo).", style = small)
                         TextButton({
-                            sp.edit().remove("float_alpha").remove("float_scale").remove("float_w").remove("float_bubble_dp").remove("float_bubble").remove("float_min").remove("float_bar").remove("float_next").remove("float_snap").apply()
+                            sp.edit().remove("float_alpha").remove("float_scale").remove("float_w").remove("float_h").remove("float_bubble_dp").remove("float_bubble").remove("float_min").remove("float_bar").remove("float_next").remove("float_snap").apply()
                             fAlpha = 100f; fScale = 1f; fWidth = resources.displayMetrics.widthPixels * 0.86f; fBubble = 46f; fFolded = false; fBar = true; fNext = true; fSnap = false
                         }) { Text("Restablecer el aspecto") }
                     }

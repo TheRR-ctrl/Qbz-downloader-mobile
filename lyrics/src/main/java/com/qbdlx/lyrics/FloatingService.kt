@@ -52,15 +52,15 @@ class FloatingService : Service() {
         lateinit var applyLayout: () -> Unit
         val bigger = tool("A+").apply { setOnClickListener { scale = (scale + 0.15f).coerceAtMost(2.2f); prefs.edit().putFloat("float_scale", scale).apply(); applyLayout() } }
         val smaller = tool("A−").apply { setOnClickListener { scale = (scale - 0.15f).coerceAtLeast(0.6f); prefs.edit().putFloat("float_scale", scale).apply(); applyLayout() } }
-        // Dragging this corner handle: left/right changes the window's width, up/down the size of the text.
+        // Dragging this corner handle: left/right changes the window's width, up/down its height (a tall window shows more lines).
         val resize = tool("⤡").apply {
-            var startW = 0; var downX = 0f; var downY = 0f; var startScale = 1f
+            var startW = 0; var startH = 0; var downX = 0f; var downY = 0f
             setOnTouchListener { _, e ->
                 when (e.action) {
-                    MotionEvent.ACTION_DOWN -> { startW = params.width.takeIf { it > 0 } ?: prefs.getInt("float_w", 0); downX = e.rawX; downY = e.rawY; startScale = scale }
+                    MotionEvent.ACTION_DOWN -> { startW = params.width.takeIf { it > 0 } ?: prefs.getInt("float_w", 0); startH = view?.height ?: 0; downX = e.rawX; downY = e.rawY }
                     MotionEvent.ACTION_MOVE -> {
                         prefs.edit().putInt("float_w", (startW + (e.rawX - downX).toInt()).coerceIn((160 * dp).toInt(), resources.displayMetrics.widthPixels))
-                            .putFloat("float_scale", (startScale + (e.rawY - downY) / (240 * dp)).coerceIn(0.6f, 2.2f)).apply()
+                            .putInt("float_h", (startH + (e.rawY - downY).toInt()).coerceIn((56 * dp).toInt(), resources.displayMetrics.heightPixels)).apply()
                         applyLayout()
                     }
                 }
@@ -167,7 +167,6 @@ class FloatingService : Service() {
             modeBtn.text = if (bar) "⤢" else "▭"
             bigger.visibility = if (bar) View.GONE else View.VISIBLE
             smaller.visibility = bigger.visibility
-            now.maxLines = if (bar) 1 else 2
             now.ellipsize = if (bar) android.text.TextUtils.TruncateAt.END else null
             now.textSize = (if (bar) 14f else 15f) * scale; next.textSize = 12f * scale; prev.textSize = 12f * scale
             root.background = if (full) bg else null
@@ -177,6 +176,9 @@ class FloatingService : Service() {
             root.setPadding(((if (hasBubble) pad else 14) * dp).toInt(), vp.toInt(), ((if (bar) 4 else 12) * dp).toInt(), vp.toInt())
             (texts.layoutParams as LinearLayout.LayoutParams).marginStart = ((if (hasBubble) 10 else 0) * dp).toInt()
             params.width = if (full) prefs.getInt("float_w", defaultW) else WindowManager.LayoutParams.WRAP_CONTENT
+            val hSaved = prefs.getInt("float_h", 0)
+            params.height = if (full && hSaved > 0) hSaved else WindowManager.LayoutParams.WRAP_CONTENT
+            now.maxLines = if (bar) 1 else if (hSaved > 0) 6 else 2
             // opened next to the right edge, the panel must not hang off the screen
             if (full) snapAnim?.cancel() // a bubble still sliding to the edge would drag the opened window off screen
             if (full && params.width > 0) params.x = params.x.coerceIn(0, (resources.displayMetrics.widthPixels - params.width).coerceAtLeast(0))
@@ -276,7 +278,7 @@ class FloatingService : Service() {
         scope.launch {
             while (isActive) {
                 // a setting changed in Ajustes: the window follows within a quarter of a second
-                val now2 = listOf("float_scale", "float_bar", "float_bubble", "float_min", "float_alpha", "float_bubble_dp", "float_w", "float_next").joinToString("|") { prefs.all[it].toString() }
+                val now2 = listOf("float_scale", "float_bar", "float_bubble", "float_min", "float_alpha", "float_bubble_dp", "float_w", "float_h", "float_next").joinToString("|") { prefs.all[it].toString() }
                 if (now2 != sig && !closing) { sig = now2; applyLayout() }
                 val state = Tracker.state.value
                 val wantBreath = folded && state.playing
