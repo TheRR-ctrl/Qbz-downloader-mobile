@@ -12,8 +12,8 @@ android {
         applicationId = "com.qbdlx.mobile"
         minSdk = 29
         targetSdk = 35
-        versionCode = 192
-        versionName = "0.49.2"
+        versionCode = 193
+        versionName = "0.49.3"
     }
 
     // A release build signed with a key given on the command line (-PreleaseKeystore=... -PreleasePassword=... [-PreleaseAlias=...]);

@@ -1704,6 +1704,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         downloads.setEnabled(true) // resumes whatever was waiting in the saved queue
         tab = Tab.Home
         loadHome()
+        loadLibrary() // the hearts need the favorites from the start, not only after opening the library
     }
 
     private fun loadHome() {
