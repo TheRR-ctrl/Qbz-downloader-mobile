@@ -251,12 +251,11 @@ internal class Espectro(bandas: Int = 28) {
         }
     }
 
-    /** La onda para el ámbito: empieza en un cruce por cero hacia arriba, para que no baile de lado. */
+    /** La onda para el ámbito: lo último que sonó, tal cual. Sin anclarla a un cruce por cero: eso clavaba el extremo izquierdo y dejaba suelto el derecho. */
     fun onda(activo: Boolean, leer: (FloatArray) -> Unit) {
         if (!activo) { trazo.fill(0f); return }
         leer(onda)
-        var ini = 0
-        for (i in 1 until n - trazo.size * 2) if (onda[i - 1] < 0f && onda[i] >= 0f) { ini = i; break }
+        val ini = n - trazo.size * 2
         for (i in trazo.indices) trazo[i] = onda[ini + i * 2]
     }
 }
