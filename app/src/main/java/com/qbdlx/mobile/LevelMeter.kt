@@ -34,7 +34,6 @@ import androidx.media3.exoplayer.audio.ForwardingAudioSink
 import org.ostrichbat2k.usbdac.streaming.Niveles
 import org.ostrichbat2k.usbdac.streaming.aDb
 import java.nio.ByteBuffer
-import kotlin.math.abs
 
 /**
  * Mide el pico de lo que la salida normal de Android acepta en cada llamada. Con el DAC por USB directo mide el
@@ -65,36 +64,29 @@ class MeterSink(sink: AudioSink) : ForwardingAudioSink(sink) {
             C.ENCODING_PCM_16BIT -> 2; C.ENCODING_PCM_24BIT -> 3; C.ENCODING_PCM_32BIT, C.ENCODING_PCM_FLOAT -> 4; else -> return
         }
         val trama = bytes * canales
-        var l = 0f; var r = 0f
-        var sl = 0.0; var sr = 0.0
         var i = desde; var n = 0
         while (i + trama <= hasta) {
-            val a = muestra(b, i, bytes)
-            val c = if (canales > 1) muestra(b, i + bytes, bytes) else a
-            if (abs(a) > l) l = abs(a)
-            if (abs(c) > r) r = abs(c)
-            sl += a * a; sr += c * c
-            if (n % paso == 0) Niveles.muestra(((a + c) * 16383.5f).toInt().coerceIn(-32768, 32767))
+            if (n % paso == 0) {
+                val a = muestra(b, i, bytes)
+                Niveles.muestra(a, if (canales > 1) muestra(b, i + bytes, bytes) else a)
+            }
             n++; i += trama
         }
-        if (n == 0) return
-        Niveles.anotar(l, r)
-        Niveles.anotarEnergia(sl, sr, n)
     }
 
-    private fun muestra(b: ByteBuffer, i: Int, bytes: Int): Float = when {
-        encoding == C.ENCODING_PCM_FLOAT -> b.getFloat(i).let { if (it.isNaN()) 0f else it }
-        bytes == 2 -> b.getShort(i) / 32768f
+    private fun muestra(b: ByteBuffer, i: Int, bytes: Int): Int = when {
+        encoding == C.ENCODING_PCM_FLOAT -> b.getFloat(i).let { if (it.isNaN()) 0 else (it * 32767f).toInt().coerceIn(-32768, 32767) }
+        bytes == 2 -> b.getShort(i).toInt()
         // 24 y 32 bits: bastan los dos bytes altos (el búfer va en el orden nativo, little-endian).
-        else -> ((b.get(i + bytes - 1).toInt() shl 8) or (b.get(i + bytes - 2).toInt() and 0xFF)) / 32768f
+        else -> (b.get(i + bytes - 1).toInt() shl 8) or (b.get(i + bytes - 2).toInt() and 0xFF)
     }
 }
 
 private const val SUELO_DB = -60f
 /** La barra enseña la energía (RMS) entre este suelo y 0 dB: con picos y -60 dB, la música de hoy la tenía siempre llena. */
-private const val SUELO_BARRA = -36f
+private const val SUELO_BARRA = -30f
 private const val CAIDA_DB_S = 60f
-private const val RETENCION_NS = 1_000_000_000L
+private const val RETENCION_NS = 700_000_000L
 private val VERDE = Color(0xFF2ECC71)
 private val AMARILLO = Color(0xFFF1C40F)
 private val ROJO = Color(0xFFE74C3C)
@@ -109,16 +101,20 @@ fun LevelMeter(activo: Boolean, modo: Int, alTocar: () -> Unit, modifier: Modifi
     // Estado fuera de Compose: se dibuja en cada cuadro leyendo [tick], sin recomponer nada.
     val st = remember { MeterState() }
     val esp = remember { Espectro() }
+    val lector = remember { Niveles.Lector() }
+    val nivel = remember { { o: FloatArray -> lector.nivel(o) } }
+    val ventana = remember { { o: FloatArray -> lector.ventana(o) } }
     var tick by remember { mutableLongStateOf(0L) }
     LaunchedEffect(activo, modo) {
         var antes = 0L
         while (true) withFrameNanos { t ->
             val dt = if (antes == 0L) 0f else ((t - antes) / 1e9f).coerceAtMost(.1f)
             antes = t
-            val c = st.avanzar(t, dt, activo)
+            lector.avanzar(dt)
+            val c = st.avanzar(t, dt, activo, nivel)
             when (modo) {
-                1 -> { esp.avanzar(dt, activo); tick = t }
-                2 -> { esp.onda(activo); tick = t }
+                1 -> { esp.avanzar(dt, activo, ventana); tick = t }
+                2 -> { esp.onda(activo, ventana); tick = t }
                 else -> if (c) tick = t
             }
         }
@@ -164,11 +160,11 @@ fun LevelMeter(activo: Boolean, modo: Int, alTocar: () -> Unit, modifier: Modifi
                     drawRoundRect(Color.White.copy(alpha = .12f), size = size, cornerRadius = radio)
                     val x = w * fraccion(st.nivel[ch])
                     if (x > 0f) drawRoundRect(
-                        Brush.horizontalGradient(0f to VERDE, .67f to VERDE, .84f to AMARILLO, 1f to ROJO, startX = 0f, endX = w),
+                        Brush.horizontalGradient(0f to VERDE, .6f to VERDE, .82f to AMARILLO, 1f to ROJO, startX = 0f, endX = w),
                         size = Size(x, h), cornerRadius = radio,
                     )
                     val p = w * fraccion(st.retenido[ch])
-                    if (p > 2f) drawRect(if (st.retenido[ch] >= -0.1f) ROJO else Color.White, Offset(p - 2f, 0f), Size(2f, h))
+                    if (p > 2f) drawRect(Color.White, Offset(p - 3f, 0f), Size(3f, h))
                 }
                 val max = st.maximo[ch].also { tick }
                 Text(
@@ -178,7 +174,7 @@ fun LevelMeter(activo: Boolean, modo: Int, alTocar: () -> Unit, modifier: Modifi
                 )
             }
             Canvas(Modifier.fillMaxWidth().padding(start = 14.dp, end = 46.dp).height(4.dp)) {
-                for (db in listOf(-30, -24, -18, -12, -6, -3, 0)) {
+                for (db in listOf(-24, -18, -12, -9, -6, -3, 0)) {
                     val x = size.width * fraccion(db.toFloat())
                     drawRect(Color.White.copy(alpha = if (db == 0) .7f else .35f), Offset(x.coerceAtMost(size.width - 1f), 0f), Size(1f, size.height))
                 }
@@ -203,17 +199,19 @@ internal class MeterState {
     fun reiniciar() { maximo.fill(SUELO_DB) }
 
     /** Avanza un cuadro; devuelve si cambió algo que haya que volver a dibujar. [leer] da pico L, R y RMS L, R. */
-    fun avanzar(ahora: Long, dt: Float, activo: Boolean, leer: (FloatArray) -> Unit = Niveles::tomar): Boolean {
+    fun avanzar(ahora: Long, dt: Float, activo: Boolean, leer: (FloatArray) -> Unit): Boolean {
         leer(leido)
         var cambio = false
         for (ch in 0..1) {
             val pico = if (activo) aDb(leido[ch], SUELO_DB) else SUELO_DB
-            val rms = if (activo) aDb(leido[2 + ch], SUELO_DB) else SUELO_DB
+            // +3 dB: un seno a fondo de escala marca 0, como en un medidor de estudio; así los golpes fuertes llegan arriba.
+            val rms = if (activo) (aDb(leido[2 + ch], SUELO_DB) + 3f).coerceAtMost(0f) else SUELO_DB
             val n = maxOf(rms, nivel[ch] - CAIDA_DB_S * dt).coerceAtLeast(SUELO_DB)
             if (n != nivel[ch]) { nivel[ch] = n; cambio = true }
-            if (pico >= retenido[ch]) { if (pico != retenido[ch]) cambio = true; retenido[ch] = pico; retenidoEn[ch] = ahora }
+            // La marca retiene el máximo de la propia barra (no el pico de muestra, que en música actual vive en 0 dB).
+            if (n >= retenido[ch]) { retenido[ch] = n; retenidoEn[ch] = ahora }
             else if (ahora - retenidoEn[ch] > RETENCION_NS && retenido[ch] > SUELO_DB) {
-                retenido[ch] = maxOf(pico, retenido[ch] - CAIDA_DB_S * dt); cambio = true
+                retenido[ch] = maxOf(n, retenido[ch] - CAIDA_DB_S * .5f * dt); cambio = true
             }
             if (pico > maximo[ch]) { maximo[ch] = pico; cambio = true }
         }
@@ -234,7 +232,7 @@ internal class Espectro(bandas: Int = 28) {
     // De ~45 Hz a ~17 kHz (a 44-48 kHz): del bin 1 al 380, repartidos en escala logarítmica.
     private val borde = IntArray(bandas + 1) { Math.round(Math.pow(380.0, it / bandas.toDouble())).toInt() }
 
-    fun avanzar(dt: Float, activo: Boolean, leer: (FloatArray) -> Unit = Niveles::copiar) {
+    fun avanzar(dt: Float, activo: Boolean, leer: (FloatArray) -> Unit) {
         if (activo) leer(onda) else onda.fill(0f)
         for (i in 0 until n) { re[i] = onda[i] * ventana[i]; im[i] = 0f }
         fft(re, im)
@@ -242,16 +240,17 @@ internal class Espectro(bandas: Int = 28) {
             val lo = borde[k]; val hi = maxOf(borde[k + 1], lo + 1)
             var m = 0f
             for (b in lo until hi) { val v = re[b] * re[b] + im[b] * im[b]; if (v > m) m = v }
-            // Un seno a fondo de escala da n/4 con Hann. Los agudos llevan menos energía: +0,6 dB por banda los iguala a la vista.
-            val db = 10f * kotlin.math.log10(m / (n / 4f * n / 4f) + 1e-12f) + .6f * k
-            val v = ((db + 60f) / 54f).coerceIn(0f, 1f)
-            barras[k] = maxOf(v, barras[k] - 2.2f * dt)
-            topes[k] = maxOf(barras[k], topes[k] - .45f * dt)
+            // Un seno a fondo de escala da n/4 con Hann. Los agudos llevan menos energía: +0,5 dB por banda los iguala a la vista.
+            val db = 10f * kotlin.math.log10(m / (n / 4f * n / 4f) + 1e-12f) + .5f * k
+            // -50..0 dB: con menos margen arriba, los graves de la música actual tenían las barras siempre llenas.
+            val v = ((db + 50f) / 50f).coerceIn(0f, 1f)
+            barras[k] = maxOf(v, barras[k] - 3.5f * dt)
+            topes[k] = maxOf(barras[k], topes[k] - .9f * dt)
         }
     }
 
     /** La onda para el ámbito: empieza en un cruce por cero hacia arriba, para que no baile de lado. */
-    fun onda(activo: Boolean, leer: (FloatArray) -> Unit = Niveles::copiar) {
+    fun onda(activo: Boolean, leer: (FloatArray) -> Unit) {
         if (!activo) { trazo.fill(0f); return }
         leer(onda)
         var ini = 0
