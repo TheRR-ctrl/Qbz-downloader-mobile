@@ -105,7 +105,7 @@ class MeterSink(sink: AudioSink) : ForwardingAudioSink(sink) {
 
 private const val SUELO_DB = -60f
 /** La barra enseña la energía (RMS) entre este suelo y 0 dB: con picos y -60 dB, la música de hoy la tenía siempre llena. */
-private const val SUELO_BARRA = -30f
+private const val SUELO_BARRA = -18f
 private const val CAIDA_DB_S = 60f
 private const val RETENCION_NS = 700_000_000L
 private val VERDE = Color(0xFF2ECC71)
@@ -197,7 +197,7 @@ fun LevelMeter(activo: Boolean, modo: Int, alTocar: () -> Unit, modifier: Modifi
                 )
             }
             Canvas(Modifier.fillMaxWidth().padding(start = 14.dp, end = 46.dp).height(4.dp)) {
-                for (db in listOf(-24, -18, -12, -9, -6, -3, 0)) {
+                for (db in listOf(-15, -12, -9, -6, -3, 0)) {
                     val x = size.width * fraccion(db.toFloat())
                     drawRect(Color.White.copy(alpha = if (db == 0) .7f else .35f), Offset(x.coerceAtMost(size.width - 1f), 0f), Size(1f, size.height))
                 }
