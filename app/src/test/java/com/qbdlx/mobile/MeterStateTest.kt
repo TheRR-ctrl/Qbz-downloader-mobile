@@ -35,9 +35,9 @@ class MeterStateTest {
         assertTrue(max in 18..21)
     }
 
-    @Test fun elAmbitoArrancaEnUnCrucePorCero() {
+    @Test fun elAmbitoEnsenaLoUltimoSinAnclarlo() {
         val e = Espectro()
-        e.onda(true) { o -> for (i in o.indices) o[i] = kotlin.math.sin(2 * Math.PI * 8 * (i + 37) / 1024).toFloat() }
-        assertTrue(kotlin.math.abs(e.trazo[0]) < 0.06f && e.trazo[4] > e.trazo[0])
+        e.onda(true) { o -> for (i in o.indices) o[i] = i.toFloat() }
+        assertTrue(e.trazo[0] == 512f && e.trazo[255] == 1022f)
     }
 }
