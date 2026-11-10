@@ -298,7 +298,7 @@ class FloatingService : Service() {
                         val posNow = Tracker.positionMs()
                         val i = Lrc.indexAt(state.lines, posNow)
                         before = if (i > 0) state.lines[i - 1].text else ""
-                        litNow = if (i >= 0 && Tracker.karaoke) Lrc.litChars(state.lines[i].text, state.lines[i].timeMs, state.lines.getOrNull(i + 1)?.timeMs, posNow, state.lines[i].endMs) else 0
+                        litNow = if (i >= 0 && Tracker.karaoke) Lrc.litChars(state.lines[i].text, state.lines[i].timeMs, state.lines.getOrNull(i + 1)?.timeMs, posNow, state.lines[i].endMs, state.lines[i].marks) else 0
                         (if (i < 0) "♪ …" else state.lines[i].text.ifBlank { "♪" }) to (Tracker.translations.value[i]?.let { "↳ $it" } ?: state.lines.getOrNull(i + 1)?.text.orEmpty())
                     }
                     Status.PLAIN -> "Letra sin sincronizar" to (state.track?.title.orEmpty())

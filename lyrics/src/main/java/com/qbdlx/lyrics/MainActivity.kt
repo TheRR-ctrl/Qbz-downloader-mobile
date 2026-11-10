@@ -371,6 +371,11 @@ class MainActivity : ComponentActivity() {
                             Text("Poner tiempos solo a las letras sin sincronizar, escuchando la voz (Whisper; gasta batería)", Modifier.weight(1f), fontSize = 13.sp)
                             androidx.compose.material3.Switch(autoW, { autoW = it; Tracker.autoWhisper = it; sp.edit().putBoolean("auto_whisper", it).apply() })
                         }
+                        var autoFix by remember { mutableStateOf(sp.getBoolean("auto_sync_fix", true)) }
+                        Row(Modifier.padding(top = 6.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                            Text("Corregir sola una letra que va adelantada o atrasada (la compara con la canción al cargarla)", Modifier.weight(1f), fontSize = 13.sp)
+                            androidx.compose.material3.Switch(autoFix, { autoFix = it; sp.edit().putBoolean("auto_sync_fix", it).apply() })
+                        }
                         Row(Modifier.padding(top = 6.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                             Text("Sincronía: $offset ms", Modifier.weight(1f))
                             TextButton({ setOffset((offset - 250).coerceIn(-10_000, 10_000)) }) { Text("−", fontSize = 20.sp) }
@@ -623,7 +628,7 @@ class MainActivity : ComponentActivity() {
                                 else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = when (dist) { 1 -> .8f; 2 -> .6f; else -> .45f }),
                                 tween(ms, easing = UiEaseOut), label = "color",
                             )
-                            val lit = if (on && Tracker.karaoke && state.status == Status.SYNCED) Lrc.litChars(l.text, l.timeMs, state.lines.getOrNull(i + 1)?.timeMs, clock.longValue, l.endMs) else 0
+                            val lit = if (on && Tracker.karaoke && state.status == Status.SYNCED) Lrc.litChars(l.text, l.timeMs, state.lines.getOrNull(i + 1)?.timeMs, clock.longValue, l.endMs, l.marks) else 0
                             val shown = if (lit > 0) androidx.compose.ui.text.buildAnnotatedString {
                                 append(l.text)
                                 addStyle(androidx.compose.ui.text.SpanStyle(color = MaterialTheme.colorScheme.onSurface), 0, lit)

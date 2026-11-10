@@ -41,7 +41,7 @@ object Whisper {
     }
 
     /** The song as 16 kHz mono floats (what Whisper reads). Null when it cannot be decoded. */
-    fun pcm16k(context: Context, uri: Uri, cancelled: () -> Boolean = { false }): FloatArray? {
+    fun pcm16k(context: Context, uri: Uri, cancelled: () -> Boolean = { false }, voz: Boolean = false): FloatArray? {
         val ex = MediaExtractor(); var codec: MediaCodec? = null
         try {
             ex.setDataSource(context, uri, null)
@@ -52,7 +52,8 @@ object Whisper {
             codec.configure(fmt, null, null, 0); codec.start()
             var rate = fmt.getInteger(MediaFormat.KEY_SAMPLE_RATE); var ch = fmt.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
             var out = FloatArray(RATE * 240); var size = 0
-            var acc = 0f; var cnt = 0; var phase = 0.0
+            var outR = FloatArray(if (voz) RATE * 240 else 0) // with [voz], [out] keeps the left channel and this one the right
+            var acc = 0f; var accR = 0f; var cnt = 0; var phase = 0.0
             val info = MediaCodec.BufferInfo(); var inDone = false; var outDone = false
             while (!outDone) {
                 if (cancelled()) return null
@@ -71,18 +72,24 @@ object Whisper {
                     val step = rate.toDouble() / RATE
                     val sb = codec.getOutputBuffer(o)!!.order(java.nio.ByteOrder.nativeOrder()).asShortBuffer()
                     while (sb.remaining() >= ch) {
-                        var m = 0f; for (k in 0 until ch) m += sb.get() / 32768f
-                        acc += m / ch; cnt++; phase += 1.0
+                        if (voz) {
+                            val l = sb.get() / 32768f; val r = if (ch >= 2) sb.get() / 32768f else l
+                            for (k in 2 until ch) sb.get()
+                            acc += l; accR += r
+                        } else { var m = 0f; for (k in 0 until ch) m += sb.get() / 32768f; acc += m / ch }
+                        cnt++; phase += 1.0
                         if (phase >= step) { // box filter down to 16 kHz
-                            if (size == out.size) out = out.copyOf(out.size * 2)
-                            out[size++] = acc / cnt; acc = 0f; cnt = 0; phase -= step
+                            if (size == out.size) { out = out.copyOf(out.size * 2); if (voz) outR = outR.copyOf(out.size) }
+                            if (voz) outR[size] = accR / cnt
+                            out[size++] = acc / cnt; acc = 0f; accR = 0f; cnt = 0; phase -= step
                         }
                     }
                     codec.releaseOutputBuffer(o, false)
                     if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0 || size > RATE * MAX_SECONDS) outDone = true
                 }
             }
-            return if (size > RATE * 5) out.copyOf(size) else null
+            if (size <= RATE * 5) return null
+            return if (voz) VozCentro.realzar(out, outR, size) else out.copyOf(size)
         } catch (e: Exception) { return null }
         finally { runCatching { codec?.stop() }; runCatching { codec?.release() }; ex.release() }
     }
@@ -135,9 +142,17 @@ object Whisper {
         // what was heard before is reused, unless it was heard in another language than the one now asked for
         heardBefore(context, key)?.takeIf { lang == "auto" || it.lang == lang }?.let { return fit(it, songMs) }
         status("Preparando el audio…")
-        val pcm = pcm16k(context, uri, cancelled = cancelled) ?: return null
-        status("Whisper está escuchando la canción… puede tardar unos minutos.")
-        val asr = transcribe(context, pcm, lang)?.let { Asr(it.lang, it.words, pcm.size * 1000L / RATE) } ?: return null
+        // First the voice alone (the centre, with the instruments at the sides lowered): Whisper hears the words better and times them closer.
+        // If it barely understands that (a mono song, a voice off-centre), it listens again to the whole mix.
+        var pcm = pcm16k(context, uri, cancelled = cancelled, voz = true) ?: return null
+        status("Whisper está escuchando la voz… puede tardar unos minutos.")
+        var oido = transcribe(context, pcm, lang)?.let { Asr(it.lang, it.words, pcm.size * 1000L / RATE) }
+        if ((oido == null || oido.words.size < 15) && !cancelled()) {
+            pcm = pcm16k(context, uri, cancelled = cancelled) ?: return oido?.let { fit(it, songMs) }
+            status("Whisper está escuchando la canción entera… puede tardar unos minutos.")
+            transcribe(context, pcm, lang)?.let { Asr(it.lang, it.words, pcm.size * 1000L / RATE) }?.let { if (it.words.size > (oido?.words?.size ?: -1)) oido = it }
+        }
+        val asr = oido ?: return null
         if (asr.words.isNotEmpty()) runCatching { cacheFile(context, key).writeText("lang=${asr.lang}\nms=${asr.audioMs}\n" + asr.words.joinToString("\n") { "${it.startMs}\t${it.endMs}\t${it.text}" }) }
         return fit(asr, songMs)
     }

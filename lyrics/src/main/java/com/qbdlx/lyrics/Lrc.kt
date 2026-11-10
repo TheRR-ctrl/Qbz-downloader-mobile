@@ -1,13 +1,37 @@
 package com.qbdlx.lyrics
 
 /** One lyric line and the moment it starts. */
-class LyricLine(val timeMs: Long, val text: String, val endMs: Long? = null)
+/** [marks]: when each word starts (offset of its first character in [text], ms), from enhanced LRC "<mm:ss.xx>word"; null when only the line is timed. */
+class LyricLine(val timeMs: Long, val text: String, val endMs: Long? = null, val marks: List<Pair<Int, Long>>? = null) {
+    fun shifted(d: Long) = LyricLine((timeMs + d).coerceAtLeast(0), text, endMs?.let { (it + d).coerceAtLeast(0) }, marks?.map { it.first to (it.second + d).coerceAtLeast(0) })
+}
 
 object Lrc {
     private val endTag = Regex("""\s*<(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?>\s*$""")
     private val offsetTag = Regex("""^\s*\[offset:\s*([+-]?\d+)\s*]""", RegexOption.IGNORE_CASE)
-    /** Word-by-word marks of enhanced LRC ("<00:12.30>word"): the app times whole lines, so they would only show up as junk in the text. */
-    private val wordTag = Regex("""<\d{1,3}:\d{2}(?:[.:]\d{1,3})?>""")
+    /** Word-by-word marks of enhanced LRC ("<00:12.30>word"): taken out of the text and kept as each word's start. */
+    private val wordTag = Regex("""<(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?>""")
+    private fun ms(m: MatchResult): Long { val f = m.groupValues[3]
+        return m.groupValues[1].toLong() * 60_000 + m.groupValues[2].toLong() * 1000 + when (f.length) { 0 -> 0L; 1 -> f.toLong() * 100; 2 -> f.toLong() * 10; else -> f.take(3).toLong() } }
+
+    /** Text without the word tags, and where each tagged word starts. */
+    internal fun wordMarks(raw: String): Pair<String, List<Pair<Int, Long>>> {
+        val sb = StringBuilder(); val marks = ArrayList<Pair<Int, Long>>(); var last = 0; var pending: Long? = null
+        for (m in wordTag.findAll(raw)) {
+            val piece = raw.substring(last, m.range.first)
+            if (pending != null) { val lead = piece.length - piece.trimStart().length; if (piece.isNotBlank()) marks.add((sb.length + lead) to pending); pending = null }
+            sb.append(piece); last = m.range.last + 1; pending = ms(m)
+        }
+        val rest = raw.substring(last)
+        if (pending != null && rest.isNotBlank()) marks.add((sb.length + rest.length - rest.trimStart().length) to pending)
+        sb.append(rest)
+        // the spaces are collapsed afterwards: the offsets are moved with them
+        val text = StringBuilder(); val map = IntArray(sb.length + 1); var prevSpace = true
+        for (i in sb.indices) { map[i] = text.length; val c = sb[i]; if (c.isWhitespace()) { if (!prevSpace) text.append(' '); prevSpace = true } else { text.append(c); prevSpace = false } }
+        map[sb.length] = text.length
+        val t = text.toString().trimEnd()
+        return t to marks.map { map[it.first].coerceAtMost(t.length) to it.second }.distinctBy { it.first }.sortedBy { it.first }
+    }
     private val stamp = Regex("""\[(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?]""")
 
     /** Parses LRC text ("[mm:ss.xx] words", several stamps per line allowed) into lines sorted by time. Tags like [ar:..] are ignored. */
@@ -27,11 +51,12 @@ object Lrc {
                 endMs = e.groupValues[1].toLong() * 60_000 + e.groupValues[2].toLong() * 1000 + ms
                 words = words.substring(0, e.range.first).trim()
             }
-            words = wordTag.replace(words, "").replace(Regex("""\s{2,}"""), " ").trim()
+            val (clean, marks) = wordMarks(words); words = clean.trim()
             for (m in stamps) {
                 val frac = m.groupValues[3]
                 val ms = when (frac.length) { 0 -> 0L; 1 -> frac.toLong() * 100; 2 -> frac.toLong() * 10; else -> frac.take(3).toLong() }
-                out += LyricLine((m.groupValues[1].toLong() * 60_000 + m.groupValues[2].toLong() * 1000 + ms - shift).coerceAtLeast(0), words, endMs?.let { (it - shift).coerceAtLeast(0) })
+                out += LyricLine((m.groupValues[1].toLong() * 60_000 + m.groupValues[2].toLong() * 1000 + ms - shift).coerceAtLeast(0), words, endMs?.let { (it - shift).coerceAtLeast(0) },
+                    marks.takeIf { it.size >= 2 && stamps.size == 1 }?.map { it.first to (it.second - shift).coerceAtLeast(0) })
             }
         }
         return out.sortedBy { it.timeMs }
@@ -52,8 +77,13 @@ object Lrc {
      * singing time is spread over its characters; it is capped (about 100 ms a character) so a long instrumental gap after the line does not slow the fill.
      * Lit means up to the end of the last word that has started.
      */
-    fun litChars(text: String, startMs: Long, nextMs: Long?, posMs: Long, endMs: Long? = null): Int {
+    fun litChars(text: String, startMs: Long, nextMs: Long?, posMs: Long, endMs: Long? = null, marks: List<Pair<Int, Long>>? = null): Int {
         if (text.isBlank() || posMs < startMs) return 0
+        if (marks != null) { // the lyric says when each word starts: lit up to the end of the last one that started
+            var lit = 0
+            for ((off, t) in marks) { if (t > posMs) break; lit = text.indexOf(' ', off).let { if (it < 0) text.length else it } }
+            return lit
+        }
         val span = (nextMs ?: (startMs + 4000)) - startMs
         // with the end of the line known (Whisper heard its last word), the fill follows the real singing time
         val vocal = if (endMs != null && endMs > startMs) minOf(span.toDouble(), (endMs - startMs).toDouble()).coerceAtLeast(600.0)
@@ -81,7 +111,9 @@ object Lrc {
     fun toLrc(lines: List<LyricLine>): String = lines.joinToString("\n") { l ->
         val cs = l.timeMs / 10
         val end = l.endMs?.let { val e = it / 10; "<%02d:%02d.%02d>".format(e / 6000, e / 100 % 60, e % 100) } ?: ""
-        "[%02d:%02d.%02d]%s%s".format(cs / 6000, cs / 100 % 60, cs % 100, l.text, end)
+        fun tag(t: Long) = (t / 10).let { "<%02d:%02d.%02d>".format(it / 6000, it / 100 % 60, it % 100) }
+        val body = l.marks?.let { mk -> val sb = StringBuilder(l.text); mk.sortedByDescending { it.first }.forEach { (o, t) -> sb.insert(o.coerceIn(0, sb.length), tag(t)) }; sb.toString() } ?: l.text
+        "[%02d:%02d.%02d]%s%s".format(cs / 6000, cs / 100 % 60, cs % 100, body, end)
     }
 
     fun plain(text: String): List<LyricLine> = text.lines().map { it.trim() }.filter { it.isNotEmpty() }.map { LyricLine(0, it) }

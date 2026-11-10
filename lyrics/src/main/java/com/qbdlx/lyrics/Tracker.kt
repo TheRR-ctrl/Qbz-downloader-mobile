@@ -118,6 +118,44 @@ object Tracker {
     private var trJob: Job? = null
     private var trFor = ""
     private val triedAuto = HashSet<String>()
+    private var autoSyncJob: Job? = null
+
+    /**
+     * Al cargar una letra con tiempos, se compara con la canción: si va corrida lo mismo de principio a fin (la voz entra siempre
+     * medio segundo después, por ejemplo), se mueve sola. Con lo que Whisper ya oyó de esa canción, contra la voz; si no, contra los
+     * golpes de volumen del audio (rápido, sin Whisper). Una letra editada a mano no se toca, y cada letra se mira una sola vez.
+     */
+    private fun autoCheckSync(track: TrackInfo, l: Lyrics?) {
+        val ctx = app ?: return
+        if (l?.synced == null || LyricEdit.isEdited(l.source)) return
+        val p = ctx.getSharedPreferences("lyrics", Context.MODE_PRIVATE)
+        if (!p.getBoolean("auto_sync_fix", true)) return
+        val sig = track.storeKey + "|" + l.synced.hashCode()
+        val seen = p.getStringSet("auto_sync_seen", emptySet())!!
+        if (sig in seen) return
+        val lines = _state.value.lines
+        autoSyncJob?.cancel()
+        autoSyncJob = scope.launch {
+            val shift = withContext(Dispatchers.Default) {
+                val sung = lines.filter { it.text.isNotBlank() }
+                if (sung.size < 8) return@withContext null
+                Whisper.heardBefore(ctx, track.storeKey)?.let { heard ->
+                    val ref = WhisperAlign.align(sung.map { it.text }, Whisper.fit(heard, track.durationMs).words)
+                    if (ref != null && !WhisperAlign.approximate) return@withContext SyncCheck.judge(sung, ref).let { v -> if (v.kind == "off") -v.medianMs else 0L }
+                }
+                val uri = AudioTiming.find(ctx, track.title, track.artist, track.durationMs) ?: return@withContext null // solo archivos del teléfono: sin descargar nada
+                val env = AudioTiming.envelope(ctx, uri, cancelled = { !isActive }) ?: return@withContext null
+                AudioTiming.onsetShift(env, lines) ?: 0L
+            } ?: return@launch // sin audio para comparar: se probará la próxima vez
+            p.edit().putStringSet("auto_sync_seen", (seen + sig).let { if (it.size > 3000) it.drop(500).toSet() else it }).apply()
+            if (shift == 0L || _state.value.track?.key != track.key || _state.value.lines.map { it.text } != lines.map { it.text }) return@launch
+            val fixed = lines.map { it.shifted(shift) }
+            // la letra ya corregida no se vuelve a mirar (saveTimed la publica y llamaría aquí otra vez)
+            p.edit().putStringSet("auto_sync_seen", p.getStringSet("auto_sync_seen", emptySet())!! + (track.storeKey + "|" + Lrc.toLrc(fixed).hashCode())).commit()
+            saveTimed(fixed)
+            timing.value = "La letra iba %.1f s %s: corregida sola.".format(java.util.Locale("es"), kotlin.math.abs(shift) / 1000.0, if (shift > 0) "adelantada" else "atrasada")
+        }
+    }
     @Volatile var lastError = ""
 
     /** What the audio timing is doing, for the screen: null when idle. */
@@ -409,6 +447,7 @@ object Tracker {
             else -> LyricsState(Status.NOT_FOUND, track, playing = playing)
         }
         translateLines(track)
+        if (_state.value.status == Status.SYNCED) autoCheckSync(track, l)
         val ctx = app
         if (autoWhisper && _state.value.status == Status.PLAIN && ctx != null && playing && triedAuto.add(track.key) && Whisper.available(ctx)) timeFromWhisper(auto = true)
     }

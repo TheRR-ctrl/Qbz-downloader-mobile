@@ -10,7 +10,7 @@ class Candidate(val lyrics: Lyrics, val label: String, val preview: String)
 object Candidates {
     private fun preview(l: Lyrics): String {
         val lines = if (l.synced != null) Lrc.parse(l.synced).map { it.text } else l.plain.orEmpty().lines()
-        return lines.map { it.trim() }.filter { it.isNotEmpty() }.take(4).joinToString(" / ")
+        return (if (LrcLib.wordTimed(l.synced)) "[palabra a palabra] " else "") + lines.map { it.trim() }.filter { it.isNotEmpty() }.take(4).joinToString(" / ")
     }
 
     fun search(t: TrackInfo): Pair<List<Candidate>, String> {
@@ -36,6 +36,6 @@ object Candidates {
         val yt = runCatching { YtMusic.find(t.title, t.artist, dur) }.getOrNull()
         if (yt != null) out += Candidate(yt, "YouTube Music · ${if (yt.synced != null) "sincronizada" else "sin sincronizar"}", preview(yt))
         else if (YtMusic.lastFail.isNotEmpty()) why += " YouTube Music: ${YtMusic.lastFail}."
-        return out.sortedByDescending { it.lyrics.synced != null } to why.trim()
+        return out.sortedWith(compareByDescending<Candidate> { it.lyrics.synced != null }.thenByDescending { LrcLib.wordTimed(it.lyrics.synced) }) to why.trim()
     }
 }
