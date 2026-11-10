@@ -828,10 +828,13 @@ fun SettingsScreen(vm: MainViewModel) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Medidor de nivel", fontWeight = FontWeight.Medium)
-                    Text("Barras de nivel izquierdo y derecho en el reproductor, con retención de pico y el máximo en dB. Rojo = la señal llegó a 0 dB.",
+                    Text("Visualización en el reproductor: nivel izquierdo y derecho (con pico y máximo en dB), barras de espectro o ámbito (la onda). Tocarla en el reproductor cambia de una a otra.",
                         fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Switch(vm.levelMeter, { vm.updateLevelMeter(it) })
+            }
+            if (vm.levelMeter) Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("Nivel", "Barras", "Ámbito").forEachIndexed { i, n -> QChip(vm.meterMode == i, { vm.updateMeterMode(i) }, label = { Text(n) }) }
             }
             LaunchedEffect(Unit) { vm.refreshBitPerfect() }
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
