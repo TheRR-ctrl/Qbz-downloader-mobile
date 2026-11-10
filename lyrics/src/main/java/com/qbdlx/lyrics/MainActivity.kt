@@ -67,7 +67,7 @@ class MainActivity : ComponentActivity() {
     private var inPip by mutableStateOf(false)
     private fun pipOn() = getSharedPreferences("lyrics", MODE_PRIVATE).getBoolean("pip_on_leave", true)
 
-    /** Leaving the app opens the floating bubble; the small picture-in-picture window is only the fallback while the overlay permission is missing. */
+    /** Leaving the app opens the floating bubble (never the picture-in-picture window). */
     private fun bubbleReady() = Settings.canDrawOverlays(this)
 
     private fun pipParams(auto: Boolean) = android.app.PictureInPictureParams.Builder().setAspectRatio(android.util.Rational(239, 100)).also {
@@ -75,18 +75,23 @@ class MainActivity : ComponentActivity() {
     }.build()
 
     /** The floating bubble when it can be shown; otherwise the picture-in-picture window. */
-    private fun enterPip() { if (!FloatingService.show(this, false)) runCatching { enterPictureInPictureMode(pipParams(false)) } }
+    private fun enterPip() {
+        // Solo la burbuja: sin el permiso de superponerse se pide, en vez de abrir la ventanita de imagen en imagen.
+        if (!FloatingService.show(this, false)) runCatching {
+            android.widget.Toast.makeText(this, "Para la burbuja, permite a Q Lyrics mostrarse sobre otras apps.", android.widget.Toast.LENGTH_LONG).show()
+            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:$packageName")))
+        }
+    }
 
     override fun onResume() { super.onResume(); FloatingService.appForeground = true; FloatingService.hideIfAuto(this) }
     override fun onPause() { super.onPause(); FloatingService.appForeground = false }
 
     /** Leaving the app (Home) keeps the lyrics in a small window when the setting is on: automatically on Android 12+, from here before. */
-    fun applyPipSetting() { if (android.os.Build.VERSION.SDK_INT >= 31) runCatching { setPictureInPictureParams(pipParams(pipOn() && !bubbleReady())) } }
+    fun applyPipSetting() { if (android.os.Build.VERSION.SDK_INT >= 31) runCatching { setPictureInPictureParams(pipParams(false)) } }
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         if (!pipOn() || Tracker.state.value.track == null) return
-        if (bubbleReady()) FloatingService.show(this, true)
-        else if (android.os.Build.VERSION.SDK_INT < 31) enterPip()
+        if (bubbleReady()) FloatingService.show(this, true) // sin permiso no se abre nada: nunca la ventana de imagen en imagen
     }
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: android.content.res.Configuration) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig); inPip = isInPictureInPictureMode
