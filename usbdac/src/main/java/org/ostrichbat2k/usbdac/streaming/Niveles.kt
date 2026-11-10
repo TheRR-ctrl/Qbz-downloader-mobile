@@ -16,6 +16,12 @@ object Niveles {
     /** Frecuencia de lo que hay en el anillo. */
     @Volatile var frecuencia = 44_100; private set
 
+    /**
+     * Hasta qué muestra se puede enseñar: la salida normal de Android acepta el audio antes de que suene (llena su
+     * búfer al cargar la pista), y sin este tope el medidor se movía antes que la música. Sin tope, MAX_VALUE.
+     */
+    @Volatile var limite = Long.MAX_VALUE
+
     /** Una trama de 16 bits al anillo. */
     fun muestra(l: Int, r: Int) {
         val w = escritas
@@ -54,7 +60,7 @@ object Niveles {
 
         /** Avanza [dt] segundos. Si se queda sin datos espera; si se queda muy atrás, salta a lo último. */
         fun avanzar(dt: Float) {
-            val w = escritas
+            val w = minOf(escritas, limite).coerceAtLeast(0)
             antes = cursor.toLong().coerceAtLeast(0)
             if (cursor < 0 || w - cursor > ANILLO * 3 / 4 || cursor > w) { cursor = w.toDouble(); antes = w; return }
             cursor = minOf(cursor + frecuencia * dt.toDouble(), w.toDouble())

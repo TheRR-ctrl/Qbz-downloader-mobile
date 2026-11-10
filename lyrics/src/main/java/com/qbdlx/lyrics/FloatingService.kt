@@ -90,30 +90,39 @@ class FloatingService : Service() {
         var closing = false
         // dropped on the ✕: the window flies into it while it shrinks and fades (the whole window moves, because a view cannot
         // travel outside its own window); a hardware layer keeps the rounded edges while it is scaled
-        fun dismiss(cx: Float, cy: Float) {
+        // Dropped on the ✕: by then the magnet already holds the window on it, so it only sinks into the ✕ (shrinks, then fades at
+        // the very end) and the ✕ closes after it. Fading while it flew made it vanish halfway: it looked cut.
+        var target: TextView? = null
+        fun dismiss(cx: Float, cy: Float, offX: Int, offY: Int) {
             if (closing) return
             closing = true
             suppressAuto = true // closed by hand: it does not pop up again until the music stops
-            val c = IntArray(2); root.getLocationOnScreen(c)
-            val dx = cx - (c[0] + root.width / 2f); val dy = cy - (c[1] + root.height / 2f)
             val sx = params.x; val sy = params.y
+            val ex = (cx - root.width / 2f).toInt() + offX; val ey = (cy - root.height / 2f).toInt() + offY
             root.setLayerType(View.LAYER_TYPE_HARDWARE, null)
             root.animate().cancel()
             root.pivotX = root.width / 2f; root.pivotY = root.height / 2f
+            val s0 = root.scaleX
+            val t = target; target = null
             android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
-                duration = 240; interpolator = android.view.animation.AccelerateInterpolator(1.3f)
+                duration = 260; interpolator = android.view.animation.AccelerateDecelerateInterpolator()
                 addUpdateListener {
                     val f = it.animatedValue as Float
-                    params.x = sx + (dx * f).toInt(); params.y = sy + (dy * f).toInt()
-                    root.scaleX = 1f - 0.85f * f; root.scaleY = root.scaleX; root.alpha = 1f - f
+                    val go = (f / 0.5f).coerceAtMost(1f)
+                    params.x = sx + ((ex - sx) * go).toInt(); params.y = sy + ((ey - sy) * go).toInt()
+                    root.scaleX = s0 + (0.15f - s0) * f; root.scaleY = root.scaleX
+                    root.alpha = if (f < 0.6f) 1f else 1f - (f - 0.6f) / 0.4f
                     relayout()
                 }
-                addListener(object : android.animation.AnimatorListenerAdapter() { override fun onAnimationEnd(a: android.animation.Animator) { stopSelf() } })
+                addListener(object : android.animation.AnimatorListenerAdapter() { override fun onAnimationEnd(a: android.animation.Animator) {
+                    root.visibility = View.INVISIBLE
+                    if (t == null) stopSelf()
+                    else t.animate().alpha(0f).scaleX(0.3f).scaleY(0.3f).setDuration(160).withEndAction { runCatching { wm.removeView(t) }; stopSelf() }.start()
+                } })
                 start()
             }
         }
         // like a picture-in-picture window or a chat head: dragging it onto the ✕ at the bottom closes it
-        var target: TextView? = null
         fun targetCenter(): Pair<Float, Float>? { val t = target ?: return null; val c = IntArray(2); t.getLocationOnScreen(c); return (c[0] + t.width / 2f) to (c[1] + t.height / 2f) }
         fun overTarget(x: Float, y: Float): Boolean { val t = target ?: return false; val c = IntArray(2); t.getLocationOnScreen(c); return Math.hypot((x - (c[0] + t.width / 2)).toDouble(), (y - (c[1] + t.height / 2)).toDouble()) < 80 * dp }
         fun showTarget() {
@@ -199,16 +208,42 @@ class FloatingService : Service() {
 
         var wasHidden = false; var wasOver = false
         var downX = 0f; var downY = 0f; var startX = 0; var startY = 0
+        // The magnet: near the ✕ the window leaves the finger and slides onto it, a little smaller, as if pulled in. [pull] goes
+        // from 0 (under the finger) to 1 (on the ✕); the place is worked out again on every move and every frame of the slide.
+        var pull = 0f; var fingerX = 0; var fingerY = 0; var offX = 0; var offY = 0
+        var pullAnim: android.animation.ValueAnimator? = null
+        fun place() {
+            val tc = targetCenter()
+            if (tc == null || pull == 0f) { params.x = fingerX; params.y = fingerY }
+            else {
+                val mx = (tc.first - root.width / 2f).toInt() + offX; val my = (tc.second - root.height / 2f).toInt() + offY
+                params.x = fingerX + ((mx - fingerX) * pull).toInt(); params.y = fingerY + ((my - fingerY) * pull).toInt()
+            }
+            root.pivotX = root.width / 2f; root.pivotY = root.height / 2f
+            root.scaleX = 1f - 0.18f * pull; root.scaleY = root.scaleX
+            relayout()
+        }
+        fun pullTo(v: Float) {
+            pullAnim?.cancel()
+            pullAnim = android.animation.ValueAnimator.ofFloat(pull, v).apply {
+                duration = 170; interpolator = android.view.animation.DecelerateInterpolator(1.8f)
+                addUpdateListener { pull = it.animatedValue as Float; if (!closing) place() }
+                start()
+            }
+        }
         root.setOnTouchListener { _, e ->
+            if (closing) return@setOnTouchListener true
             when (e.action) {
-                MotionEvent.ACTION_DOWN -> { wasHidden = !folded && !toolsShown; if (!folded) showTools(); downX = e.rawX; downY = e.rawY; startX = params.x; startY = params.y }
-                MotionEvent.ACTION_MOVE -> { params.x = (startX + (e.rawX - downX).toInt()).coerceIn(0, (resources.displayMetrics.widthPixels - root.width).coerceAtLeast(0)); params.y = startY + (e.rawY - downY).toInt(); runCatching { wm.updateViewLayout(root, params) }
-                    if (Math.abs(e.rawX - downX) > 8 * dp || Math.abs(e.rawY - downY) > 8 * dp) { showTarget(); target?.let { t -> val over = overTarget(e.rawX, e.rawY); if (over != wasOver) { wasOver = over; t.animate().scaleX(if (over) 1.25f else 1f).scaleY(if (over) 1.25f else 1f).setDuration(120).start() } } } }
+                MotionEvent.ACTION_DOWN -> { wasHidden = !folded && !toolsShown; if (!folded) showTools(); downX = e.rawX; downY = e.rawY; startX = params.x; startY = params.y
+                    val c = IntArray(2); root.getLocationOnScreen(c); offX = params.x - c[0]; offY = params.y - c[1]; fingerX = params.x; fingerY = params.y }
+                MotionEvent.ACTION_MOVE -> { fingerX = (startX + (e.rawX - downX).toInt()).coerceIn(0, (resources.displayMetrics.widthPixels - root.width).coerceAtLeast(0)); fingerY = startY + (e.rawY - downY).toInt(); place()
+                    if (Math.abs(e.rawX - downX) > 8 * dp || Math.abs(e.rawY - downY) > 8 * dp) { showTarget(); target?.let { t -> val over = overTarget(e.rawX, e.rawY); if (over != wasOver) { wasOver = over; pullTo(if (over) 1f else 0f); if (over) root.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK); t.animate().scaleX(if (over) 1.25f else 1f).scaleY(if (over) 1.25f else 1f).setDuration(120).start() } } } }
                 MotionEvent.ACTION_OUTSIDE -> if (!folded && !closing) { prefs.edit().putBoolean("float_min", true).apply(); applyLayout(); snapBubble() } // a tap anywhere else folds the open window
-                MotionEvent.ACTION_CANCEL -> { wasOver = false; hideTarget() }
+                MotionEvent.ACTION_CANCEL -> { wasOver = false; pullTo(0f); hideTarget() }
                 MotionEvent.ACTION_UP -> {
-                    val drop = overTarget(e.rawX, e.rawY); val tc = targetCenter(); wasOver = false; hideTarget()
-                    if (drop && tc != null) { dismiss(tc.first, tc.second); return@setOnTouchListener true }
+                    val drop = overTarget(e.rawX, e.rawY); val tc = targetCenter(); wasOver = false
+                    if (drop && tc != null) { pullAnim?.cancel(); dismiss(tc.first, tc.second, offX, offY); return@setOnTouchListener true }
+                    hideTarget(); pullAnim?.cancel(); if (pull != 0f) { pull = 0f; place() }
                     // optionally the window sticks to the nearest side edge when let go
                     if (folded) snapBubble()
                     else if (prefs.getBoolean("float_snap", false)) {

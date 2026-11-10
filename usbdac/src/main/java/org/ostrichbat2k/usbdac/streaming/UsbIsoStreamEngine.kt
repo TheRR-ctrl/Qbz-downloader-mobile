@@ -219,6 +219,7 @@ internal class UsbIsoStreamEngine(
         feedbackHz = 0; feedbackMinHz = 0; feedbackMaxHz = 0; feedbackCount = 0
         desvioEnvioMs = 0L; urbsEnviados = 0L
         bloquesAlargados = 0L; rotaciones = 0; rotacionUltimaMs = -1L; rotacionMaxMs = -1L; rotacionFallos = 0
+        Niveles.limite = Long.MAX_VALUE
         val numUrbs = if (UsbTelemetry.comoDecent) 120 else if (UsbTelemetry.masMargen) 12 else UsbAudioTuning.NUM_URBS
         bloquesEnVuelo = numUrbs
         peorRetrasoMs = 0L; peorLecturaMs = 0L; peorSuenoMs = 0L; cpuHilo = -1; sesionRendimiento = "no pedida"

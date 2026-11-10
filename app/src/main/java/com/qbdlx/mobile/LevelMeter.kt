@@ -51,8 +51,29 @@ class MeterSink(sink: AudioSink) : ForwardingAudioSink(sink) {
         super.configure(config)
     }
 
+    // Lo que ya suena, no lo que la salida aceptó: Android llena su búfer antes de arrancar y el medidor se adelantaba.
+    private var base = 0L
+    private var inicioUs = Long.MIN_VALUE
+
+    private fun reinicia() { base = Niveles.escritas; inicioUs = Long.MIN_VALUE; Niveles.limite = base }
+
+    override fun flush() { super.flush(); reinicia() }
+    override fun reset() { super.reset(); reinicia() }
+
+    override fun getCurrentPositionUs(sourceEnded: Boolean): Long {
+        val pos = super.getCurrentPositionUs(sourceEnded)
+        val w = Niveles.escritas
+        Niveles.limite = if (pos == AudioSink.CURRENT_POSITION_NOT_SET || inicioUs == Long.MIN_VALUE) base else {
+            val l = base + (pos - inicioUs) * Niveles.frecuencia / 1_000_000L
+            // Una cuenta imposible (salto de pista, otra velocidad): mejor sin tope que un medidor parado.
+            if (l > w) w else if (w - l > Niveles.frecuencia * 2L) Long.MAX_VALUE else l
+        }
+        return pos
+    }
+
     override fun handleBuffer(buffer: ByteBuffer, presentationTimeUs: Long, encodedAccessUnitCount: Int): Boolean {
         val desde = buffer.position()
+        if (inicioUs == Long.MIN_VALUE) { base = Niveles.escritas; inicioUs = presentationTimeUs; Niveles.limite = base }
         val hecho = super.handleBuffer(buffer, presentationTimeUs, encodedAccessUnitCount)
         // Solo lo que se aceptó en esta llamada: el mismo búfer vuelve varias veces hasta que cabe entero.
         runCatching { medir(buffer, desde, buffer.position()) }
