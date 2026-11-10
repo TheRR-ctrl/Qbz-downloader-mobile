@@ -119,7 +119,9 @@ fun LevelMeter(activo: Boolean, modo: Int, alTocar: () -> Unit, modifier: Modifi
             }
         }
     }
-    val toque = Modifier.clickableSinOnda(alTocar)
+    // Changing the animation takes a long press: a plain tap while reaching for the controls must not switch it.
+    val vibra = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val toque = Modifier.pointerInput(alTocar) { detectTapGestures(onLongPress = { vibra.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); alTocar() }) }
     when (modo) {
         1 -> Canvas(modifier.height(72.dp).then(toque)) {
             tick

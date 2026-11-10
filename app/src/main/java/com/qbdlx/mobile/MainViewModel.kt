@@ -11,6 +11,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Deferred
 import android.net.Uri
@@ -292,6 +293,26 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         downloads.onCredentialsRefreshed = { notice = strings.credsAutoUpdated }
         downloads.onActiveChanged = { active -> if (active) DownloadService.start(app) }
         downloadScope.launch { downloads.restore() }
+
+        // A DAC plugged in (or its permission accepted) while a song already plays through Android's mixer:
+        // nothing else claims it until the next track, so claim it here and restart the song on it where it was.
+        UsbDirect.managerOrNull(app)?.let { m ->
+            viewModelScope.launch {
+                kotlinx.coroutines.flow.combine(m.devices, m.controlState) { d, c -> d.any { it.hasPermission } to (c != null) }
+                    .distinctUntilChanged()
+                    .collect { (permitido, lista) ->
+                        if (!UsbDirect.prefs(app).enabled || !isPlaying || !engineDelegate.isInitialized()) return@collect
+                        if (m.playbackRoute.value !is org.ostrichbat2k.usbdac.UsbAudioManager.PlaybackRoute.Fallback) return@collect
+                        if (lista) {
+                            PlaybackLog.add(app, "DAC USB listo a media canción: se reinicia la pista en USB directo")
+                            playCurrent(engine.position)
+                        } else if (permitido) {
+                            PlaybackLog.add(app, "DAC USB conectado a media canción: se pide la salida directa")
+                            m.triggerActivation()
+                        }
+                    }
+            }
+        }
 
         // Resume the previous session from the saved token, if there is one.
         val id = prefs.getString("user_id", null)

@@ -30,6 +30,21 @@ object LyricsParser {
     fun parsePlain(text: String): List<LyricLine> = text.lines().map { LyricLine(0, it.trim()) }
 
     /** Index of the line being sung at [posMs], or -1 before the first one. */
+    /**
+     * Karaoke approximation, the same as Q Lyrics: how many characters of [text] are lit at [posMs]. Lyrics only time whole lines,
+     * so the line's time is spread over its characters, capped at about 100 ms a character so a long gap after it does not slow the fill.
+     * Lit means up to the end of the last word that has started.
+     */
+    fun litChars(text: String, startMs: Long, nextMs: Long?, posMs: Long): Int {
+        if (text.isBlank() || posMs < startMs) return 0
+        val span = (nextMs ?: (startMs + 4000)) - startMs
+        val vocal = minOf(span.toDouble(), text.length * 100.0 + 500.0).coerceAtLeast(600.0)
+        val target = ((posMs - startMs) / vocal).coerceIn(0.0, 1.0) * text.length
+        var lit = 0
+        for (w in Regex("""\S+""").findAll(text)) { if (w.range.first <= target) lit = w.range.last + 1 else break }
+        return lit
+    }
+
     fun currentIndex(lines: List<LyricLine>, posMs: Long): Int = lines.indexOfLast { it.timeMs <= posMs }
 
     fun fromJson(o: JSONObject): Lyrics? {
