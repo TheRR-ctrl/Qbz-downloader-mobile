@@ -2344,6 +2344,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** ReplayGain (como UAPP): iguala el volumen entre canciones con la ganancia que Qobuz da por pista. Apagado de fábrica: con él la señal deja de ser bit-perfect. */
+    /** Barras de nivel L/R en el reproductor, como en UAPP. */
+    var levelMeter by mutableStateOf(prefs.getBoolean("level_meter", true)); private set
+    fun updateLevelMeter(on: Boolean) { levelMeter = on; prefs.edit().putBoolean("level_meter", on).apply() }
     var replayGain by mutableStateOf(prefs.getBoolean("replay_gain", false)); private set
 
     fun updateReplayGain(on: Boolean) {

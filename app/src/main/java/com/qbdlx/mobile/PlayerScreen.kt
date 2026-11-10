@@ -510,6 +510,7 @@ private fun NowPlayingPage(vm: MainViewModel, album: Album, track: Track, close:
             }
         }
         SeekBar(vm, track)
+        if (vm.levelMeter) LevelMeter(vm.isPlaying, Modifier.fillMaxWidth())
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             ToggleIcon(Icons.Default.Shuffle, s.shuffle, q.shuffle) { vm.toggleShuffle() }
             IconButton({ vm.previous() }, Modifier.size(56.dp)) { Icon(Icons.Default.SkipPrevious, s.previous, Modifier.size(38.dp), tint = OnPlayer) }

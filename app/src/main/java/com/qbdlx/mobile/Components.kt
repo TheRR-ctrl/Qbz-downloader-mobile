@@ -1,5 +1,7 @@
 package com.qbdlx.mobile
 
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
@@ -202,6 +204,7 @@ fun SectionHeading(text: String, modifier: Modifier = Modifier) =
     Text(text, modifier, color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.SemiBold)
 
 /** The "Select Quality" sheet from the Android mockups. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun QualityDialog(
     current: Quality, onPick: (Quality) -> Unit, onCancel: () -> Unit,
@@ -210,53 +213,43 @@ fun QualityDialog(
 ) {
     var tabWifi by remember { mutableStateOf(perNetwork?.third ?: true) }
     val shown = if (perNetwork == null) current else if (tabWifi) perNetwork.first else perNetwork.second
-    Dialog(onCancel) {
-        // Blur the screen behind the dialog where the device supports cross-window blur (Android 12+).
-        val window = (LocalView.current.parent as? DialogWindowProvider)?.window
-        SideEffect {
-            if (window != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                window.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
-                window.attributes = window.attributes.apply { blurBehindRadius = 48 }
-                window.setDimAmount(.35f)
+    androidx.compose.material3.ModalBottomSheet(
+        onDismissRequest = onCancel, containerColor = Color(0xFF151515), contentColor = Color.White,
+        sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true),
+    ) {
+        // Como la hoja «Calidad de audio» de Qobuz: icono redondo, nombre y detalle, y una marca dorada en la elegida.
+        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(LocalStrings.current.selectQuality, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(LocalStrings.current.chooseQuality, fontSize = 13.sp, color = Color.White.copy(alpha = .7f))
+            Spacer(Modifier.height(6.dp))
+            if (perNetwork != null && onPickFor != null) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(true to LocalStrings.current.qualityOnWifi, false to LocalStrings.current.qualityOnData).forEach { (w, label) ->
+                    val on = tabWifi == w
+                    Text(
+                        label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = if (on) Color.Black else Color.White,
+                        modifier = Modifier.clip(RoundedCornerShape(50)).background(if (on) Gold else Color.White.copy(alpha = .1f))
+                            .clickable { tabWifi = w }.padding(horizontal = 14.dp, vertical = 8.dp),
+                    )
+                }
             }
-        }
-        // Fully opaque on purpose: the lists behind it used to show through and mix with the text.
-        Surface(shape = RoundedCornerShape(24.dp), color = Panel, contentColor = Color.White, border = BorderStroke(1.dp, Color.White.copy(alpha = .08f))) {
-            Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(LocalStrings.current.selectQuality, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Text(LocalStrings.current.chooseQuality, fontSize = 13.sp, color = Color.White.copy(alpha = .7f))
-                if (perNetwork != null && onPickFor != null) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(true to LocalStrings.current.qualityOnWifi, false to LocalStrings.current.qualityOnData).forEach { (w, label) ->
-                        val on = tabWifi == w
-                        Text(
-                            label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = if (on) Color.Black else Color.White,
-                            modifier = Modifier.clip(RoundedCornerShape(50)).background(if (on) Cyan else Color.White.copy(alpha = .1f))
-                                .clickable { tabWifi = w }.padding(horizontal = 14.dp, vertical = 8.dp),
-                        )
+            Quality.entries.forEach { q ->
+                val hi = q == Quality.HI_RES_MAX || q == Quality.HI_RES
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                        .clickable { if (perNetwork != null && onPickFor != null) onPickFor(q, tabWifi) else onPick(q) }
+                        .padding(vertical = 12.dp, horizontal = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(Modifier.size(44.dp).clip(CircleShape).background(Color.White.copy(alpha = .1f)), contentAlignment = Alignment.Center) {
+                        Text(if (hi) "Hi-Res" else if (q == Quality.LOSSLESS) "CD" else "MP3", color = if (hi) Gold else Color.White, fontWeight = FontWeight.Bold, fontSize = if (hi) 9.sp else 11.sp)
                     }
-                }
-                Quality.entries.forEach { q ->
-                    val accent = when (q) { Quality.HI_RES_MAX, Quality.HI_RES -> Gold; Quality.LOSSLESS -> Cyan; Quality.MP3 -> Cyan.copy(alpha = .55f) }
-                    Row(
-                        Modifier.fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .border(BorderStroke(if (q == shown) 2.dp else 1.dp, accent), RoundedCornerShape(12.dp))
-                            .clickable { if (perNetwork != null && onPickFor != null) onPickFor(q, tabWifi) else onPick(q) }
-                            .padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            if (q == Quality.MP3) "♪" else "HQ", color = accent, fontWeight = FontWeight.Bold, fontSize = 11.sp,
-                            modifier = Modifier.size(32.dp).clip(RoundedCornerShape(6.dp)).padding(top = 8.dp),
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        Column {
-                            Text(q.label, fontWeight = FontWeight.SemiBold)
-                            Text(LocalStrings.current.qualityDescription(q), fontSize = 12.sp, color = Color.White.copy(alpha = .7f))
-                        }
+                    Spacer(Modifier.width(14.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(q.label, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                        Text(LocalStrings.current.qualityDescription(q), fontSize = 13.sp, color = Color.White.copy(alpha = .65f))
                     }
+                    if (q == shown) Icon(androidx.compose.material.icons.Icons.Default.Check, null, tint = Gold)
                 }
-                TextButton(onCancel, Modifier.align(Alignment.CenterHorizontally), colors = ButtonDefaults.textButtonColors(contentColor = Cyan)) { Text(LocalStrings.current.cancel) }
             }
         }
     }
@@ -290,4 +283,60 @@ fun Modifier.swipeUpToOpen(onOpen: () -> Unit): Modifier = pointerInput(Unit) {
         onDragCancel = { total = 0f },
         onVerticalDrag = { _, dy -> total += dy },
     )
+}
+
+
+private val GENRE_COLORS = listOf(
+    0xFF6A4C93 to 0xFF3A2A5C, 0xFFB5651D to 0xFF5C3310, 0xFF1F7A8C to 0xFF0E3A44, 0xFF9B2335 to 0xFF4A1019,
+    0xFF2E7D32 to 0xFF123814, 0xFF34568B to 0xFF17273F, 0xFF8E6C1A to 0xFF40300A, 0xFF7B3F61 to 0xFF3A1D2E,
+)
+
+/** El «Selector de género» de Qobuz: tarjetas de color en dos columnas, con la elegida marcada arriba a la derecha. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+fun GenreSheet(genres: List<Pair<String, String>>, selected: String?, onPick: (String?) -> Unit, onClose: () -> Unit) {
+    androidx.compose.material3.ModalBottomSheet(
+        onDismissRequest = onClose, containerColor = Color(0xFF151515), contentColor = Color.White,
+        sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true),
+    ) {
+        Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 20.dp)) {
+            Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Selector de género", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                Text(
+                    LocalStrings.current.all, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = if (selected == null) Color.Black else Color.White,
+                    modifier = Modifier.clip(RoundedCornerShape(50)).background(if (selected == null) Gold else Color.White.copy(alpha = .12f))
+                        .clickable { onPick(null) }.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+            }
+            Column(Modifier.weight(1f, fill = false).verticalScroll(androidx.compose.foundation.rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                genres.chunked(2).forEachIndexed { fila, par ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        par.forEachIndexed { col, g ->
+                            val c = GENRE_COLORS[(fila * 2 + col) % GENRE_COLORS.size]
+                            val on = g.first == selected
+                            Box(
+                                Modifier.weight(1f).height(84.dp).clip(RoundedCornerShape(12.dp))
+                                    .background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(Color(c.first), Color(c.second))))
+                                    .clickable { onPick(g.first) }.padding(12.dp),
+                            ) {
+                                Text(g.second, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 2, modifier = Modifier.align(Alignment.BottomStart))
+                                Box(
+                                    Modifier.align(Alignment.TopEnd).size(22.dp).clip(CircleShape)
+                                        .background(if (on) Gold else Color.Transparent).border(BorderStroke(2.dp, if (on) Gold else Color.White.copy(alpha = .8f)), CircleShape),
+                                    contentAlignment = Alignment.Center,
+                                ) { if (on) Icon(androidx.compose.material.icons.Icons.Default.Check, null, Modifier.size(14.dp), tint = Color.Black) }
+                            }
+                        }
+                        if (par.size == 1) Spacer(Modifier.weight(1f))
+                    }
+                }
+            }
+            Spacer(Modifier.height(14.dp))
+            Text(
+                "Continuar con todos los géneros", fontWeight = FontWeight.SemiBold, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(50)).border(BorderStroke(1.dp, Color.White.copy(alpha = .5f)), RoundedCornerShape(50))
+                    .clickable { onPick(null) }.padding(vertical = 14.dp),
+            )
+        }
+    }
 }

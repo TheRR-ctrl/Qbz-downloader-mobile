@@ -358,6 +358,7 @@ internal class UsbIsoStreamEngine(
                 // lo que dura el búfer (~5 s) en oírse. Con ganancia 1 no se toca nada (bit-perfect).
                 val ganancia = UsbTelemetry.volumenSoftware.coerceIn(0f, 1f) * UsbTelemetry.gananciaReplay.coerceIn(0f, 4f)
                 if (ganancia != 1f && read > 0) aplicarGanancia(urbBuffer, read, format.subslotSize, ganancia)
+                if (read > 0) Niveles.medirEnteros(urbBuffer, read, format.subslotSize, channels)
                 // A genuine underrun (decoder/renderer thread couldn't keep up, ring buffer ran
                 // dry) rather than the deliberate pause-silence case above -- heard as a click/
                 // crackle, since real audio briefly drops to silence mid-stream. Rate-limited:

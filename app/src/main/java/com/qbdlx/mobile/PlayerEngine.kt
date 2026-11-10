@@ -151,7 +151,7 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
         }
 
         override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): AudioSink =
-            super.buildAudioSink(context, enableFloatOutput, enableAudioTrackPlaybackParams)!!.let { normal ->
+            MeterSink(super.buildAudioSink(context, enableFloatOutput, enableAudioTrackPlaybackParams)!!).let { normal ->
                 // Always wrap: the player is built once, so deciding here on the switch would ignore turning it on later.
                 // RoutingAudioSink asks the preferences on every track and uses the normal output while it is off.
                 // A failure to start the driver never takes the app down.

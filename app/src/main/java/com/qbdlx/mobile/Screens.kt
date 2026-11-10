@@ -1,5 +1,6 @@
 package com.qbdlx.mobile
 
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material.icons.filled.GridView
@@ -131,9 +132,15 @@ fun HomeScreen(vm: MainViewModel) {
     LazyColumn(Modifier.fillMaxSize().statusBarsPadding(), contentPadding = PaddingValues(bottom = 16.dp + LocalBottomInset.current)) {
         item { TitleWithSearch(s.discover, vm) }
         if (vm.genres.isNotEmpty()) item(key = "genres") {
-            LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                item { QChip(vm.selectedGenre == null, { vm.selectGenre(null) }, label = { Text(s.all) }) }
-                items(vm.genres, key = { it.first }) { g -> QChip(vm.selectedGenre == g.first, { vm.selectGenre(g.first) }, label = { Text(g.second) }) }
+            var sheet by remember { mutableStateOf(false) }
+            if (sheet) GenreSheet(vm.genres, vm.selectedGenre, { vm.selectGenre(it); sheet = false }) { sheet = false }
+            Row(
+                Modifier.padding(horizontal = 16.dp).clip(RoundedCornerShape(50)).background(Color.White.copy(alpha = .1f))
+                    .clickable { sheet = true }.padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(vm.genres.firstOrNull { it.first == vm.selectedGenre }?.second ?: "Todos los géneros", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Icon(Icons.Default.ArrowDropDown, null, Modifier.size(20.dp))
             }
             Spacer(Modifier.height(8.dp))
         }
@@ -817,6 +824,14 @@ fun SettingsScreen(vm: MainViewModel) {
                         fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Switch(vm.replayGain, { vm.updateReplayGain(it) })
+            }
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Medidor de nivel", fontWeight = FontWeight.Medium)
+                    Text("Barras de nivel izquierdo y derecho en el reproductor, con retención de pico y el máximo en dB. Rojo = la señal llegó a 0 dB.",
+                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(vm.levelMeter, { vm.updateLevelMeter(it) })
             }
             LaunchedEffect(Unit) { vm.refreshBitPerfect() }
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
