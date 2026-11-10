@@ -728,8 +728,8 @@ class UsbAudioOutput(
         val maxValue = (1L shl (subslot * 8 - 1)) - 1
         val minValue = -(1L shl (subslot * 8 - 1))
         var outIdx = 0
-        // Volumen por software (UsbTelemetry.volumenSoftware): 1 = sin tocar, bit-perfect.
-        val escala = (maxValue + 1) * UsbTelemetry.volumenSoftware.coerceIn(0f, 1f).toDouble() * UsbTelemetry.gananciaReplay.coerceIn(0f, 4f).toDouble()
+        // El volumen digital y ReplayGain se aplican al sacar del búfer (UsbIsoStreamEngine.aplicarGanancia).
+        val escala = (maxValue + 1).toDouble()
         for (i in 0 until availableFloats) {
             val floatPos = pos + i * 4
             val raw = buffer.getFloat(floatPos)

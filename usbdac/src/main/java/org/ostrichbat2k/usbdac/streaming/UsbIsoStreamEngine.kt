@@ -354,6 +354,10 @@ internal class UsbIsoStreamEngine(
                 val read = ringBuffer.readOrZeroPad(urbBuffer, total)
                 val msLectura = (System.nanoTime() - t0Lectura) / 1_000_000L
                 if (msLectura > peorLecturaMs) peorLecturaMs = msLectura
+                // Volumen digital y ReplayGain se aplican aquí, al sacar del búfer: aplicados al meter, tardaban
+                // lo que dura el búfer (~5 s) en oírse. Con ganancia 1 no se toca nada (bit-perfect).
+                val ganancia = UsbTelemetry.volumenSoftware.coerceIn(0f, 1f) * UsbTelemetry.gananciaReplay.coerceIn(0f, 4f)
+                if (ganancia != 1f && read > 0) aplicarGanancia(urbBuffer, read, format.subslotSize, ganancia)
                 // A genuine underrun (decoder/renderer thread couldn't keep up, ring buffer ran
                 // dry) rather than the deliberate pause-silence case above -- heard as a click/
                 // crackle, since real audio briefly drops to silence mid-stream. Rate-limited:
@@ -848,6 +852,23 @@ internal class UsbIsoStreamEngine(
         } catch (e: RuntimeException) {
             L.w("UsbIsoStreamEngine: failed to raise thread priority: ${e.message}")
         }
+    }
+}
+
+/** Escala en sitio las muestras enteras little-endian de [subslot] bytes, recortando en los extremos. */
+internal fun aplicarGanancia(buf: ByteArray, length: Int, subslot: Int, ganancia: Float) {
+    val g = (ganancia * 65536f).toLong()
+    val max = (1L shl (subslot * 8 - 1)) - 1
+    val min = -max - 1
+    var i = 0
+    val fin = length - length % subslot
+    while (i < fin) {
+        var v = 0L
+        for (b in 0 until subslot) v = v or ((buf[i + b].toLong() and 0xFF) shl (8 * b))
+        if (v > max) v -= (max + 1) shl 1
+        val o = ((v * g) shr 16).coerceIn(min, max)
+        for (b in 0 until subslot) buf[i + b] = (o shr (8 * b)).toByte()
+        i += subslot
     }
 }
 
