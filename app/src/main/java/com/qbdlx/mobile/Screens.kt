@@ -130,6 +130,13 @@ fun HomeScreen(vm: MainViewModel) {
     val s = LocalStrings.current
     LazyColumn(Modifier.fillMaxSize().statusBarsPadding(), contentPadding = PaddingValues(bottom = 16.dp + LocalBottomInset.current)) {
         item { TitleWithSearch(s.discover, vm) }
+        if (vm.genres.isNotEmpty()) item(key = "genres") {
+            LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                item { QChip(vm.selectedGenre == null, { vm.selectGenre(null) }, label = { Text(s.all) }) }
+                items(vm.genres, key = { it.first }) { g -> QChip(vm.selectedGenre == g.first, { vm.selectGenre(g.first) }, label = { Text(g.second) }) }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
         if (vm.homeLoading) item { LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) }
         if (d == null) return@LazyColumn
         d.newReleases?.let { item(key = "new") { AlbumRow(vm, it) } }
@@ -839,6 +846,15 @@ fun SettingsScreen(vm: MainViewModel) {
                 }
                 Switch(usbOn, { usbOn = it; UsbDirect.prefs(ctx).set(it); if (it) UsbDirect.managerOrNull(ctx)?.triggerActivation(); vm.updateUsbDirect(it) })
             }
+            var avanzado by remember { mutableStateOf(false) }
+            Row(Modifier.fillMaxWidth().clickable { avanzado = !avanzado }.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Avanzado (DAC USB)", fontWeight = FontWeight.Medium)
+                    Text("Interruptores de diagnóstico y de prueba. Lo normal es no tocarlos.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Text(if (avanzado) "Ocultar" else "Mostrar", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+            }
+            androidx.compose.animation.AnimatedVisibility(avanzado) { Column {
             run {
                 val dp = ctx.getSharedPreferences("qbdlx", 0)
                 var sinRec by remember { mutableStateOf(dp.getBoolean("diag_sin_recuperacion", false)) }
@@ -949,6 +965,7 @@ fun SettingsScreen(vm: MainViewModel) {
                     Switch(rendim, { rendim = it; dp.edit().putBoolean("diag_pedir_rendimiento", it).apply(); org.ostrichbat2k.usbdac.streaming.UsbTelemetry.pedirRendimiento = it })
                 }
             }
+            } }
             TextButton(onClick = { diag = diagnoseUsb(ctx) + (if (usbOn) "\n\n== libusbdac ==\n" + (UsbDirect.managerOrNull(ctx)?.diagnosticLog?.value?.joinToString("\n") ?: UsbDirect.failure.orEmpty()) else "") + java.io.File(ctx.filesDir, QbdlxApp.CRASH_FILE).takeIf { it.exists() }?.let { "\n\n== Último cierre inesperado ==\n" + it.readText().take(3000) }.orEmpty() + "\n\n== Sesión anterior (registro por segundo) ==\n" + DiagnosticLog.previousSession(ctx) + "\n\n== Reproducción (últimos eventos) ==\n" + PlaybackLog.read(ctx).ifEmpty { "(nada todavía)" } }, Modifier.padding(horizontal = 8.dp)) { Text(s.usbDiagButton) }
             diag?.let { txt ->
                 val clip = LocalClipboardManager.current

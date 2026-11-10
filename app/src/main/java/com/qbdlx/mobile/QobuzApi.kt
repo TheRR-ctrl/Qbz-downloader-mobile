@@ -199,8 +199,14 @@ class QobuzApi(val http: OkHttpClient = OkHttpClient()) {
     }
 
     /** The sections of the web player's Discover page (`discover/index`), skipping any that are missing. */
-    fun discover(): Discover {
-        val containers = get("discover/index").optJSONObject("containers")
+    /** Los géneros de Qobuz (id y nombre) para el selector de Descubrir; vacío si Qobuz no los da. */
+    fun genres(): List<Pair<String, String>> {
+        val items = get("genre/list", mapOf("limit" to "50")).optJSONObject("genres")?.optJSONArray("items") ?: return emptyList()
+        return (0 until items.length()).mapNotNull { i -> items.optJSONObject(i)?.let { g -> g.optString("id").takeIf { it.isNotBlank() }?.let { it to g.optString("name") } } }
+    }
+
+    fun discover(genreId: String? = null): Discover {
+        val containers = get("discover/index", if (genreId == null) emptyMap() else mapOf("genre_ids" to genreId)).optJSONObject("containers")
             ?: throw ApiException("Unexpected Discover response from Qobuz")
         fun items(key: String) = containers.optJSONObject(key)?.optJSONObject("data")?.optJSONArray("items")
         fun releases(key: String) =

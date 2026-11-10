@@ -60,6 +60,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     var discover by mutableStateOf<Discover?>(null); private set
     var selectedTag by mutableStateOf<PlaylistTag?>(null); private set
+    /** Géneros de Qobuz para filtrar Descubrir (id, nombre) y el elegido (null = todos). */
+    var genres by mutableStateOf<List<Pair<String, String>>>(emptyList()); private set
+    var selectedGenre by mutableStateOf<String?>(null); private set
+    fun selectGenre(id: String?) { if (id == selectedGenre) return; selectedGenre = id; loadHome() }
     var tagPlaylists by mutableStateOf<List<Playlist>>(emptyList()); private set
     var playlistDetail by mutableStateOf<PlaylistDetail?>(null); private set
     var artistPage by mutableStateOf<ArtistPage?>(null); private set
@@ -148,10 +152,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** Reproduce los archivos de audio de una carpeta desde [start], leyendo sus etiquetas. */
     fun playLocal(files: List<LocalMusic.Entry>, folder: String, start: Int) {
         viewModelScope.launch {
-            val items = withContext(Dispatchers.IO) { files.mapIndexed { i, e -> LocalMusic.toItem(getApplication(), e, folder, i) } }
+            // Empieza a sonar enseguida: solo se leen las etiquetas de la que se tocó; las demás llegan después, sin esperar.
+            val items = files.mapIndexed { i, e -> LocalMusic.quickItem(e, folder, i) }.toMutableList()
+            files.getOrNull(start)?.let { e -> items[start] = withContext(Dispatchers.IO) { LocalMusic.toItem(getApplication(), e, folder, start) } }
             files.forEachIndexed { i, e -> localUris[items[i].second.id] = e.uri.toString() }
             prefs.edit().putString("local_map", org.json.JSONObject(localUris.entries.toList().takeLast(2000).associate { it.key.toString() to it.value }).toString()).apply()
             playList(items, start)
+            val rest = files.withIndex().filter { it.index != start && !LocalMusic.isRead(it.value) }
+            if (rest.isEmpty()) return@launch
+            rest.chunked(25).forEach { part ->
+                val read = withContext(Dispatchers.IO) { part.associate { (i, e) -> LocalMusic.toItem(getApplication(), e, folder, i).let { it.second.id to it } } }
+                playQueue.update { old -> read[old.second.id] ?: old }
+                refreshQueue()
+            }
         }
     }
     fun chooseKnownFolder() { pickKnown = true }
@@ -1673,14 +1686,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun loadHome() {
-        discover = null
         selectedTag = null
         viewModelScope.launch {
             homeLoading = true
             try {
+                if (genres.isEmpty()) viewModelScope.launch { genres = withContext(Dispatchers.IO) { runCatching { api.genres() }.getOrDefault(emptyList()) } }
+                val genre = selectedGenre
                 discover = withContext(Dispatchers.IO) {
                     try {
-                        api.discover().takeIf { it.newReleases != null || it.sections.isNotEmpty() }
+                        api.discover(genre).takeIf { it.newReleases != null || it.sections.isNotEmpty() }
                             ?: throw ApiException("Discover came back empty")
                     } catch (e: Exception) {
                         // Fall back to the plain new-releases list so Home is never blank.
@@ -1832,7 +1846,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                                 is DownloadRequest.WholeAlbum -> albumTracks(r.album.id)
                                 is DownloadRequest.WholePlaylist -> api.getPlaylist(r.playlist.id).tracks
                                 else -> emptyList()
-                            }.filter { it.second.streamable }
+                            }.filter { it.second.streamable && it.second.id > 0 } // los archivos locales (id negativo) ya están en el teléfono
                         }
                         val result = downloads.enqueue(items, q)
                         notice = when {
