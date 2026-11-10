@@ -469,12 +469,45 @@ fun LibraryScreen(vm: MainViewModel) {
                     focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
                     focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant, unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant),
             )
+            var order by remember {
+                mutableStateOf(run {
+                    val saved = ctxLib.getSharedPreferences("qbdlx", 0).getString("library_tab_order", "").orEmpty()
+                        .split(',').mapNotNull { n -> LibraryView.entries.firstOrNull { it.name == n } }.distinct()
+                    saved + LibraryView.entries.filter { it !in saved }
+                })
+            }
+            var reordering by remember { mutableStateOf(false) }
+            fun tabLabel(v: LibraryView) = when (v) { LibraryView.Playlists -> s.playlists; LibraryView.Albums -> s.albums; LibraryView.Tracks -> s.tracksTab; LibraryView.Artists -> s.artistsTab; LibraryView.History -> s.history; LibraryView.Folders -> s.localFolders }
+            fun move(i: Int, d: Int) {
+                val j = i + d; if (j !in order.indices) return
+                order = order.toMutableList().also { val x = it[i]; it[i] = it[j]; it[j] = x }
+                ctxLib.getSharedPreferences("qbdlx", 0).edit().putString("library_tab_order", order.joinToString(",") { it.name }).apply()
+            }
+            if (reordering) {
+                androidx.compose.material3.AlertDialog(
+                    onDismissRequest = { reordering = false },
+                    title = { Text(s.reorderTabs) },
+                    text = {
+                        Column {
+                            order.forEachIndexed { i, v ->
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(tabLabel(v), Modifier.weight(1f))
+                                    androidx.compose.material3.TextButton({ move(i, -1) }, enabled = i > 0) { Text("▲") }
+                                    androidx.compose.material3.TextButton({ move(i, 1) }, enabled = i < order.size - 1) { Text("▼") }
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = { androidx.compose.material3.TextButton({ reordering = false }) { Text(s.reorderDone) } },
+                )
+            }
             Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                LibraryView.entries.forEach { v ->
+                order.forEach { v ->
                     val label = when (v) { LibraryView.Playlists -> s.playlists; LibraryView.Albums -> s.albums; LibraryView.Tracks -> s.tracksTab; LibraryView.Artists -> s.artistsTab; LibraryView.History -> s.history; LibraryView.Folders -> s.localFolders }
                     val n = when (v) { LibraryView.Playlists -> vm.myPlaylists?.size; LibraryView.Albums -> vm.favAlbums?.size; LibraryView.Tracks -> vm.favTracks?.size; LibraryView.Artists -> vm.favArtists?.size; else -> null }
                     QChip(view == v, { view = v; vm.libraryViewIdx = v.ordinal }, label = { Text(if (n != null) "$label · $n" else label) })
                 }
+                QChip(false, { reordering = true }, label = { Text("⇅") })
             }
             if (view != LibraryView.History && view != LibraryView.Artists && view != LibraryView.Folders) {
                 var menu by remember { mutableStateOf(false) }
@@ -1155,12 +1188,22 @@ fun SettingsScreen(vm: MainViewModel) {
 /** One settings block: a small title (and help) above a rounded card that holds the controls. */
 @Composable
 private fun SettingsGroup(title: String, help: String? = null, content: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-        SectionHeading(title, Modifier.padding(horizontal = 4.dp))
-        if (help != null) Text(help, Modifier.padding(horizontal = 4.dp, vertical = 2.dp), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(6.dp))
+    // Plegable: los ajustes empiezan cerrados y se abre solo lo que se necesita; se recuerda al girar la pantalla.
+    var open by androidx.compose.runtime.saveable.rememberSaveable(title) { mutableStateOf(false) }
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
         androidx.compose.material3.Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
-            Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), content = content)
+            Column(Modifier.fillMaxWidth()) {
+                Row(Modifier.fillMaxWidth().clickable { open = !open }.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(title, Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+                    Text(if (open) "▲" else "▼", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                androidx.compose.animation.AnimatedVisibility(open) {
+                    Column(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                        if (help != null) Text(help, Modifier.padding(horizontal = 16.dp, vertical = 2.dp), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        content()
+                    }
+                }
+            }
         }
     }
 }

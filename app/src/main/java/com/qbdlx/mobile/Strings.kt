@@ -125,6 +125,8 @@ interface Strings {
     val nothingHere: String
     val downloadAll: String
     val everythingTitle: String
+    val reorderTabs: String
+    val reorderDone: String
     val everythingHelp: String
     val everythingConfirm: String
     val everythingButton: String
@@ -622,6 +624,8 @@ object English : Strings {
     override val nothingHere = "Nothing here yet"
     override val downloadAll = "Download all"
     override val everythingTitle = "Download my whole account"
+    override val reorderTabs = "Reorder tabs"
+    override val reorderDone = "Done"
     override val everythingHelp = "Queues every favorite track, every favorite album and every playlist of your Qobuz account, in the quality chosen above. Songs already downloaded are skipped."
     override val everythingConfirm = "Download EVERYTHING in your account? It can be many gigabytes."
     override val everythingButton = "Download everything"
@@ -1156,6 +1160,8 @@ object Spanish : Strings {
     override val nothingHere = "Aún no hay nada aquí"
     override val downloadAll = "Descargar todo"
     override val everythingTitle = "Descargar toda mi cuenta"
+    override val reorderTabs = "Ordenar pestañas"
+    override val reorderDone = "Listo"
     override val everythingHelp = "Pone en la cola todas tus pistas favoritas, todos tus álbumes favoritos y todas tus playlists de Qobuz, en la calidad elegida arriba. Lo que ya está descargado se salta."
     override val everythingConfirm = "¿Descargar TODO lo de tu cuenta? Pueden ser muchos gigabytes."
     override val everythingButton = "Descargar todo"
