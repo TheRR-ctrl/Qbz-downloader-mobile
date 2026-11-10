@@ -356,6 +356,10 @@ fun AlbumScreen(vm: MainViewModel) {
 fun PlaylistScreen(vm: MainViewModel) {
     val d = vm.playlistDetail ?: return
     BackHandler { vm.closePlaylist() }
+    val ctx0 = androidx.compose.ui.platform.LocalContext.current
+    var sort by remember { mutableStateOf(ctx0.getSharedPreferences("qbdlx", 0).getInt("playlist_sort", 0)) }
+    var grid by remember { mutableStateOf(ctx0.getSharedPreferences("qbdlx", 0).getBoolean("playlist_grid", false)) }
+    val shown = remember(d, sort) { when (sort) { 1 -> d.tracks.sortedBy { it.second.title.lowercase() }; 2 -> d.tracks.sortedBy { it.second.artist.lowercase() }; else -> d.tracks } }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp + LocalBottomInset.current)) {
         item {
             DetailHeader(
@@ -366,8 +370,29 @@ fun PlaylistScreen(vm: MainViewModel) {
                 onDownload = { vm.requestDownload(DownloadRequest.Tracks(d.tracks.filter { it.second.streamable })) },
             )
         }
+        item {
+            val s = LocalStrings.current
+            val ctx = androidx.compose.ui.platform.LocalContext.current
+            val prefs = ctx.getSharedPreferences("qbdlx", 0)
+            Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(40.dp).clip(CircleShape).background(Color.White).clickable { vm.playList(d.tracks.shuffled(), 0) }, contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.Shuffle, s.shuffle, tint = Color.Black)
+                }
+                listOf(s.sortAdded, s.sortTitle, s.sortArtist).forEachIndexed { i, label ->
+                    QChip(sort == i, { sort = i; prefs.edit().putInt("playlist_sort", i).apply() }, label = { Text(label) })
+                }
+                listOf(false to Icons.Default.ViewList, true to Icons.Default.GridView).forEach { (g, icon) ->
+                    Box(Modifier.clip(RoundedCornerShape(20.dp)).background(if (grid == g) Color.White else MaterialTheme.colorScheme.surfaceVariant)
+                        .clickable { grid = g; prefs.edit().putBoolean("playlist_grid", g).apply() }.padding(horizontal = 14.dp, vertical = 8.dp)) {
+                        Icon(icon, null, tint = if (grid == g) Color.Black else MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(20.dp))
+                    }
+                }
+            }
+        }
         // A playlist can list the same track twice, so key by position.
-        itemsIndexed(d.tracks) { i, (album, track) -> TrackRow(vm, album, track, "${track.artist} • ${album.title}", onPlay = { vm.playList(d.tracks, i) }) }
+        if (grid) items(shown.chunked(2)) { row ->
+            GridRow(row.map { (album, track) -> GridCell(album.coverUrl, track.title, track.artist) { vm.playList(shown, shown.indexOf(album to track).coerceAtLeast(0)) } })
+        } else itemsIndexed(shown) { i, (album, track) -> TrackRow(vm, album, track, "${track.artist} • ${album.title}", onPlay = { vm.playList(shown, i) }) }
     }
 }
 
