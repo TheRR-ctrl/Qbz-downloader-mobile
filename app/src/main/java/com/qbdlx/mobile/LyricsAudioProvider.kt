@@ -17,11 +17,14 @@ import java.text.Normalizer
  * and check that the saved lyric is in sync. Only Q Lyrics may ask (checked by calling package); the Qobuz
  * session never leaves this app. The temp file is unlinked as soon as the descriptor is open, so nothing stays on disk.
  *
- * content://<applicationId>.lyricsaudio/track?title=..&artist=..&dur=<seconds>
+ * content://<applicationId>.lyricsaudio/track?title=..&artist=..&dur=<seconds>[&q=lossless]
+ *
+ * With q=lossless it lends the CD-quality FLAC instead (for analysis that suffers from MP3 artefacts); if Qobuz
+ * does not give it, the call fails so the caller can ask again without q.
  */
 class LyricsAudioProvider : ContentProvider() {
     override fun onCreate() = true
-    override fun getType(uri: Uri): String = "audio/mpeg"
+    override fun getType(uri: Uri): String = if (uri.getQueryParameter("q") == "lossless") "audio/flac" else "audio/mpeg"
     override fun query(uri: Uri, p: Array<out String>?, s: String?, a: Array<out String>?, o: String?): Cursor? = null
     override fun insert(uri: Uri, v: ContentValues?): Uri? = null
     override fun delete(uri: Uri, s: String?, a: Array<out String>?) = 0
@@ -47,11 +50,13 @@ class LyricsAudioProvider : ContentProvider() {
         val hit = try {
             api.searchTracks("$artist $title".trim(), 10).map { it.second }.firstOrNull { sameSong(it, title, artist, dur) }
         } catch (e: Exception) { throw FileNotFoundException("Búsqueda: ${e.message}") } ?: throw FileNotFoundException("No está en Qobuz")
-        val file = try { api.getFileUrl(hit.id, Quality.MP3.formatId) } catch (e: Exception) { throw FileNotFoundException("Qobuz: ${e.message}") }
+        val lossless = uri.getQueryParameter("q") == "lossless"
+        val file = try { api.getFileUrl(hit.id, if (lossless) Quality.LOSSLESS.formatId else Quality.MP3.formatId) } catch (e: Exception) { throw FileNotFoundException("Qobuz: ${e.message}") }
 
         val dir = File(ctx.cacheDir, "lyricsaudio").apply { mkdirs() }
         dir.listFiles()?.forEach { it.delete() }
-        val tmp = File(dir, "${hit.id}.mp3")
+        if (lossless && !file.mimeType.contains("flac", true)) throw FileNotFoundException("Qobuz no dio la versión sin pérdida")
+        val tmp = File(dir, "${hit.id}.${if (lossless) "flac" else "mp3"}")
         try {
             http.newCall(Request.Builder().url(file.url).build()).execute().use { r ->
                 if (!r.isSuccessful) throw FileNotFoundException("HTTP ${r.code}")
