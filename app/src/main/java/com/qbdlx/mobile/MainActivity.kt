@@ -18,6 +18,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
@@ -73,6 +75,10 @@ class MainActivity : ComponentActivity() {
 
     private val knownPicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) vm.onKnownPicked(uri)
+    }
+
+    private val localPicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) vm.onLocalPicked(uri)
     }
 
     private val folderPicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
@@ -131,6 +137,9 @@ class MainActivity : ComponentActivity() {
                     vm.openListenerSettings = false
                     runCatching { startActivity(android.content.Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
                 }
+            }
+            LaunchedEffect(vm.pickLocal) {
+                if (vm.pickLocal) { vm.pickLocal = false; localPicker.launch(null) }
             }
             LaunchedEffect(vm.pickKnown) {
                 if (vm.pickKnown) { vm.pickKnown = false; knownPicker.launch(null) }
@@ -249,9 +258,19 @@ private fun AppShell(vm: MainViewModel) {
                     targetState = screen,
                     modifier = Modifier.fillMaxSize(),
                     transitionSpec = {
-                        val detail = targetState == "album" || targetState == "playlist"
-                        // Emil Kowalski: strong ease-out, enter ~220 ms, exit faster (120 ms) so the next screen never waits for the old one.
-                        (fadeIn(tween(220, delayMillis = 40, easing = UiEaseOut)) + (if (detail) slideInVertically(tween(260, easing = UiEaseOut)) { it / 18 } else EnterTransition.None)) togetherWith fadeOut(tween(120, easing = UiEaseOut))
+                        // Como Qobuz: una página de detalle (álbum, lista, artista...) entra empujando desde la derecha
+                        // y al volver sale hacia la derecha; entre pestañas, un fundido con un leve acercamiento.
+                        val details = setOf("album", "playlist", "artist", "diagnostics", "import", "ipod")
+                        val push = targetState in details && initialState !in details
+                        val pop = initialState in details && targetState !in details
+                        when {
+                            push -> (slideInHorizontally(tween(300, easing = UiEaseOut)) { it / 4 } + fadeIn(tween(220, easing = UiEaseOut))) togetherWith
+                                (slideOutHorizontally(tween(300, easing = UiEaseOut)) { -it / 10 } + fadeOut(tween(160, easing = UiEaseOut)))
+                            pop -> (slideInHorizontally(tween(300, easing = UiEaseOut)) { -it / 10 } + fadeIn(tween(220, easing = UiEaseOut))) togetherWith
+                                (slideOutHorizontally(tween(260, easing = UiEaseOut)) { it / 4 } + fadeOut(tween(160, easing = UiEaseOut)))
+                            else -> (fadeIn(tween(220, delayMillis = 40, easing = UiEaseOut)) + androidx.compose.animation.scaleIn(tween(260, easing = UiEaseOut), initialScale = 0.97f)) togetherWith
+                                fadeOut(tween(120, easing = UiEaseOut))
+                        }
                     },
                     label = "screen",
                 ) { key ->
@@ -278,7 +297,7 @@ private fun AppShell(vm: MainViewModel) {
                 val st = LocalStrings.current
                 AlertDialog(
                     onDismissRequest = { vm.pendingBulk = null },
-                    title = { Text(when (r) { is DownloadRequest.Albums -> st.confirmBulkAlbums(r.albums.size); is DownloadRequest.Playlists -> st.confirmBulkPlaylists(r.playlists.size); else -> "" }) },
+                    title = { Text(when (r) { is DownloadRequest.Albums -> st.confirmBulkAlbums(r.albums.size); is DownloadRequest.Playlists -> st.confirmBulkPlaylists(r.playlists.size); is DownloadRequest.Everything -> st.everythingConfirm; else -> "" }) },
                     confirmButton = { TextButton({ vm.confirmBulk() }) { Text(st.confirmBulkYes) } },
                     dismissButton = { TextButton({ vm.pendingBulk = null }) { Text(st.cancel) } },
                 )

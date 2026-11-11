@@ -186,7 +186,20 @@ class QobuzApi(val http: OkHttpClient = OkHttpClient()) {
             offset += 100
         }
         val list = albums.distinctBy { it.id }.sortedByDescending { it.releaseDate.ifBlank { it.year } }
-        return ArtistPage(name, image ?: list.firstOrNull()?.coverUrl, list)
+        // Lo extra (más escuchado, biografía, artistas similares) viene de `artist/page`; si Qobuz no lo da, la página queda con lo de siempre.
+        var bio = ""; var top = emptyList<Pair<Album, Track>>(); var similar = emptyList<String>()
+        runCatching {
+            val pg = get("artist/page", mapOf("artist_id" to "$id", "sort" to "release_date"))
+            bio = (pg.optJSONObject("biography")?.optString("content") ?: "").replace(Regex("<[^>]*>"), " ").replace(Regex("\\s+"), " ").trim()
+            top = pg.optJSONArray("top_tracks").mapObjects { t ->
+                val album = t.optJSONObject("album")?.let { runCatching { parseAlbum(it) }.getOrNull() } ?: return@mapObjects null
+                album to parseTrack(t, 0, album.artist)
+            }.distinctBy { it.second.id }
+            similar = (pg.optJSONObject("similar_artists")?.optJSONArray("items") ?: pg.optJSONArray("similar_artists")).mapObjects { a ->
+                nameOf(a).takeIf { it.isNotBlank() }?.let { n -> JSONObject().put("n", n) }
+            }.map { it.getString("n") }
+        }
+        return ArtistPage(name, image ?: list.firstOrNull()?.coverUrl, list, bio, top, similar)
     }
 
     /** Tracks matching [query] (as (album, track) pairs, like a playlist's), for the player's Explore page. */
@@ -199,8 +212,14 @@ class QobuzApi(val http: OkHttpClient = OkHttpClient()) {
     }
 
     /** The sections of the web player's Discover page (`discover/index`), skipping any that are missing. */
-    fun discover(): Discover {
-        val containers = get("discover/index").optJSONObject("containers")
+    /** Los géneros de Qobuz (id y nombre) para el selector de Descubrir; vacío si Qobuz no los da. */
+    fun genres(): List<Pair<String, String>> {
+        val items = get("genre/list", mapOf("limit" to "50")).optJSONObject("genres")?.optJSONArray("items") ?: return emptyList()
+        return (0 until items.length()).mapNotNull { i -> items.optJSONObject(i)?.let { g -> g.optString("id").takeIf { it.isNotBlank() }?.let { it to g.optString("name") } } }
+    }
+
+    fun discover(genreId: String? = null): Discover {
+        val containers = get("discover/index", if (genreId == null) emptyMap() else mapOf("genre_ids" to genreId)).optJSONObject("containers")
             ?: throw ApiException("Unexpected Discover response from Qobuz")
         fun items(key: String) = containers.optJSONObject(key)?.optJSONObject("data")?.optJSONArray("items")
         fun releases(key: String) =
@@ -331,6 +350,8 @@ class QobuzApi(val http: OkHttpClient = OkHttpClient()) {
         streamable = t.optBoolean("streamable", true),
         quality = qualityLabel(t, "/"),
         hiRes = isHiRes(t),
+        replayGainDb = t.optJSONObject("audio_info")?.takeIf { it.has("replaygain_track_gain") }?.optDouble("replaygain_track_gain")?.takeIf { !it.isNaN() },
+        replayPeak = t.optJSONObject("audio_info")?.takeIf { it.has("replaygain_track_peak") }?.optDouble("replaygain_track_peak")?.takeIf { !it.isNaN() && it > 0 },
     ).withTagDetails(t)
 
     /** [quality] is what Qobuz says the file is (null when it doesn't say); only used to judge upgrades. */
@@ -575,5 +596,8 @@ class QobuzApi(val http: OkHttpClient = OkHttpClient()) {
 }
 
 /** An artist followed in the Qobuz library. */
-data class ArtistPage(val name: String, val image: String?, val albums: List<Album>)
+data class ArtistPage(
+    val name: String, val image: String?, val albums: List<Album>,
+    val bio: String = "", val topTracks: List<Pair<Album, Track>> = emptyList(), val similar: List<String> = emptyList(),
+)
 data class FavArtist(val name: String, val cover: String?)

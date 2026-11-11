@@ -1,3 +1,7 @@
 # ninja log v5
 0	637	1794192660875399887	CMakeFiles/usbnative.dir/usb_native.cpp.o	282a75943391a191
 638	664	1794192660907399886	/home/user/qbz-downloader-mobile/usbdac/build/intermediates/cxx/Debug/72702v1y/obj/arm64-v8a/libusbnative.so	dc4cd876235710f1
+0	6598	1794220034372767030	CMakeFiles/usbnative.dir/usb_native.cpp.o	282a75943391a191
+6599	8769	1794220036548766933	/home/user/qbz-downloader-mobile/usbdac/build/intermediates/cxx/Debug/72702v1y/obj/arm64-v8a/libusbnative.so	dc4cd876235710f1
+1	1183	1794221464009253712	CMakeFiles/usbnative.dir/usb_native.cpp.o	282a75943391a191
+1183	1593	1794221464425253693	/home/user/qbz-downloader-mobile/usbdac/build/intermediates/cxx/Debug/72702v1y/obj/arm64-v8a/libusbnative.so	dc4cd876235710f1

@@ -80,7 +80,7 @@ private fun encName(e: Int) = when (e) {
 fun diagnoseUsb(context: Context): String {
     val am = context.getSystemService(AudioManager::class.java)
     val sb = StringBuilder()
-    sb.appendLine("Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}) · ${Build.MANUFACTURER} ${Build.MODEL}")
+    sb.appendLine("Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}) · ${Build.MANUFACTURER} ${phoneName(context)} (${Build.MODEL})${usbDacLabel(context)?.let { " · DAC $it" } ?: ""}")
     runCatching { sb.appendLine("App ${context.packageManager.getPackageInfo(context.packageName, 0).versionName}") }
     if (Build.VERSION.SDK_INT < 34) sb.appendLine("API < 34: Android no tiene salida bit-perfect.")
     val outs = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
@@ -194,3 +194,18 @@ class BitPerfectOutput(context: Context) {
     private fun setMixer(d: AudioDeviceInfo, mode: android.media.AudioMixerAttributes): Boolean =
         audioManager.setPreferredMixerAttributes(attrs, d, mode)
 }
+
+/** The name the user gave the phone in Settings (falls back to the model). */
+fun phoneName(context: Context): String =
+    runCatching {
+        android.provider.Settings.Global.getString(context.contentResolver, "device_name")
+            ?: android.provider.Settings.Secure.getString(context.contentResolver, "bluetooth_name")
+    }.getOrNull()?.takeIf { it.isNotBlank() } ?: Build.MODEL
+
+/** "FiiO BTR5 · 2972:0047" for the connected USB audio DAC, or null when there is none. */
+fun usbDacLabel(context: Context): String? = runCatching {
+    val usb = context.getSystemService(android.hardware.usb.UsbManager::class.java).deviceList.values.firstOrNull { u ->
+        (0 until u.interfaceCount).any { u.getInterface(it).interfaceClass == 1 }
+    } ?: return@runCatching null
+    "%s · %04x:%04x".format(usb.productName ?: "USB DAC", usb.vendorId, usb.productId)
+}.getOrNull()

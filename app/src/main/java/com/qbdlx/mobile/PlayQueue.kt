@@ -19,7 +19,7 @@ class QueueState<T>(
  * twice), so entries are tracked by identity, never by equality.
  */
 class PlayQueue<T>(private val random: Random = Random()) {
-    private class Entry<T>(val value: T)
+    private class Entry<T>(var value: T)
 
     private var original: List<Entry<T>> = emptyList() // the order the list was given in (restored when shuffle goes off)
     private var order: MutableList<Entry<T>> = ArrayList() // the order being played
@@ -29,6 +29,9 @@ class PlayQueue<T>(private val random: Random = Random()) {
     var repeat = RepeatMode.OFF; private set
 
     val current: T? get() = order.getOrNull(pos)?.value
+
+    /** Replaces each queued value by [f] of it, keeping order and position (e.g. tags that were read after playback started). */
+    fun update(f: (T) -> T) { original.forEach { it.value = f(it.value) } ; order.forEach { e -> if (original.none { it === e }) e.value = f(e.value) } }
     val size get() = order.size
 
     fun state() = QueueState(

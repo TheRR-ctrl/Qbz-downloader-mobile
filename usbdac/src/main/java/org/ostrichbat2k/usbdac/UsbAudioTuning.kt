@@ -93,7 +93,7 @@ internal object UsbAudioTuning {
      * not assumed) changes. See [UsbAudioOutput]'s `startStreamingThread`'s
      * packetsPerUrb/packetsPerSecond.
      */
-    const val BASE_PACKETS_PER_URB = 8
+    const val BASE_PACKETS_PER_URB = 16
     const val NUM_URBS = 4
 
     /**
@@ -131,8 +131,13 @@ internal object UsbAudioTuning {
      * in this long -- i.e. our own write-side infrastructure has stopped entirely (crashed
      * thread, native-level hang), not just normal ring-buffer backpressure, which resolves on
      * its own as the thread keeps draining at its paced ~8ms-of-real-audio-per-URB rate.
+     *
+     * 3 s, not 1 s: on a real phone the thread was seen pausing a little over a second (CPU
+     * starvation, not a dead stream). DefaultAudioSink answers isStalled() with flush(), which
+     * throws away up to RING_BUFFER_MS of queued audio and rebuilds the output -- the player
+     * then carries on from the decoder's position, so the music skipped ahead mid-track.
      */
-    const val STALL_THRESHOLD_MS = 1000L
+    const val STALL_THRESHOLD_MS = 3000L
 
     /**
      * How many trailing frames of real audio get ramped down to silence instead of cut dead when

@@ -37,7 +37,8 @@ class NowPlayingWidget : AppWidgetProvider() {
         }
 
         /** Redraws every widget on the home screen; [cover] is a small bitmap of the album cover, or null; [background] is a larger one for the faded backdrop. */
-        fun render(context: Context, playing: Pair<Album, Track>?, isPlaying: Boolean, cover: Bitmap?, background: Bitmap? = cover) {
+        fun render(context: Context, playing: Pair<Album, Track>?, isPlaying: Boolean, cover: Bitmap?, background: Bitmap? = cover, shuffle: Boolean = lastShuffle, repeat: Int = lastRepeat) {
+            lastShuffle = shuffle; lastRepeat = repeat
             val manager = AppWidgetManager.getInstance(context)
             val ids = manager.getAppWidgetIds(ComponentName(context, NowPlayingWidget::class.java))
             if (ids.isEmpty()) return
@@ -46,17 +47,20 @@ class NowPlayingWidget : AppWidgetProvider() {
                 val o = manager.getAppWidgetOptions(id)
                 val views = RemoteViews(context.packageName, layoutFor(o.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 250), o.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 100)))
                 try {
-                    fill(context, views, playing, isPlaying, cover, background)
+                    fill(context, views, playing, isPlaying, cover, background, shuffle, repeat)
                     manager.updateAppWidget(id, views)
                 } catch (e: Exception) {
                     val plain = RemoteViews(context.packageName, R.layout.widget_now_playing_r)
-                    fill(context, plain, playing, isPlaying, null, null)
+                    fill(context, plain, playing, isPlaying, null, null, shuffle, repeat)
                     manager.updateAppWidget(id, plain)
                 }
             }
         }
 
-        private fun fill(context: Context, views: RemoteViews, playing: Pair<Album, Track>?, isPlaying: Boolean, cover: Bitmap?, background: Bitmap?) {
+        private var lastShuffle = false
+        private var lastRepeat = 0
+
+        private fun fill(context: Context, views: RemoteViews, playing: Pair<Album, Track>?, isPlaying: Boolean, cover: Bitmap?, background: Bitmap?, shuffle: Boolean, repeat: Int) {
         views.setTextViewText(R.id.widget_title, playing?.second?.displayTitle ?: "QBDLX")
         views.setTextViewText(R.id.widget_artist, playing?.first?.artist ?: "")
         // a text that does not fit scrolls (a marquee only runs on a selected view)
@@ -64,6 +68,10 @@ class NowPlayingWidget : AppWidgetProvider() {
         if (cover != null) views.setImageViewBitmap(R.id.widget_cover, cover) else if (playing == null) views.setImageViewResource(R.id.widget_cover, R.drawable.ic_launcher)
         if (cover != null) { views.setImageViewBitmap(R.id.widget_bg, background ?: cover); views.setViewVisibility(R.id.widget_bg, android.view.View.VISIBLE) }
         else if (playing == null) views.setViewVisibility(R.id.widget_bg, android.view.View.GONE)
+        views.setOnClickPendingIntent(R.id.widget_shuffle, PlaybackService.actionIntent(context, PlaybackService.ACTION_SHUFFLE))
+        views.setOnClickPendingIntent(R.id.widget_repeat, PlaybackService.actionIntent(context, PlaybackService.ACTION_REPEAT))
+        views.setImageViewResource(R.id.widget_shuffle, if (shuffle) R.drawable.ic_widget_shuffle else R.drawable.ic_widget_shuffle_off)
+        views.setImageViewResource(R.id.widget_repeat, when (repeat) { 2 -> R.drawable.ic_widget_repeat_one; 1 -> R.drawable.ic_widget_repeat; else -> R.drawable.ic_widget_repeat_off })
         views.setOnClickPendingIntent(R.id.widget_prev, PlaybackService.actionIntent(context, PlaybackService.ACTION_PREVIOUS))
         views.setOnClickPendingIntent(R.id.widget_play, PlaybackService.actionIntent(context, PlaybackService.ACTION_TOGGLE))
         views.setOnClickPendingIntent(R.id.widget_next, PlaybackService.actionIntent(context, PlaybackService.ACTION_NEXT))

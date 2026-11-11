@@ -72,6 +72,15 @@
                 android:orientation="horizontal">
 
                 <ImageButton
+                    android:id="@+id/widget_shuffle"
+                    android:layout_width="0dp"
+                    android:layout_height="32dp"
+                    android:layout_weight="1"
+                    android:scaleType="fitCenter"
+                    android:background="@null"
+                    android:contentDescription="Shuffle"
+                    android:src="@drawable/ic_widget_shuffle_off" />
+                <ImageButton
                     android:id="@+id/widget_prev"
                     android:layout_width="0dp"
                     android:layout_height="48dp"
@@ -100,6 +109,15 @@
                     android:background="@null"
                     android:contentDescription="@string/widget_next"
                     android:src="@android:drawable/ic_media_next" />
+                <ImageButton
+                    android:id="@+id/widget_repeat"
+                    android:layout_width="0dp"
+                    android:layout_height="32dp"
+                    android:layout_weight="1"
+                    android:scaleType="fitCenter"
+                    android:background="@null"
+                    android:contentDescription="Repeat"
+                    android:src="@drawable/ic_widget_repeat_off" />
             </LinearLayout>
         </LinearLayout>
     </LinearLayout>

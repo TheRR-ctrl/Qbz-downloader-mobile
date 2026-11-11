@@ -36,6 +36,9 @@ object LrcLib {
 
     fun rawSearch(q: String): String? = get("$BASE/search?q=${enc(q)}")
 
+    private val wordTag = Regex("""<\d{1,3}:\d{2}[.:]\d{1,3}>\s*\S""")
+    fun wordTimed(lrc: String?) = lrc != null && wordTag.findAll(lrc).take(20).count() >= 20
+
     internal fun parseOne(o: JSONObject): Lyrics? {
         val synced = o.optString("syncedLyrics", "").takeIf { it.isNotBlank() && it != "null" }
         val plain = o.optString("plainLyrics", "").takeIf { it.isNotBlank() && it != "null" }
@@ -49,7 +52,8 @@ object LrcLib {
             .filter { title.isBlank() || sameSong(it.optString("trackName"), it.optString("artistName"), title, artist) }
         if (items.isEmpty()) return null
         fun gap(o: JSONObject) = if (durationSec > 0) abs(o.optDouble("duration", 0.0) - durationSec) else 0.0
-        fun rank(o: JSONObject) = (if (o.optString("syncedLyrics", "").isBlank()) 1000 else 0) + gap(o)
+        // a lyric timed word by word (enhanced LRC) wins over a line-only one a couple of seconds closer in length
+        fun rank(o: JSONObject) = o.optString("syncedLyrics", "").let { s -> (if (s.isBlank()) 1000 else 0) + (if (wordTimed(s)) -3 else 0) } + gap(o)
         // First the ones within 10 s; if none, up to 20 s (remasters and live cuts often differ a little).
         val best = items.filter { gap(it) <= 10 }.minByOrNull(::rank) ?: items.filter { gap(it) <= 20 }.minByOrNull(::rank) ?: return null
         return parseOne(best)

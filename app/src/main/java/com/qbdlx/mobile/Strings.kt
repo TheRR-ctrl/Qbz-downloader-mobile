@@ -45,6 +45,14 @@ interface Strings {
     val searchAlbums: String
     val searchHint: String
     val sortBy: String
+    val searchLibrary: String
+    val recentSearches: String
+    val recentSearchesClear: String
+    val localFolders: String
+    val localFolderAdd: String
+    val localFolderRemove: String
+    val localFoldersEmpty: String
+    fun localPlayAll(n: Int): String
     val sortAdded: String
     val sortTitle: String
     val sortArtist: String
@@ -108,8 +116,20 @@ interface Strings {
     val albums: String
     val tracksTab: String
     val artistsTab: String
+    val topSongs: String
+    val epsSingles: String
+    val liveAlbums: String
+    val similarArtists: String
+    val seeAll: String
+    val readMore: String
     val nothingHere: String
     val downloadAll: String
+    val everythingTitle: String
+    val reorderTabs: String
+    val reorderDone: String
+    val everythingHelp: String
+    val everythingConfirm: String
+    val everythingButton: String
     val refresh: String
 
     // Quality
@@ -527,6 +547,14 @@ object English : Strings {
     override val searchAlbums = "Search albums"
     override val searchHint = "Search albums and songs"
     override val sortBy = "Sort"
+    override val searchLibrary = "Search your library"
+    override val recentSearches = "Recent searches"
+    override val recentSearchesClear = "Clear recent searches"
+    override val localFolders = "Folders"
+    override val localFolderAdd = "Add a folder from this phone"
+    override val localFolderRemove = "Remove folder"
+    override val localFoldersEmpty = "Add a folder with your music to play its files here."
+    override fun localPlayAll(n: Int) = "Play all ($n)"
     override val sortAdded = "As added"
     override val sortTitle = "Title A–Z"
     override val sortArtist = "Artist A–Z"
@@ -587,8 +615,20 @@ object English : Strings {
     override val albums = "Albums"
     override val tracksTab = "Tracks"
     override val artistsTab = "Artists"
+    override val topSongs = "Most listened"
+    override val epsSingles = "EPs & Singles"
+    override val liveAlbums = "Live"
+    override val similarArtists = "Similar artists"
+    override val seeAll = "See all"
+    override val readMore = "READ MORE"
     override val nothingHere = "Nothing here yet"
     override val downloadAll = "Download all"
+    override val everythingTitle = "Download my whole account"
+    override val reorderTabs = "Reorder tabs"
+    override val reorderDone = "Done"
+    override val everythingHelp = "Queues every favorite track, every favorite album and every playlist of your Qobuz account, in the quality chosen above. Songs already downloaded are skipped."
+    override val everythingConfirm = "Download EVERYTHING in your account? It can be many gigabytes."
+    override val everythingButton = "Download everything"
     override val refresh = "Refresh"
 
     override val selectQuality = "Select Quality"
@@ -1043,6 +1083,14 @@ object Spanish : Strings {
     override val searchAlbums = "Buscar álbumes"
     override val searchHint = "Buscar álbumes y canciones"
     override val sortBy = "Ordenar"
+    override val searchLibrary = "Buscar en tu biblioteca"
+    override val recentSearches = "Búsquedas recientes"
+    override val recentSearchesClear = "Borrar búsquedas recientes"
+    override val localFolders = "Carpetas"
+    override val localFolderAdd = "Añadir una carpeta del teléfono"
+    override val localFolderRemove = "Quitar carpeta"
+    override val localFoldersEmpty = "Añade una carpeta con tu música para reproducir sus archivos aquí."
+    override fun localPlayAll(n: Int) = "Reproducir todo ($n)"
     override val sortAdded = "Como se agregaron"
     override val sortTitle = "Título A–Z"
     override val sortArtist = "Artista A–Z"
@@ -1103,8 +1151,20 @@ object Spanish : Strings {
     override val albums = "Álbumes"
     override val tracksTab = "Pistas"
     override val artistsTab = "Artistas"
+    override val topSongs = "Lo más escuchado"
+    override val epsSingles = "EPs y sencillos"
+    override val liveAlbums = "En directo"
+    override val similarArtists = "Artistas similares"
+    override val seeAll = "Ver todo"
+    override val readMore = "LEER MÁS"
     override val nothingHere = "Aún no hay nada aquí"
     override val downloadAll = "Descargar todo"
+    override val everythingTitle = "Descargar toda mi cuenta"
+    override val reorderTabs = "Ordenar pestañas"
+    override val reorderDone = "Listo"
+    override val everythingHelp = "Pone en la cola todas tus pistas favoritas, todos tus álbumes favoritos y todas tus playlists de Qobuz, en la calidad elegida arriba. Lo que ya está descargado se salta."
+    override val everythingConfirm = "¿Descargar TODO lo de tu cuenta? Pueden ser muchos gigabytes."
+    override val everythingButton = "Descargar todo"
     override val refresh = "Actualizar"
 
     override val selectQuality = "Seleccionar calidad"

@@ -115,6 +115,8 @@ struct IsoStream {
     // diagnostics screen's own refresh timer), so these need to be atomic, not plain counters.
     // See #78: exposes processReapedUrb's per-URB packet scan beyond just a logcat line.
     std::atomic<int64_t> cumulativeBadPackets{0};
+    // Status (errno negativo del kernel) del último paquete que se completó mal; 0 = ninguno.
+    std::atomic<int64_t> lastBadStatus{0};
     std::atomic<int64_t> cumulativeShortBytes{0};
     // How many entry points below are currently using this stream, after having found it via
     // acquireStream() -- closeIsoStream() waits for this to drop to zero before freeing anything
@@ -129,7 +131,7 @@ struct IsoStream {
 // arithmetic that sizes the urb/buffer allocations below, or (b) trigger a multi-gigabyte
 // allocation that looks like a hang rather than a clean, logged failure.
 namespace {
-constexpr jint kMaxNumUrbs = 64;
+constexpr jint kMaxNumUrbs = 128;  // 80 con el modo «como decent-player»
 constexpr jint kMaxPacketsPerUrb = 4096;
 constexpr jint kMaxPacketSize = 4096;
 
@@ -401,7 +403,8 @@ Java_org_ostrichbat2k_usbdac_streaming_UsbNative_submitIso(
 // native-test/usb_native_test.cpp). External linkage (no `static`/anonymous namespace) so that
 // test binary can call it directly.
 int processReapedUrb(const struct usbdevfs_urb* reaped, int packetsPerUrb, int numUrbs,  // NOLINT(bugprone-easily-swappable-parameters)
-                      int* badPacketsOut = nullptr, int64_t* shortBytesOut = nullptr) {
+                      int* badPacketsOut = nullptr, int64_t* shortBytesOut = nullptr,
+                      int* lastBadStatusOut = nullptr) {
     if (reaped->status != 0) {
         LOGE("Reaped urb slot %ld with status=%d actual_length=%d",
              (long) (intptr_t) reaped->usercontext, reaped->status, reaped->actual_length);
@@ -431,6 +434,7 @@ int processReapedUrb(const struct usbdevfs_urb* reaped, int packetsPerUrb, int n
         totalActual += desc.actual_length;
         totalExpected += desc.length;
         if (desc.status != 0 || desc.actual_length != desc.length) {
+            if (lastBadStatusOut && desc.status != 0) *lastBadStatusOut = desc.status;
             if (badPackets < 3) {
                 LOGE("Reaped urb slot %ld packet %d: status=%d actual_length=%u expected=%u",
                      (long) (intptr_t) reaped->usercontext, p, desc.status, desc.actual_length,
@@ -506,7 +510,9 @@ Java_org_ostrichbat2k_usbdac_streaming_UsbNative_reapIso(JNIEnv* /*env*/, jobjec
     }
     int badPackets = 0;
     int64_t shortBytes = 0;
-    int slot = processReapedUrb(reaped, stream->packetsPerUrb, stream->numUrbs, &badPackets, &shortBytes);
+    int lastStatus = 0;
+    int slot = processReapedUrb(reaped, stream->packetsPerUrb, stream->numUrbs, &badPackets, &shortBytes, &lastStatus);
+    if (lastStatus != 0) stream->lastBadStatus.store(lastStatus, std::memory_order_relaxed);
     if (badPackets > 0) {
         stream->cumulativeBadPackets.fetch_add(badPackets, std::memory_order_relaxed);
         stream->cumulativeShortBytes.fetch_add(shortBytes, std::memory_order_relaxed);
@@ -520,14 +526,15 @@ Java_org_ostrichbat2k_usbdac_streaming_UsbNative_reapIso(JNIEnv* /*env*/, jobjec
 extern "C" JNIEXPORT jlongArray JNICALL
 Java_org_ostrichbat2k_usbdac_streaming_UsbNative_getPacketErrorStats(
         JNIEnv* env, jobject /*thiz*/, jlong handle) {
-    jlongArray result = env->NewLongArray(2);
+    jlongArray result = env->NewLongArray(3);
     IsoStream* stream = acquireStream(handle);
     if (!stream || !result) return result;
     StreamOpGuard guard(stream);
-    jlong stats[2] = {
+    jlong stats[3] = {
         (jlong) stream->cumulativeBadPackets.load(std::memory_order_relaxed),
-        (jlong) stream->cumulativeShortBytes.load(std::memory_order_relaxed)};
-    env->SetLongArrayRegion(result, 0, 2, stats);
+        (jlong) stream->cumulativeShortBytes.load(std::memory_order_relaxed),
+        (jlong) stream->lastBadStatus.load(std::memory_order_relaxed)};
+    env->SetLongArrayRegion(result, 0, 3, stats);
     return result;
 }
 

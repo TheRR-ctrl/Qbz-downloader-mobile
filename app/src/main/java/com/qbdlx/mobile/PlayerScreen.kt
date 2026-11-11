@@ -17,6 +17,8 @@ import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import android.content.Context
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.expandVertically
@@ -26,6 +28,8 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -322,7 +326,7 @@ private fun PlayerMini(vm: MainViewModel, album: Album, track: Track, onOpen: ()
                     Text(album.artist, fontSize = 12.sp, color = OnPlayerDim, maxLines = 1, overflow = TextOverflow.Clip, modifier = Modifier.basicMarquee())
                 }
                 IconButton({ vm.togglePlay() }) {
-                    Icon(if (vm.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, LocalStrings.current.playPause, tint = OnPlayer)
+                    PlayPauseIcon(vm, 28.dp, OnPlayer)
                 }
             }
             Box(Modifier.fillMaxWidth().height(2.dp).background(Color.White.copy(alpha = .2f)).drawBehind {
@@ -382,6 +386,10 @@ private fun NowPlayingPage(vm: MainViewModel, album: Album, track: Track, close:
     val q = vm.queueState
     var menu by remember { mutableStateOf(false) }
     var qualityDialog by remember { mutableStateOf(false) }
+    var signalDialog by remember { mutableStateOf(false) }
+    var outputSheet by remember { mutableStateOf(false) }
+    if (signalDialog) SignalPathDialog(vm) { signalDialog = false }
+    if (outputSheet) OutputSheet(vm, onSignalPath = { outputSheet = false; signalDialog = true }) { outputSheet = false }
     var sleepDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val quality = vm.nowQuality
@@ -404,15 +412,17 @@ private fun NowPlayingPage(vm: MainViewModel, album: Album, track: Track, close:
     )
 
     // The padding is inside the scroll area, so the cover can slide out to the very edge of the screen.
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Spacer(Modifier.height(6.dp))
         // The cover follows the finger and, when the song changes, the old one slides out and the new one slides in.
         var dragX by remember { mutableFloatStateOf(0f) }
         val shownX by animateFloatAsState(dragX, if (dragX == 0f) spring(stiffness = Spring.StiffnessMedium) else snap(), label = "coverDrag")
         val screenW = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp
         val density = androidx.compose.ui.platform.LocalDensity.current
+        // The page does not scroll: the cover takes the room the controls leave, shrinking on a short screen instead.
+        Box(Modifier.weight(1f, fill = false).fillMaxWidth(), contentAlignment = Alignment.Center) {
         Box(
-            Modifier.fillMaxWidth().aspectRatio(1f).graphicsLayer { translationX = shownX }
+            Modifier.aspectRatio(1f).graphicsLayer { translationX = shownX }
                 .swipeToSkip(vm::next, vm::previous, onDrag = { dragX = it }),
         ) {
             // Keyed on the song (not the cover URL) so songs of the same album slide too.
@@ -431,14 +441,34 @@ private fun NowPlayingPage(vm: MainViewModel, album: Album, track: Track, close:
                 AsyncImage(model = url, contentDescription = album.title, modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp)).background(Chip))
             }
         }
+        }
+        val ctx = androidx.compose.ui.platform.LocalContext.current
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
             InfoPill(onClick = { qualityDialog = true }) {
                 if (quality?.isHiRes == true || (quality == null && track.hiRes)) HiResBadge("Hi-Res") else Icon(Icons.Default.Album, null, Modifier.size(20.dp))
                 Text(quality?.label() ?: qualityText(track.quality), fontSize = 14.sp)
             }
-            InfoPill {
+            InfoPill(onClick = { outputSheet = true }) {
                 Icon(Icons.Default.PhoneAndroid, null, Modifier.size(20.dp))
-                Text(Build.MODEL, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(remember { phoneName(ctx) }, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            // Recalculated when a USB device is plugged/unplugged (and when the player's route changes),
+            // not only when the quality changes: the DAC can show up after this screen was composed.
+            var usbTick by remember { mutableIntStateOf(0) }
+            DisposableEffect(ctx) {
+                val rx = object : android.content.BroadcastReceiver() {
+                    override fun onReceive(c: Context, i: android.content.Intent) { usbTick++ }
+                }
+                val f = android.content.IntentFilter().apply {
+                    addAction(android.hardware.usb.UsbManager.ACTION_USB_DEVICE_ATTACHED)
+                    addAction(android.hardware.usb.UsbManager.ACTION_USB_DEVICE_DETACHED)
+                }
+                androidx.core.content.ContextCompat.registerReceiver(ctx, rx, f, androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
+                onDispose { runCatching { ctx.unregisterReceiver(rx) } }
+            }
+            val dacLabel = remember(vm.bitPerfect, vm.playQuality, usbTick, vm.nowPlaying) { usbDacLabel(ctx) }
+            if (dacLabel != null) InfoPill(onClick = { signalDialog = true }) {
+                Text("DAC · " + dacLabel, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -485,11 +515,12 @@ private fun NowPlayingPage(vm: MainViewModel, album: Album, track: Track, close:
             }
         }
         SeekBar(vm, track)
+        if (vm.levelMeter) LevelMeter(vm.isPlaying, vm.meterMode, { vm.updateMeterMode(vm.meterMode + 1) }, Modifier.fillMaxWidth())
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             ToggleIcon(Icons.Default.Shuffle, s.shuffle, q.shuffle) { vm.toggleShuffle() }
             IconButton({ vm.previous() }, Modifier.size(56.dp)) { Icon(Icons.Default.SkipPrevious, s.previous, Modifier.size(38.dp), tint = OnPlayer) }
             IconButton({ vm.togglePlay() }, Modifier.size(76.dp)) {
-                Icon(if (vm.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, s.playPause, Modifier.size(64.dp), tint = OnPlayer)
+                PlayPauseIcon(vm, 72.dp, OnPlayer)
             }
             IconButton({ vm.next() }, Modifier.size(56.dp)) { Icon(Icons.Default.SkipNext, s.next, Modifier.size(38.dp), tint = OnPlayer) }
             ToggleIcon(if (q.repeat == RepeatMode.ONE) Icons.Default.RepeatOne else Icons.Default.Repeat, s.repeat, q.repeat != RepeatMode.OFF) { vm.cycleRepeat() }
@@ -604,7 +635,6 @@ private fun ExplorePage(vm: MainViewModel, album: Album, close: (() -> Unit) -> 
 private fun LyricsPage(vm: MainViewModel, album: Album, track: Track) {
     val s = LocalStrings.current
     LaunchedEffect(track.id) { vm.loadLyrics(album, track) }
-    val progress = rememberPlaybackProgress(vm, track)
     val lyrics = vm.lyrics
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 20.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -619,35 +649,77 @@ private fun LyricsPage(vm: MainViewModel, album: Album, track: Track) {
             vm.lyricsLoading -> Text("…", color = OnPlayerDim, modifier = Modifier.padding(16.dp))
             lyrics == null || lyrics.lines.isEmpty() -> Text(s.lyricsNone, color = OnPlayerDim, modifier = Modifier.padding(16.dp))
             else -> {
-                val current by remember(lyrics, progress) { androidx.compose.runtime.derivedStateOf { if (lyrics.synced) LyricsParser.currentIndex(lyrics.lines, progress.value.second + vm.lyricsOffsetMs) else -1 } }
+                // Same look as Q Lyrics: the line being sung grows with a spring and fills word by word, the rest fade with
+                // distance, the edges melt away, and three dots breathe through the intro and the long pauses.
+                val clock = remember(track.id) { androidx.compose.runtime.mutableLongStateOf(0L) }
+                LaunchedEffect(track.id, lyrics.synced) { while (lyrics.synced) { clock.longValue = vm.engine.position + vm.lyricsOffsetMs; delay(80) } }
+                val current by remember(lyrics) { androidx.compose.runtime.derivedStateOf { if (lyrics.synced) LyricsParser.currentIndex(lyrics.lines, clock.longValue) else -1 } }
                 val state = androidx.compose.foundation.lazy.rememberLazyListState()
+                val first = lyrics.lines.firstOrNull()?.timeMs ?: 0L
+                val intro = lyrics.synced && first >= 5000
                 // Dragging the list lets the reader browse without being pulled back; "Resincronizar" returns to the line being sung.
                 var browsing by remember(track.id) { mutableStateOf(false) }
                 val dragged by state.interactionSource.collectIsDraggedAsState()
                 LaunchedEffect(dragged) { if (dragged) browsing = true }
-                LaunchedEffect(current, browsing) { if (!browsing && current >= 0) state.animateScrollToItem(current) } // the padding puts it in the first third
+                LaunchedEffect(current, browsing) { if (!browsing && current >= 0) state.animateScrollToItem(current + if (intro) 1 else 0) } // the padding puts it in the first third
+                val gold = MaterialTheme.colorScheme.primary
                 androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
                 androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
                     // a third of the height as padding above: the line being sung sits in the first third however many fit
                     val pad = if (lyrics.synced) (maxHeight / 3 - 24.dp).coerceAtLeast(0.dp) else 12.dp
-                    androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxSize(), state = state, contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 16.dp, end = 16.dp, top = pad, bottom = pad)) {
+                    androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxSize()
+                        .graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }
+                        .drawWithContent {
+                            drawContent() // soft fade at the top and bottom edges
+                            drawRect(androidx.compose.ui.graphics.Brush.verticalGradient(
+                                0f to Color.Transparent, .12f to Color.Black, .88f to Color.Black, 1f to Color.Transparent),
+                                blendMode = androidx.compose.ui.graphics.BlendMode.DstIn)
+                        }, state = state, contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 16.dp, end = 16.dp, top = pad, bottom = pad)) {
+                        if (intro) item(key = "intro") {
+                            LyricDots(if (current < 0) (clock.longValue.toFloat() / first).coerceIn(0f, 1f) else 1f, current < 0, gold, Modifier.padding(vertical = 10.dp))
+                        }
                         itemsIndexed(lyrics.lines) { i, line ->
-                            val on = !lyrics.synced || i == current
-                            // Emil's motion rules: animate transform and opacity (never font size, which re-lays out the text every frame),
-                            // ease-out, short. Lines fade with their distance from the one being sung, like a scrolling wheel.
+                            val on = lyrics.synced && i == current
+                            val nextT = lyrics.lines.getOrNull(i + 1)?.timeMs
+                            val span = (nextT ?: (line.timeMs + 4000)) - line.timeMs
+                            if (lyrics.synced && line.text.isBlank() && span >= 5000) {
+                                LyricDots(if (on) ((clock.longValue - line.timeMs).toFloat() / span).coerceIn(0f, 1f) else if (i < current) 1f else 0f, on, gold, Modifier.padding(vertical = 10.dp))
+                                return@itemsIndexed
+                            }
+                            // Animate transform and colour, never font size (it would re-lay out the text every frame).
                             val dist = if (lyrics.synced && current >= 0) kotlin.math.abs(i - current) else 0
-                            val scale by androidx.compose.animation.core.animateFloatAsState(if (on && lyrics.synced) 1.16f else 1f, androidx.compose.animation.core.tween(if (on) 280 else 200, easing = UiEaseOut), label = "scale")
-                            val alpha by androidx.compose.animation.core.animateFloatAsState(
-                                when { !lyrics.synced || dist == 0 -> 1f; dist == 1 -> .55f; dist == 2 -> .42f; else -> .3f },
-                                androidx.compose.animation.core.tween(if (on) 280 else 200, easing = UiEaseOut), label = "alpha",
+                            val ms = if (on) 280 else 200
+                            val scale by androidx.compose.animation.core.animateFloatAsState(if (on) 1.2f else 1f, androidx.compose.animation.core.spring(dampingRatio = .7f, stiffness = 380f), label = "scale")
+                            val nudge by androidx.compose.animation.core.animateFloatAsState(if (on) 6f else 0f, tween(ms, easing = UiEaseOut), label = "nudge")
+                            val color by animateColorAsState(
+                                when { !lyrics.synced -> OnPlayer; on -> gold; else -> OnPlayer.copy(alpha = when (dist) { 1 -> .7f; 2 -> .52f; else -> .38f }) },
+                                tween(ms, easing = UiEaseOut), label = "color",
                             )
-                            Text(
-                                line.text.ifBlank { "♪" }, fontSize = 28.sp, fontWeight = FontWeight.Bold,
-                                color = OnPlayer.copy(alpha = alpha),
-                                modifier = Modifier.fillMaxWidth(if (lyrics.synced) .85f else 1f).padding(vertical = 8.dp)
-                                    .graphicsLayer { scaleX = scale; scaleY = scale; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, .5f) }
-                                    .let { if (lyrics.synced) it.clickable { browsing = false; vm.seekTo((line.timeMs - vm.lyricsOffsetMs).coerceAtLeast(0)) } else it },
-                            )
+                            val lit = if (on) LyricsParser.litChars(line.text, line.timeMs, nextT, clock.longValue) else 0
+                            val shown = if (lit > 0) androidx.compose.ui.text.buildAnnotatedString {
+                                append(line.text)
+                                addStyle(androidx.compose.ui.text.SpanStyle(color = OnPlayer), 0, lit)
+                                addStyle(androidx.compose.ui.text.SpanStyle(color = gold), lit, line.text.length)
+                            } else androidx.compose.ui.text.AnnotatedString(line.text.ifBlank { "♪" })
+                            Column {
+                                Text(
+                                    shown, fontSize = 24.sp, lineHeight = 31.sp, fontWeight = if (on || !lyrics.synced) FontWeight.Bold else FontWeight.Medium, color = color,
+                                    modifier = Modifier.fillMaxWidth(if (lyrics.synced) .8f else 1f)
+                                        .graphicsLayer { scaleX = scale; scaleY = scale; translationX = nudge * density; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, .5f) }
+                                        .let { if (lyrics.synced) it.clickable(remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, null) { browsing = false; vm.seekTo((line.timeMs - vm.lyricsOffsetMs).coerceAtLeast(0)) } else it }
+                                        .padding(vertical = 7.dp),
+                                )
+                                // A pause of 4 s or more after a sung line (taken as sung at ~100 ms a character, at least 1.5 s): the same dots as the intro.
+                                if (lyrics.synced && nextT != null && line.text.isNotBlank()) {
+                                    val gapStart = line.timeMs + (line.text.length * 100L).coerceAtLeast(1500L).coerceAtMost(span)
+                                    val gap = nextT - gapStart
+                                    if (gap >= 4000) {
+                                        val now = if (on) clock.longValue else -1L
+                                        LyricDots(if (on) (if (now >= gapStart) ((now - gapStart).toFloat() / gap).coerceIn(0f, 1f) else 0f) else if (i < current) 1f else 0f,
+                                            on && now in gapStart until nextT, gold, Modifier.padding(vertical = 10.dp))
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -656,6 +728,21 @@ private fun LyricsPage(vm: MainViewModel, album: Album, track: Track) {
                 ) { Text(s.lyricsResync) }
                 }
             }
+        }
+    }
+}
+
+/** Three dots that fill up through an intro or a long pause and breathe while it lasts (as in Q Lyrics). */
+@Composable
+private fun LyricDots(progress: Float, active: Boolean, color: Color, modifier: Modifier = Modifier) {
+    val breathe = if (active) androidx.compose.animation.core.rememberInfiniteTransition(label = "breathe").animateFloat(
+        1f, 1.12f, androidx.compose.animation.core.infiniteRepeatable(tween(1200, easing = androidx.compose.animation.core.FastOutSlowInEasing), androidx.compose.animation.core.RepeatMode.Reverse), label = "b") else null
+    val show by androidx.compose.animation.core.animateFloatAsState(if (active) 1f else .35f, tween(if (active) 280 else 200, easing = UiEaseOut), label = "dotsShow")
+    Row(modifier.graphicsLayer { alpha = show; val k = breathe?.value ?: 1f; scaleX = k; scaleY = k; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, .5f) },
+        horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        for (n in 0..2) {
+            val lit by androidx.compose.animation.core.animateFloatAsState(if (progress * 3f >= n + .15f) 1f else .3f, tween(220, easing = UiEaseOut), label = "dot$n")
+            Box(Modifier.size(14.dp).graphicsLayer { alpha = lit; scaleX = .8f + .2f * lit; scaleY = .8f + .2f * lit }.background(color, androidx.compose.foundation.shape.CircleShape))
         }
     }
 }

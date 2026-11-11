@@ -30,6 +30,8 @@ import androidx.media3.exoplayer.audio.AudioSink
 class PlayerEngine(private val context: Context, private val listener: Listener) {
     interface Listener {
         fun onPlayingChanged(playing: Boolean)
+        /** El motor espera datos con la reproducción pedida: la interfaz enseña un círculo girando en el botón. */
+        fun onBufferingChanged(buffering: Boolean) {}
         /** The engine moved on to the prepared next track by itself. */
         fun onAdvanced()
         /** The track ended and no next track was prepared. */
@@ -110,6 +112,10 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
     private fun takeFocus() { audioManager.requestAudioFocus(focusRequest) }
     private fun dropFocus() { resumeOnGain = false; audioManager.abandonAudioFocusRequest(focusRequest) }
 
+    /** Lo que sale del decodificador ahora mismo (frecuencia, codificación PCM y tipo), para la ruta de la señal. */
+    @androidx.annotation.OptIn(UnstableApi::class)
+    fun decodedFormat(): Triple<Int, Int, String>? = active.audioFormat?.let { Triple(it.sampleRate, it.pcmEncoding, it.sampleMimeType ?: "") }
+
     /** The audio session of the player that is playing, for the phone's equalizer. */
     val audioSessionId: Int get() = active.audioSessionId
 
@@ -147,7 +153,15 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
         }
 
         override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): AudioSink =
-            super.buildAudioSink(context, enableFloatOutput, enableAudioTrackPlaybackParams)!!.let { normal ->
+            MeterSink(
+                // Colchón de salida 4 veces mayor que el de fábrica: al cambiar de app el sistema retrasa un instante
+                // el hilo que entrega audio, y con el colchón corto la salida se quedaba sin datos (el corte).
+                androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context)
+                    .setEnableFloatOutput(enableFloatOutput)
+                    .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                    .setAudioTrackBufferSizeProvider(androidx.media3.exoplayer.audio.DefaultAudioTrackBufferSizeProvider.Builder().setPcmBufferMultiplicationFactor(8).build())
+                    .build(),
+            ).let { normal ->
                 // Always wrap: the player is built once, so deciding here on the switch would ignore turning it on later.
                 // RoutingAudioSink asks the preferences on every track and uses the normal output while it is off.
                 // A failure to start the driver never takes the app down.
@@ -160,8 +174,12 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
     private fun build(): ExoPlayer = ExoPlayer.Builder(context, renderers())
         .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), false)
         .setHandleAudioBecomingNoisy(true) // unplugging headphones pauses
+        // Mientras suena, CPU y WiFi despiertas (wake lock + WifiLock). Con el controlador USB directo no hay
+        // AudioTrack que lo haga por nosotros: con la pantalla bloqueada la CPU dormía entre envíos y, al
+        // volver a usar el teléfono, el hilo de envío se retrasaba.
+        .setWakeMode(C.WAKE_MODE_NETWORK)
         .build()
-        .also { p -> p.addListener(Events(p)); watchOutput(p); if (!bitPerfect) announceSession(p.audioSessionId, true) }
+        .also { p -> p.addListener(Events(p)); p.addAnalyticsListener(SinkEvents(p)); watchOutput(p); if (!bitPerfect) announceSession(p.audioSessionId, true) }
 
     /** Once the player has created its AudioTrack we know the real format: match the USB mixer to it. */
     @androidx.annotation.OptIn(UnstableApi::class)
@@ -188,8 +206,39 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
         PlaybackLog.add(context, "pista ${fmt?.sampleRate ?: "?"} Hz · ${fmt?.pcmEncoding ?: "?"} (codificación) · ${fmt?.sampleMimeType ?: "?"} · posición ${p.currentPosition} ms · salida: ${usb ?: "mezclador de Android (controlador USB apagado)"}")
     }
 
+    /** Logs when the audio output is created, released or runs dry, to find what restarts it mid-track. */
+    @androidx.annotation.OptIn(UnstableApi::class)
+    private inner class SinkEvents(private val player: ExoPlayer) : AnalyticsListener {
+        private fun tag() = if (player === active) "" else " (siguiente)"
+        override fun onAudioTrackInitialized(eventTime: AnalyticsListener.EventTime, audioTrackConfig: AudioSink.AudioTrackConfig) {
+            PlaybackLog.add(context, "salida de audio creada${tag()} · ${audioTrackConfig.sampleRate} Hz · posición ${player.currentPosition} ms")
+        }
+        override fun onAudioTrackReleased(eventTime: AnalyticsListener.EventTime, audioTrackConfig: AudioSink.AudioTrackConfig) {
+            PlaybackLog.add(context, "salida de audio cerrada${tag()} · posición ${player.currentPosition} ms")
+        }
+        override fun onAudioUnderrun(eventTime: AnalyticsListener.EventTime, bufferSize: Int, bufferSizeMs: Long, elapsedSinceLastFeedMs: Long) {
+            PlaybackLog.add(context, "audio sin datos${tag()}: ${elapsedSinceLastFeedMs} ms desde la última entrega · posición ${player.currentPosition} ms")
+        }
+        override fun onAudioSinkError(eventTime: AnalyticsListener.EventTime, audioSinkError: Exception) {
+            PlaybackLog.add(context, "error de la salida de audio${tag()}: ${audioSinkError.javaClass.simpleName}: ${audioSinkError.message}")
+        }
+    }
+
     private inner class Events(private val player: ExoPlayer) : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) { listener.onPlayingChanged(this@PlayerEngine.isPlaying) }
+
+        override fun onPositionDiscontinuity(old: Player.PositionInfo, new: Player.PositionInfo, reason: Int) {
+            if (player !== active) return
+            val why = when (reason) {
+                Player.DISCONTINUITY_REASON_AUTO_TRANSITION -> "pasó sola a la siguiente"
+                Player.DISCONTINUITY_REASON_SEEK -> "búsqueda"
+                Player.DISCONTINUITY_REASON_SEEK_ADJUSTMENT -> "ajuste de búsqueda"
+                Player.DISCONTINUITY_REASON_SKIP -> "salto de anuncio"
+                Player.DISCONTINUITY_REASON_REMOVE -> "se quitó el elemento"
+                else -> "interna"
+            }
+            PlaybackLog.add(context, "salto de posición ($why): de ${old.positionMs} ms a ${new.positionMs} ms")
+        }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             if (player !== active || reason != Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) return
@@ -203,6 +252,7 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
         override fun onPlaybackStateChanged(state: Int) {
             PlaybackLog.add(context, "estado ${when (state) { Player.STATE_IDLE -> "IDLE"; Player.STATE_BUFFERING -> "BUFFERING"; Player.STATE_READY -> "READY"; else -> "ENDED" }}${if (player !== active) " (siguiente)" else ""}")
             if (state == Player.STATE_READY && player === active) logRoute(player)
+            if (player === active) listener.onBufferingChanged(state == Player.STATE_BUFFERING && player.playWhenReady)
             if (player !== active || state != Player.STATE_ENDED || fading) return
             // The track ended. If a faded transition was prepared but never started (too late), switch now.
             if (idle?.playbackState == Player.STATE_READY && nextUrl != null) swapNow() else listener.onEnded()
@@ -266,11 +316,15 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
         dropFocus(); output.clear()
     }
 
+    /** Ganancia de ReplayGain (0..1) para el mezclador de Android; el controlador USB usa UsbTelemetry.gananciaReplay. */
+    var gain = 1f
+        set(v) { field = v.coerceIn(0f, 1f); if (!fading) active.volume = field }
+
     private fun resetAll() {
         fading = false
         nextUrl = null
         idle?.let { it.stop(); it.clearMediaItems(); it.volume = 0f }
-        active.stop(); active.clearMediaItems(); active.volume = 1f
+        active.stop(); active.clearMediaItems(); active.volume = gain
     }
 
     private fun tick() {
@@ -278,7 +332,7 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
         if (fading) {
             val progress = if (fadeLenMs > 0) next.currentPosition.toDouble() / fadeLenMs else 1.0
             val (out, inn) = fadeGains(progress)
-            active.volume = out; next.volume = inn
+            active.volume = out * gain; next.volume = inn * gain
             if (progress >= 1.0 || next.playbackState == Player.STATE_ENDED) finishFade()
         } else if (crossfading && nextUrl != null && active.isPlaying && next.playbackState == Player.STATE_READY &&
             shouldStartFade(active.currentPosition, active.duration.takeIf { it > 0 } ?: -1, fadeMs)
@@ -302,7 +356,7 @@ class PlayerEngine(private val context: Context, private val listener: Listener)
         active = incoming
         idle = old
         old.stop(); old.clearMediaItems(); old.volume = 1f
-        active.volume = 1f
+        active.volume = gain
         active.repeatMode = if (repeatOne) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
         if (!active.isPlaying) active.play()
         nextUrl = null

@@ -48,6 +48,9 @@ data class Track(
     val albumTrackNumber: Int = 0,
     /** Qobuz's credits string: "Name, Role, Role - Name, Role". See [parsePerformers]. */
     val performers: String = "",
+    /** ReplayGain de la pista que da Qobuz (dB) y su pico (0..1), si los da. */
+    val replayGainDb: Double? = null,
+    val replayPeak: Double? = null,
 ) {
     val displayTitle: String get() = if (version.isNullOrBlank()) title else "$title ($version)"
 }

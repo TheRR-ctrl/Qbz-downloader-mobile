@@ -134,6 +134,7 @@ class FileTaskStore(private val file: File) : TaskStore {
             putIfNotBlank("isrc", t.isrc); putIfNotBlank("composer", t.composer)
             if (t.explicit) put("explicit", true)
             if (t.albumTrackNumber > 0) put("albumTrackNumber", t.albumTrackNumber)
+            t.replayGainDb?.let { put("rg", it) }; t.replayPeak?.let { put("rp", it) }
         }
 
         internal fun trackFrom(o: JSONObject) = Track(
@@ -144,6 +145,8 @@ class FileTaskStore(private val file: File) : TaskStore {
             quality = o.optString("quality"), hiRes = o.optBoolean("hiRes"),
             isrc = o.str("isrc"), composer = o.str("composer"), explicit = o.optBoolean("explicit"),
             albumTrackNumber = o.optInt("albumTrackNumber"),
+            replayGainDb = if (o.has("rg")) o.optDouble("rg") else null,
+            replayPeak = if (o.has("rp")) o.optDouble("rp") else null,
         )
 
         private fun JSONObject.putIfNotBlank(key: String, value: String) { if (value.isNotBlank()) put(key, value) }

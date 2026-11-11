@@ -1,6 +1,20 @@
 package com.qbdlx.mobile
 
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.ui.draw.clip
+import androidx.compose.material.icons.filled.ViewList
+import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.ui.graphics.Color
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -20,6 +34,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Search
@@ -119,6 +135,19 @@ fun HomeScreen(vm: MainViewModel) {
     val s = LocalStrings.current
     LazyColumn(Modifier.fillMaxSize().statusBarsPadding(), contentPadding = PaddingValues(bottom = 16.dp + LocalBottomInset.current)) {
         item { TitleWithSearch(s.discover, vm) }
+        if (vm.genres.isNotEmpty()) item(key = "genres") {
+            var sheet by remember { mutableStateOf(false) }
+            if (sheet) GenreSheet(vm.genres, vm.selectedGenre, { vm.selectGenre(it); sheet = false }) { sheet = false }
+            Row(
+                Modifier.padding(horizontal = 16.dp).clip(RoundedCornerShape(50)).background(Color.White.copy(alpha = .1f))
+                    .clickable { sheet = true }.padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(vm.genres.firstOrNull { it.first == vm.selectedGenre }?.second ?: "Todos los géneros", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Icon(Icons.Default.ArrowDropDown, null, Modifier.size(20.dp))
+            }
+            Spacer(Modifier.height(8.dp))
+        }
         if (vm.homeLoading) item { LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) }
         if (d == null) return@LazyColumn
         d.newReleases?.let { item(key = "new") { AlbumRow(vm, it) } }
@@ -148,13 +177,36 @@ fun HomeScreen(vm: MainViewModel) {
 fun SearchScreen(vm: MainViewModel) {
     val s = LocalStrings.current
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
-        Title(s.search)
-        OutlinedTextField(
-            vm.searchQuery, { vm.searchQuery = it }, singleLine = true, label = { Text(s.searchHint) },
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        // Como Qobuz: una barra de búsqueda redonda arriba y, sin búsqueda en curso, las búsquedas recientes.
+        androidx.compose.material3.TextField(
+            vm.searchQuery, { vm.searchQuery = it }, singleLine = true, placeholder = { Text(s.searchHint) },
+            leadingIcon = { Icon(Icons.Default.Search, null) },
+            trailingIcon = { if (vm.searchQuery.isNotEmpty()) IconButton({ vm.searchQuery = "" }) { Icon(Icons.Default.Close, null) } },
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            shape = RoundedCornerShape(28.dp),
+            colors = androidx.compose.material3.TextFieldDefaults.colors(
+                focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
+                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant, unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             keyboardActions = KeyboardActions(onSearch = { vm.search(vm.searchQuery) }),
         )
+        if (vm.searchQuery.isBlank() && vm.recentSearches.isNotEmpty() && !vm.busy) {
+            Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(s.recentSearches, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                IconButton({ vm.clearRecentSearches() }) { Icon(Icons.Default.Delete, s.recentSearchesClear) }
+            }
+            LazyColumn(contentPadding = PaddingValues(bottom = 16.dp + LocalBottomInset.current)) {
+                items(vm.recentSearches, key = { "r$it" }) { q ->
+                    Row(Modifier.fillMaxWidth().clickable { vm.searchQuery = q; vm.search(q) }.padding(start = 16.dp, end = 4.dp, top = 2.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.History, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.width(14.dp))
+                        Text(q, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                        IconButton({ vm.removeRecentSearch(q) }) { Icon(Icons.Default.Close, null) }
+                    }
+                }
+            }
+            return@Column
+        }
         Row(Modifier.padding(horizontal = 16.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             QChip(vm.searchTab == 0, { vm.searchTab = 0 }, label = { Text(s.searchAlbumsTab(vm.results.size)) })
             QChip(vm.searchTab == 1, { vm.searchTab = 1 }, label = { Text(s.searchSongsTab(vm.trackResults.size)) })
@@ -292,7 +344,7 @@ fun AlbumScreen(vm: MainViewModel) {
                     if (r.missing.isNotEmpty()) vm.downloads.forgetFiles(r.missing)
                     if (r.unreadable.isNotEmpty()) android.widget.Toast.makeText(context, s.shareUnreadable(r.unreadable.size), android.widget.Toast.LENGTH_LONG).show()
                 }) { Text(s.shareGeneric, maxLines = 1, softWrap = false) }
-                TextButton({ vm.ipodSendDownloaded(done) }) { Text(s.ipodSendDownloaded, maxLines = 1, softWrap = false) }
+                if (vm.ipodPlugged || vm.ipodProgress != null) TextButton({ vm.ipodSendDownloaded(done) }) { Text(s.ipodSendDownloaded, maxLines = 1, softWrap = false) }
             }
         }
         val albumItems = d.tracks.map { d.album to it }
@@ -304,6 +356,10 @@ fun AlbumScreen(vm: MainViewModel) {
 fun PlaylistScreen(vm: MainViewModel) {
     val d = vm.playlistDetail ?: return
     BackHandler { vm.closePlaylist() }
+    val ctx0 = androidx.compose.ui.platform.LocalContext.current
+    var sort by remember { mutableStateOf(ctx0.getSharedPreferences("qbdlx", 0).getInt("playlist_sort", 0)) }
+    var grid by remember { mutableStateOf(ctx0.getSharedPreferences("qbdlx", 0).getBoolean("playlist_grid", false)) }
+    val shown = remember(d, sort) { when (sort) { 1 -> d.tracks.sortedBy { it.second.title.lowercase() }; 2 -> d.tracks.sortedBy { it.second.artist.lowercase() }; else -> d.tracks } }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp + LocalBottomInset.current)) {
         item {
             DetailHeader(
@@ -314,35 +370,109 @@ fun PlaylistScreen(vm: MainViewModel) {
                 onDownload = { vm.requestDownload(DownloadRequest.Tracks(d.tracks.filter { it.second.streamable })) },
             )
         }
+        item {
+            val s = LocalStrings.current
+            val ctx = androidx.compose.ui.platform.LocalContext.current
+            val prefs = ctx.getSharedPreferences("qbdlx", 0)
+            Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(40.dp).clip(CircleShape).background(Color.White).clickable { vm.playList(d.tracks.shuffled(), 0) }, contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.Shuffle, s.shuffle, tint = Color.Black)
+                }
+                listOf(s.sortAdded, s.sortTitle, s.sortArtist).forEachIndexed { i, label ->
+                    QChip(sort == i, { sort = i; prefs.edit().putInt("playlist_sort", i).apply() }, label = { Text(label) })
+                }
+                listOf(false to Icons.Default.ViewList, true to Icons.Default.GridView).forEach { (g, icon) ->
+                    Box(Modifier.clip(RoundedCornerShape(20.dp)).background(if (grid == g) Color.White else MaterialTheme.colorScheme.surfaceVariant)
+                        .clickable { grid = g; prefs.edit().putBoolean("playlist_grid", g).apply() }.padding(horizontal = 14.dp, vertical = 8.dp)) {
+                        Icon(icon, null, tint = if (grid == g) Color.Black else MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(20.dp))
+                    }
+                }
+            }
+        }
         // A playlist can list the same track twice, so key by position.
-        itemsIndexed(d.tracks) { i, (album, track) -> TrackRow(vm, album, track, "${track.artist} • ${album.title}", onPlay = { vm.playList(d.tracks, i) }) }
+        if (grid) items(shown.chunked(2)) { row ->
+            GridRow(row.map { (album, track) -> GridCell(album.coverUrl, track.title, track.artist) { vm.playList(shown, shown.indexOf(album to track).coerceAtLeast(0)) } })
+        } else itemsIndexed(shown) { i, (album, track) -> TrackRow(vm, album, track, "${track.artist} • ${album.title}", onPlay = { vm.playList(shown, i) }) }
     }
 }
 
-/** An artist's page: their picture, a button to download everything, and their albums (newest first). */
+/** An artist's page, like Qobuz's: most listened, albums, EPs and singles, live, similar artists. */
 @Composable
 fun ArtistScreen(vm: MainViewModel) {
     val a = vm.artistPage ?: return
+    val s = LocalStrings.current
     BackHandler { vm.closeArtist() }
+    fun type(al: Album) = al.productType.lowercase()
+    fun isLive(al: Album) = Regex("\\b(live|en vivo|en directo|unplugged)\\b", RegexOption.IGNORE_CASE).containsMatchIn(al.title + " " + al.version)
+    fun isEp(al: Album) = type(al).let { it.contains("single") || it.contains("ep") } || (al.tracksCount in 1..6 && !type(al).contains("album"))
+    val live = a.albums.filter { isLive(it) }
+    val eps = a.albums.filter { !isLive(it) && isEp(it) }
+    val albums = a.albums.filter { !isLive(it) && !isEp(it) }
+    var topAll by remember(a.name) { mutableStateOf(false) }
+    var bioOpen by remember(a.name) { mutableStateOf(false) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp + LocalBottomInset.current)) {
         item {
-            DetailHeader(a.image, a.name, listOf(LocalStrings.current.artistsTab, "${a.albums.size} ${LocalStrings.current.albums.lowercase()}"), null,
+            DetailHeader(a.image, a.name, listOf(s.artistsTab, "${a.albums.size} ${s.albums.lowercase()}"), null,
                 onBack = { vm.closeArtist() }, onDownload = { vm.requestDownload(DownloadRequest.Albums(a.albums)) })
+            if (a.bio.isNotBlank()) {
+                Text(a.bio, Modifier.padding(horizontal = 16.dp, vertical = 8.dp).clickable { bioOpen = !bioOpen }, fontSize = 13.sp,
+                    maxLines = if (bioOpen) Int.MAX_VALUE else 3, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (!bioOpen) Text(s.readMore, Modifier.padding(horizontal = 16.dp).clickable { bioOpen = true }, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
         }
-        items(a.albums, key = { "aa" + it.id }) { al ->
-            LibraryRow(al.coverUrl, al.title, al.year,
-                onClick = { vm.openAlbum(al.id) }, badge = al.quality, hiRes = al.hiRes) { open, close -> CollectionMenu(vm, al, null, open, close) }
+        if (a.topTracks.isNotEmpty()) {
+            item { ArtistSectionHeader(s.topSongs, if (a.topTracks.size > 5) (if (topAll) "▲" else s.seeAll) else null) { topAll = !topAll } }
+            val shown = if (topAll) a.topTracks else a.topTracks.take(5)
+            itemsIndexed(shown, key = { _, t -> "at" + t.second.id }) { i, (album, track) ->
+                TrackRow(vm, album, track.copy(number = i + 1), "${track.artist} • ${album.title}", showCover = true, onPlay = { vm.playList(a.topTracks, i) })
+            }
+        }
+        fun section(title: String, list: List<Album>) {
+            if (list.isEmpty()) return
+            item(key = "sec$title") {
+                ArtistSectionHeader(title, null) {}
+                Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    list.forEach { al ->
+                        Column(Modifier.width(140.dp).clickable { vm.openAlbum(al.id) }) {
+                            Cover(al.coverUrl, 140)
+                            Text(al.title, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
+                            Text(al.year, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+        }
+        section(s.albums, albums); section(s.epsSingles, eps); section(s.liveAlbums, live)
+        if (a.similar.isNotEmpty()) item {
+            ArtistSectionHeader(s.similarArtists, null) {}
+            Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                a.similar.forEach { n -> QChip(false, { vm.openArtist(n) }, label = { Text(n) }) }
+            }
         }
     }
 }
 
-private enum class LibraryView { Tracks, Albums, Artists, Playlists, History }
+@Composable
+private fun ArtistSectionHeader(title: String, action: String?, onAction: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 20.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(title, Modifier.weight(1f), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        if (action != null) TextButton(onAction) { Text(action, fontSize = 12.sp) }
+    }
+}
+
+private enum class LibraryView { Tracks, Albums, Artists, Playlists, History, Folders }
 
 /** The user's Library, like the web player's: their playlists, favorite albums and favorite tracks. */
 @Composable
 fun LibraryScreen(vm: MainViewModel) {
     val s = LocalStrings.current
-    var view by remember { mutableStateOf(LibraryView.Tracks) }
+    var view by remember { mutableStateOf(LibraryView.entries.getOrElse(vm.libraryViewIdx) { LibraryView.Tracks }) }
+    // Como la biblioteca de Qobuz: buscar dentro de ella y ver álbumes y listas en lista o en cuadrícula.
+    var query by remember { mutableStateOf(vm.libraryQuery) }
+    LaunchedEffect(query) { vm.libraryQuery = query }
+    val ctxLib = androidx.compose.ui.platform.LocalContext.current
+    var grid by remember { mutableStateOf(ctxLib.getSharedPreferences("qbdlx", 0).getBoolean("library_grid", false)) }
+    fun hit(vararg t: String) = query.isBlank() || t.any { it.contains(query.trim(), ignoreCase = true) }
     LaunchedEffect(Unit) { vm.loadLibrary() }
 
     LazyColumn(Modifier.fillMaxSize().statusBarsPadding(), contentPadding = PaddingValues(bottom = 16.dp + LocalBottomInset.current)) {
@@ -352,31 +482,100 @@ fun LibraryScreen(vm: MainViewModel) {
                 IconButton({ vm.openSearch() }) { Icon(Icons.Default.Search, s.search) }
                 IconButton({ vm.loadLibrary(force = true) }, enabled = !vm.libraryLoading) { Icon(Icons.Default.Refresh, s.refresh) }
             }
-            Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                LibraryView.entries.forEach { v ->
-                    val label = when (v) { LibraryView.Playlists -> s.playlists; LibraryView.Albums -> s.albums; LibraryView.Tracks -> s.tracksTab; LibraryView.Artists -> s.artistsTab; LibraryView.History -> s.history }
-                    val n = when (v) { LibraryView.Playlists -> vm.myPlaylists?.size; LibraryView.Albums -> vm.favAlbums?.size; LibraryView.Tracks -> vm.favTracks?.size; LibraryView.Artists -> vm.favArtists?.size; else -> null }
-                    QChip(view == v, { view = v }, label = { Text(if (n != null) "$label · $n" else label) })
-                }
+            androidx.compose.material3.TextField(
+                query, { query = it },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+                placeholder = { Text(s.searchLibrary) },
+                leadingIcon = { Icon(Icons.Default.Search, null) },
+                trailingIcon = { if (query.isNotEmpty()) IconButton({ query = "" }) { Icon(Icons.Default.Close, null) } },
+                singleLine = true,
+                shape = RoundedCornerShape(28.dp),
+                colors = androidx.compose.material3.TextFieldDefaults.colors(
+                    focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
+                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant, unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant),
+            )
+            var order by remember {
+                mutableStateOf(run {
+                    val saved = ctxLib.getSharedPreferences("qbdlx", 0).getString("library_tab_order", "").orEmpty()
+                        .split(',').mapNotNull { n -> LibraryView.entries.firstOrNull { it.name == n } }.distinct()
+                    saved + LibraryView.entries.filter { it !in saved }
+                })
             }
-            if (view != LibraryView.History && view != LibraryView.Artists) {
+            var reordering by remember { mutableStateOf(false) }
+            fun tabLabel(v: LibraryView) = when (v) { LibraryView.Playlists -> s.playlists; LibraryView.Albums -> s.albums; LibraryView.Tracks -> s.tracksTab; LibraryView.Artists -> s.artistsTab; LibraryView.History -> s.history; LibraryView.Folders -> s.localFolders }
+            fun move(i: Int, d: Int) {
+                val j = i + d; if (j !in order.indices) return
+                order = order.toMutableList().also { val x = it[i]; it[i] = it[j]; it[j] = x }
+                ctxLib.getSharedPreferences("qbdlx", 0).edit().putString("library_tab_order", order.joinToString(",") { it.name }).apply()
+            }
+            if (reordering) {
+                androidx.compose.material3.AlertDialog(
+                    onDismissRequest = { reordering = false },
+                    title = { Text(s.reorderTabs) },
+                    text = {
+                        Column {
+                            order.forEachIndexed { i, v ->
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(tabLabel(v), Modifier.weight(1f))
+                                    androidx.compose.material3.TextButton({ move(i, -1) }, enabled = i > 0) { Text("▲") }
+                                    androidx.compose.material3.TextButton({ move(i, 1) }, enabled = i < order.size - 1) { Text("▼") }
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = { androidx.compose.material3.TextButton({ reordering = false }) { Text(s.reorderDone) } },
+                )
+            }
+            Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                order.forEach { v ->
+                    val label = when (v) { LibraryView.Playlists -> s.playlists; LibraryView.Albums -> s.albums; LibraryView.Tracks -> s.tracksTab; LibraryView.Artists -> s.artistsTab; LibraryView.History -> s.history; LibraryView.Folders -> s.localFolders }
+                    val n = when (v) { LibraryView.Playlists -> vm.myPlaylists?.size; LibraryView.Albums -> vm.favAlbums?.size; LibraryView.Tracks -> vm.favTracks?.size; LibraryView.Artists -> vm.favArtists?.size; else -> null }
+                    QChip(view == v, { view = v; vm.libraryViewIdx = v.ordinal }, label = { Text(if (n != null) "$label · $n" else label) })
+                }
+                QChip(false, { reordering = true }, label = { Text("⇅") })
+            }
+            if (view != LibraryView.History && view != LibraryView.Artists && view != LibraryView.Folders) {
                 var menu by remember { mutableStateOf(false) }
                 val labels = listOf(s.sortAdded, s.sortTitle, s.sortArtist, s.sortNewest, s.sortOldest)
-                Box(Modifier.padding(horizontal = 8.dp)) {
-                    TextButton({ menu = true }) { Text("${s.sortBy}: ${labels[vm.librarySort.coerceIn(0, labels.lastIndex)]}") }
+                Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (view == LibraryView.Playlists || view == LibraryView.Albums) {
+                        Row(Modifier.clip(RoundedCornerShape(20.dp)).background(MaterialTheme.colorScheme.surfaceVariant)) {
+                            listOf(false to Icons.Default.ViewList, true to Icons.Default.GridView).forEach { (g, icon) ->
+                                Box(Modifier.clip(RoundedCornerShape(20.dp)).background(if (grid == g) Color.White else Color.Transparent)
+                                    .clickable { grid = g; ctxLib.getSharedPreferences("qbdlx", 0).edit().putBoolean("library_grid", g).apply() }
+                                    .padding(horizontal = 14.dp, vertical = 8.dp)) {
+                                    Icon(icon, null, tint = if (grid == g) Color.Black else MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(20.dp))
+                                }
+                            }
+                        }
+                        Spacer(Modifier.width(8.dp))
+                    }
+                Box {
+                    TextButton({ menu = true }) { Text(labels[vm.librarySort.coerceIn(0, labels.lastIndex)] + " ▾", color = MaterialTheme.colorScheme.onSurface) }
                     androidx.compose.material3.DropdownMenu(menu, { menu = false }) {
                         labels.forEachIndexed { i, l -> androidx.compose.material3.DropdownMenuItem({ Text(l) }, { vm.updateLibrarySort(i); menu = false }) }
                     }
+                }
+                if (view == LibraryView.Tracks) {
+                    Spacer(Modifier.weight(1f))
+                    // Reproducción aleatoria como la de Qobuz: baraja lo que se ve (con el filtro y el orden de ahora).
+                    Box(Modifier.size(44.dp).clip(CircleShape).background(Color.White).clickable {
+                        val l = vm.favTracks.orEmpty().filter { hit(it.second.displayTitle, it.second.artist, it.first.title) }.shuffled()
+                        if (l.isNotEmpty()) vm.playList(l, 0)
+                    }, contentAlignment = Alignment.Center) { Icon(Icons.Default.Shuffle, s.shuffle, tint = Color.Black) }
+                }
                 }
             }
             if (vm.libraryLoading) LinearProgressIndicator(Modifier.fillMaxWidth().padding(16.dp))
         }
         when (view) {
             LibraryView.Playlists -> {
-                val list = vm.myPlaylists.orEmpty().let { l -> when (vm.librarySort) { 1 -> l.sortedBy { it.name.lowercase() }; 2 -> l.sortedBy { it.owner.lowercase() }; else -> l } }
+                val list = vm.myPlaylists.orEmpty().filter { hit(it.name, it.owner) }.let { l -> when (vm.librarySort) { 1 -> l.sortedBy { it.name.lowercase() }; 2 -> l.sortedBy { it.owner.lowercase() }; else -> l } }
                 if (list.isEmpty() && !vm.libraryLoading) item { EmptyText(s.nothingHere) }
                 if (list.isNotEmpty()) item { DownloadAllButton(vm) { vm.requestDownload(DownloadRequest.Playlists(list)) } }
-                items(list, key = { "p" + it.id }) { pl ->
+                if (grid) items(list.chunked(2), key = { "pg" + it.first().id }) { row ->
+                    GridRow(row.map { pl -> GridCell(pl.coverUrl, pl.name, pl.owner) { vm.openPlaylist(pl.id) } })
+                } else items(list, key = { "p" + it.id }) { pl ->
                     // The list entry may carry only one cover: ask for the rest of the mosaic once the row is on screen.
                     LaunchedEffect(pl.id) { vm.ensurePlaylistCovers(pl) }
                     LibraryRow(pl.coverUrl, pl.name, listOf(pl.owner, if (pl.tracksCount > 0) s.tracks(pl.tracksCount) else "").filter { it.isNotBlank() }.joinToString(" • "),
@@ -385,17 +584,19 @@ fun LibraryScreen(vm: MainViewModel) {
                 }
             }
             LibraryView.Albums -> {
-                val list = vm.favAlbums.orEmpty().let { l -> when (vm.librarySort) { 1 -> l.sortedBy { it.title.lowercase() }; 2 -> l.sortedBy { it.artist.lowercase() }; 3 -> l.sortedByDescending { it.year }; 4 -> l.sortedBy { it.year.ifBlank { "9999" } }; else -> l } }
+                val list = vm.favAlbums.orEmpty().filter { hit(it.title, it.artist) }.let { l -> when (vm.librarySort) { 1 -> l.sortedBy { it.title.lowercase() }; 2 -> l.sortedBy { it.artist.lowercase() }; 3 -> l.sortedByDescending { it.year }; 4 -> l.sortedBy { it.year.ifBlank { "9999" } }; else -> l } }
                 if (list.isEmpty() && !vm.libraryLoading) item { EmptyText(s.nothingHere) }
                 if (list.isNotEmpty()) item { DownloadAllButton(vm) { vm.requestDownload(DownloadRequest.Albums(list)) } }
-                items(list, key = { "a" + it.id }) { al ->
+                if (grid) items(list.chunked(2), key = { "ag" + it.first().id }) { row ->
+                    GridRow(row.map { al -> GridCell(al.coverUrl, al.title, al.artist) { vm.openAlbum(al.id) } })
+                } else items(list, key = { "a" + it.id }) { al ->
                     LibraryRow(al.coverUrl, al.title, listOf("Álbum", al.artist).filter { it.isNotBlank() }.joinToString(" • "),
                         onClick = { vm.openAlbum(al.id) },
                         badge = al.quality, hiRes = al.hiRes) { open, close -> CollectionMenu(vm, al, null, open, close) }
                 }
             }
             LibraryView.Tracks -> {
-                val list = vm.favTracks.orEmpty().let { l -> when (vm.librarySort) { 1 -> l.sortedBy { it.second.displayTitle.lowercase() }; 2 -> l.sortedBy { it.second.artist.lowercase() }; 3 -> l.sortedByDescending { it.first.year }; 4 -> l.sortedBy { it.first.year.ifBlank { "9999" } }; else -> l } }
+                val list = vm.favTracks.orEmpty().filter { hit(it.second.displayTitle, it.second.artist, it.first.title) }.let { l -> when (vm.librarySort) { 1 -> l.sortedBy { it.second.displayTitle.lowercase() }; 2 -> l.sortedBy { it.second.artist.lowercase() }; 3 -> l.sortedByDescending { it.first.year }; 4 -> l.sortedBy { it.first.year.ifBlank { "9999" } }; else -> l } }
                 if (list.isEmpty() && !vm.libraryLoading) item { EmptyText(s.nothingHere) }
                 if (list.isNotEmpty()) item { DownloadAllButton(vm) { vm.requestDownload(DownloadRequest.Tracks(list.filter { it.second.streamable })) } }
                 itemsIndexed(list) { i, (album, track) -> TrackRow(vm, album, track.copy(number = i + 1), "${track.artist} • ${album.title}", showCover = true, onPlay = { vm.playList(list, i) }) }
@@ -408,7 +609,7 @@ fun LibraryScreen(vm: MainViewModel) {
                 vm.favArtists.orEmpty().forEach { f -> entry(f.name, f.cover).also { e -> if (f.cover != null) e.cover = f.cover; e.followed = true } }
                 vm.favAlbums.orEmpty().filter { it.artist.isNotBlank() }.forEach { entry(it.artist, it.coverUrl).albums += it.id }
                 vm.favTracks.orEmpty().filter { it.second.artist.isNotBlank() }.forEach { (al, tr) -> entry(tr.artist, al.coverUrl).also { e -> e.albums += al.id; e.tracks++ } }
-                val artists = byName.values.sortedWith(compareByDescending<Entry> { it.followed }.thenByDescending { it.tracks + it.albums.size }.thenBy { it.name.lowercase() })
+                val artists = byName.values.filter { hit(it.name) }.sortedWith(compareByDescending<Entry> { it.followed }.thenByDescending { it.tracks + it.albums.size }.thenBy { it.name.lowercase() })
                 if (artists.isEmpty() && !vm.libraryLoading) item { EmptyText(s.nothingHere) }
                 items(artists, key = { "ar" + it.name.lowercase() }) { a ->
                     Row(Modifier.fillMaxWidth().clickable { vm.openArtist(a.name) }.padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -424,12 +625,106 @@ fun LibraryScreen(vm: MainViewModel) {
                     }
                 }
             }
+            LibraryView.Folders -> item { LocalFoldersBrowser(vm, query) }
             LibraryView.History -> {
-                val list = vm.history
+                val list = vm.history.filter { hit(it.second.displayTitle, it.second.artist, it.first.title) }
                 if (list.isEmpty()) item { EmptyText(s.nothingHere) }
                 itemsIndexed(list) { i, (album, track) -> TrackRow(vm, album, track.copy(number = i + 1), "${track.artist} • ${album.title}", showCover = true, onPlay = { vm.playList(list, i) }) }
             }
         }
+    }
+}
+
+/** Carpetas locales (como UAPP): las carpetas elegidas, navegar por ellas y reproducir sus archivos. */
+@Composable
+private fun LocalFoldersBrowser(vm: MainViewModel, query: String) {
+    val s = LocalStrings.current
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    var tree by remember { mutableStateOf<String?>(null) }
+    val path = remember { androidx.compose.runtime.mutableStateListOf<Pair<String, String>>() } // (docId, nombre)
+    var entries by remember { mutableStateOf<List<LocalMusic.Entry>?>(null) }
+    LaunchedEffect(tree, path.size) {
+        val t = tree ?: return@LaunchedEffect
+        entries = null
+        entries = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching { LocalMusic.list(ctx, android.net.Uri.parse(t), path.lastOrNull()?.first) }.getOrDefault(emptyList())
+        }
+    }
+    androidx.activity.compose.BackHandler(tree != null) { if (path.isNotEmpty()) path.removeAt(path.lastIndex) else tree = null }
+    Column(Modifier.fillMaxWidth()) {
+        val t = tree
+        if (t == null) {
+            vm.localRoots.forEach { root ->
+                val name = LocalMusic.rootName(android.net.Uri.parse(root))
+                Row(Modifier.fillMaxWidth().clickable { tree = root; path.clear() }.padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Folder, null, tint = QobuzGold, modifier = Modifier.size(32.dp))
+                    Spacer(Modifier.width(14.dp))
+                    Text(name, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                    IconButton({ vm.removeLocalRoot(root) }) { Icon(Icons.Default.Close, s.localFolderRemove) }
+                }
+            }
+            TextButton({ vm.chooseLocalFolder() }, Modifier.padding(horizontal = 8.dp)) { Icon(Icons.Default.Add, null); Spacer(Modifier.width(6.dp)); Text(s.localFolderAdd) }
+            if (vm.localRoots.isEmpty()) EmptyText(s.localFoldersEmpty)
+            return@Column
+        }
+        val title = path.lastOrNull()?.second ?: LocalMusic.rootName(android.net.Uri.parse(t))
+        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton({ if (path.isNotEmpty()) path.removeAt(path.lastIndex) else tree = null }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, s.back) }
+            Text(title, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        val list = entries
+        if (list == null) { LinearProgressIndicator(Modifier.fillMaxWidth().padding(16.dp)); return@Column }
+        val shown = list.filter { query.isBlank() || it.name.contains(query.trim(), ignoreCase = true) }
+        val audio = shown.filter { !it.isDir }
+        if (shown.isEmpty()) EmptyText(s.nothingHere)
+        if (audio.isNotEmpty()) TextButton({ vm.playLocal(audio, title, 0) }, Modifier.padding(horizontal = 8.dp)) {
+            Icon(Icons.Default.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text(s.localPlayAll(audio.size))
+        }
+        shown.forEach { e ->
+            Row(Modifier.fillMaxWidth().clickable {
+                if (e.isDir) path.add(e.docId to e.name) else vm.playLocal(audio, title, audio.indexOf(e))
+            }.padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(if (e.isDir) Icons.Default.Folder else Icons.Default.MusicNote, null,
+                    tint = if (e.isDir) QobuzGold else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(28.dp))
+                Spacer(Modifier.width(14.dp))
+                Text(e.name, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+private class GridCell(val cover: String?, val title: String, val subtitle: String, val onClick: () -> Unit)
+
+/** Dos portadas por fila, como la vista en cuadrícula de la biblioteca de Qobuz. */
+@Composable
+private fun GridRow(cells: List<GridCell>) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        cells.forEach { c ->
+            Column(Modifier.weight(1f).clip(RoundedCornerShape(8.dp)).clickable(onClick = c.onClick)) {
+                AsyncImage(c.cover, c.title, Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+                Text(c.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
+                Text(c.subtitle, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        if (cells.size == 1) Spacer(Modifier.weight(1f))
+    }
+}
+
+/** «Descargar toda mi cuenta»: la flecha cae una y otra vez hacia la bandeja mientras busca y encola todo. */
+@Composable
+private fun DownloadEverythingButton(vm: MainViewModel) {
+    val busy = vm.everythingBusy
+    val t = androidx.compose.animation.core.rememberInfiniteTransition(label = "todo")
+    val fall by t.animateFloat(0f, 1f, androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(if (busy) 900 else 2200, easing = androidx.compose.animation.core.LinearEasing)), label = "caida")
+    val color = MaterialTheme.colorScheme.onPrimary
+    Button({ if (!busy) vm.requestDownload(DownloadRequest.Everything) }, Modifier.padding(horizontal = 16.dp).fillMaxWidth().height(56.dp)) {
+        Box(Modifier.size(28.dp), contentAlignment = Alignment.Center) {
+            // La bandeja de abajo y la flecha que cae hasta ella, desvaneciéndose al llegar.
+            Box(Modifier.align(Alignment.BottomCenter).width(22.dp).height(3.dp).clip(RoundedCornerShape(2.dp)).background(color))
+            Icon(Icons.Default.Download, null, Modifier.size(20.dp).graphicsLayer { translationY = (fall * 8f - 6f) * density; alpha = if (fall < 0.8f) 1f else (1f - fall) / 0.2f }, tint = color)
+        }
+        Spacer(Modifier.width(12.dp))
+        Text(if (busy) "…" else LocalStrings.current.everythingButton, fontWeight = FontWeight.SemiBold)
     }
 }
 
@@ -522,7 +817,7 @@ fun DownloadsScreen(vm: MainViewModel) {
                         Icon(Icons.Default.Share, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(s.shareDrive)
                     }
                     TextButton({ showShareAny = true }, enabled = items.isNotEmpty()) { Text(s.shareGeneric) }
-                    TextButton({ vm.ipodSendDownloaded() }, enabled = items.isNotEmpty()) { Text(s.ipodSendDownloaded) }
+                    if (vm.ipodPlugged || vm.ipodProgress != null) TextButton({ vm.ipodSendDownloaded() }, enabled = items.isNotEmpty()) { Text(s.ipodSendDownloaded) }
                     TextButton({ dl.clearCompleted() }, enabled = items.isNotEmpty()) {
                         Icon(Icons.Default.DeleteSweep, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(s.dlClearDone, maxLines = 1, softWrap = false)
                     }
@@ -613,6 +908,7 @@ fun SettingsScreen(vm: MainViewModel) {
                 }
             }
         }
+        SettingsGroup(s.everythingTitle, s.everythingHelp) { DownloadEverythingButton(vm) }
         SettingsGroup(s.maxConcurrentTitle, s.maxConcurrentHelp) {
             Row(Modifier.padding(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 MAX_CONCURRENT_OPTIONS.forEach { n -> QChip(vm.maxConcurrent == n, { vm.updateMaxConcurrent(n) }, label = { Text("$n") }) }
@@ -658,6 +954,25 @@ fun SettingsScreen(vm: MainViewModel) {
                     QChip(vm.crossfadeMs == ms, { vm.updateCrossfade(ms) }, label = { Text(if (ms == 0) s.crossfadeOff else s.seconds(ms / 1000)) })
                 }
             }
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("ReplayGain", fontWeight = FontWeight.Medium)
+                    Text("Iguala el volumen entre canciones con la ganancia que Qobuz da para cada pista, sin recortar los picos. Mientras esté encendido, la señal deja de ser bit-perfect. Por el mezclador de Android solo puede bajar el volumen; por USB directo también lo sube.",
+                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(vm.replayGain, { vm.updateReplayGain(it) })
+            }
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Medidor de nivel", fontWeight = FontWeight.Medium)
+                    Text("Visualización en el reproductor: nivel izquierdo y derecho (con pico y máximo en dB), barras de espectro o ámbito (la onda). Tocarla en el reproductor cambia de una a otra.",
+                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(vm.levelMeter, { vm.updateLevelMeter(it) })
+            }
+            if (vm.levelMeter) Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("Nivel", "Barras", "Ámbito").forEachIndexed { i, n -> QChip(vm.meterMode == i, { vm.updateMeterMode(i) }, label = { Text(n) }) }
+            }
             LaunchedEffect(Unit) { vm.refreshBitPerfect() }
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -686,7 +1001,127 @@ fun SettingsScreen(vm: MainViewModel) {
                 }
                 Switch(usbOn, { usbOn = it; UsbDirect.prefs(ctx).set(it); if (it) UsbDirect.managerOrNull(ctx)?.triggerActivation(); vm.updateUsbDirect(it) })
             }
-            TextButton(onClick = { diag = diagnoseUsb(ctx) + (if (usbOn) "\n\n== libusbdac ==\n" + (UsbDirect.managerOrNull(ctx)?.diagnosticLog?.value?.joinToString("\n") ?: UsbDirect.failure.orEmpty()) else "") + java.io.File(ctx.filesDir, QbdlxApp.CRASH_FILE).takeIf { it.exists() }?.let { "\n\n== Último cierre inesperado ==\n" + it.readText().take(3000) }.orEmpty() + "\n\n== Reproducción (últimos eventos) ==\n" + PlaybackLog.read(ctx).ifEmpty { "(nada todavía)" } }, Modifier.padding(horizontal = 8.dp)) { Text(s.usbDiagButton) }
+            var avanzado by remember { mutableStateOf(false) }
+            Row(Modifier.fillMaxWidth().clickable { avanzado = !avanzado }.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Avanzado (DAC USB)", fontWeight = FontWeight.Medium)
+                    Text("Interruptores de diagnóstico y de prueba. Lo normal es no tocarlos.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Text(if (avanzado) "Ocultar" else "Mostrar", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+            }
+            androidx.compose.animation.AnimatedVisibility(avanzado) { Column {
+            run {
+                val dp = ctx.getSharedPreferences("qbdlx", 0)
+                var sinRec by remember { mutableStateOf(dp.getBoolean("diag_sin_recuperacion", false)) }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Diagnóstico: sin recuperación automática", fontSize = 14.sp)
+                        Text("Si el DAC se para, no se reactiva ni se recrea la salida: solo se anota el atasco con la línea de tiempo. Úsalo solo para diagnosticar.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(sinRec, { sinRec = it; dp.edit().putBoolean("diag_sin_recuperacion", it).apply(); org.ostrichbat2k.usbdac.streaming.UsbTelemetry.sinRecuperacionAutomatica = it })
+                }
+            }
+            run {
+                val dp = ctx.getSharedPreferences("qbdlx", 0)
+                var sinFb by remember { mutableStateOf(dp.getBoolean("diag_sin_feedback", true)) }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Diagnóstico: sin lectura de feedback", fontSize = 14.sp)
+                        Text("No abre el hilo que lee el reloj del DAC. Audio y feedback comparten el descriptor USB y en el registro el hilo del feedback recogía bloques de audio. Aplica desde la siguiente pista.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(sinFb, { sinFb = it; dp.edit().putBoolean("diag_sin_feedback", it).apply(); org.ostrichbat2k.usbdac.streaming.UsbTelemetry.sinFeedback = it })
+                }
+            }
+            run {
+                val dp = ctx.getSharedPreferences("qbdlx", 0)
+                var sinPs by remember { mutableStateOf(dp.getBoolean("diag_sin_pista_silenciosa", false)) }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Diagnóstico: sin pista silenciosa del sistema", fontSize = 14.sp)
+                        Text("No crea la pista muda de 8000 Hz que la app abre en Android para los botones multimedia. Esa pista mantiene el audio del sistema escribiendo al mismo DAC mientras suena por USB directo. Los botones del auricular pueden dejar de funcionar. Aplica desde la siguiente pista.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(sinPs, { sinPs = it; dp.edit().putBoolean("diag_sin_pista_silenciosa", it).apply(); org.ostrichbat2k.usbdac.streaming.UsbTelemetry.sinPistaSilenciosa = it })
+                }
+            }
+            run {
+                val dp = ctx.getSharedPreferences("qbdlx", 0)
+                var mitad by remember { mutableStateOf(dp.getBoolean("diag_bloques_mitad", false)) }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Diagnóstico: bloques USB de la mitad de tamaño", fontSize = 14.sp)
+                        Text("Envía bloques de 8 ms en vez de 16 ms. Tras cada arranque el DAC se paró siempre a los ~512 bloques (≈8,2 s); esto dice si el límite es de bloques o de tiempo. Aplica desde la siguiente pista.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(mitad, { mitad = it; dp.edit().putBoolean("diag_bloques_mitad", it).apply(); org.ostrichbat2k.usbdac.streaming.UsbTelemetry.bloquesMitad = it })
+                }
+            }
+            run {
+                val dp = ctx.getSharedPreferences("qbdlx", 0)
+                var p120 by remember { mutableStateOf(dp.getBoolean("diag_paquetes_120", false)) }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Diagnóstico: bloques USB de 15 ms (120 paquetes)", fontSize = 14.sp)
+                        Text("Los cortes caen siempre en el bloque nº 255, 510, 765… Con 120 paquetes por bloque, si la causa es el anillo USB del teléfono, caerán cada 17 bloques. Manda sobre «mitad de tamaño». Aplica desde la siguiente pista.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(p120, { p120 = it; dp.edit().putBoolean("diag_paquetes_120", it).apply(); org.ostrichbat2k.usbdac.streaming.UsbTelemetry.paquetes120 = it })
+                }
+            }
+            run {
+                val dp = ctx.getSharedPreferences("qbdlx", 0)
+                var reabrir by remember { mutableStateOf(dp.getBoolean("diag_reabrir_255", false)) }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Prueba de arreglo: reabrir el envío antes del bloque 255", fontSize = 14.sp)
+                        Text("Los cortes caen siempre en el bloque nº 255, 510, 765… Cada ~4 s, justo antes, deja terminar los bloques en vuelo y reinicia la conexión de audio del DAC sin perder nada del búfer. Puede oírse un clic breve cada ~4 s: dime si se oye. Necesita «sin lectura de feedback». Aplica desde la siguiente pista.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(reabrir, { reabrir = it; dp.edit().putBoolean("diag_reabrir_255", it).apply(); org.ostrichbat2k.usbdac.streaming.UsbTelemetry.reabrirAntes255 = it })
+                }
+            }
+            run {
+                val dp = ctx.getSharedPreferences("qbdlx", 0)
+                var borde by remember { mutableStateOf(dp.getBoolean("diag_evitar_borde_255", true)) }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Prueba de arreglo sin cortes: esquivar el borde de 255", fontSize = 14.sp)
+                        Text("El bloque que terminaría justo en el borde del anillo USB del teléfono (cada 255 bloques) lleva un paquete más. No reabre nada: no debería oírse. Si con esto no hay cortes en 10 minutos, queda resuelto. Aplica desde la siguiente pista.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(borde, { borde = it; dp.edit().putBoolean("diag_evitar_borde_255", it).apply(); org.ostrichbat2k.usbdac.streaming.UsbTelemetry.evitarBorde255 = it })
+                }
+            }
+            run {
+                val dp = ctx.getSharedPreferences("qbdlx", 0)
+                var margen by remember { mutableStateOf(dp.getBoolean("diag_mas_margen", false)) }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Prueba de arreglo: más margen USB (12 bloques en camino)", fontSize = 14.sp)
+                        Text("Los cortes llegan al usar el teléfono: el envío se retrasa más de lo que cubren 4 bloques. Con 12 bloques en camino cabe un retraso 3 veces mayor. Aplica desde la siguiente pista.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(margen, { margen = it; dp.edit().putBoolean("diag_mas_margen", it).apply(); org.ostrichbat2k.usbdac.streaming.UsbTelemetry.masMargen = it })
+                }
+            }
+            run {
+                val dp = ctx.getSharedPreferences("qbdlx", 0)
+                var decent by remember { mutableStateOf(dp.getBoolean("diag_como_decent", true)) }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Prueba de arreglo: enviar como decent-player", fontSize = 14.sp)
+                        Text("Muchos bloques cortos en camino (120 de 2 ms, ~240 ms de margen), al estilo del reproductor libre decent-player, probado en un Galaxy S26 Ultra. Manda sobre «mitad», «120 paquetes» y «más margen». Aplica desde la siguiente pista.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(decent, { decent = it; dp.edit().putBoolean("diag_como_decent", it).apply(); org.ostrichbat2k.usbdac.streaming.UsbTelemetry.comoDecent = it })
+                }
+            }
+            run {
+                val dp = ctx.getSharedPreferences("qbdlx", 0)
+                var rendim by remember { mutableStateOf(dp.getBoolean("diag_pedir_rendimiento", true)) }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Prueba de arreglo: pedir rendimiento al sistema", fontSize = 14.sp)
+                        Text("Le dice a Android que el hilo de envío no puede llegar tarde (Performance Hint, Android 12+), para que suba la frecuencia o use núcleos rápidos. Puede gastar algo más de batería. Aplica desde la siguiente pista.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(rendim, { rendim = it; dp.edit().putBoolean("diag_pedir_rendimiento", it).apply(); org.ostrichbat2k.usbdac.streaming.UsbTelemetry.pedirRendimiento = it })
+                }
+            }
+            } }
+            TextButton(onClick = { diag = diagnoseUsb(ctx) + (if (usbOn) "\n\n== libusbdac ==\n" + (UsbDirect.managerOrNull(ctx)?.diagnosticLog?.value?.joinToString("\n") ?: UsbDirect.failure.orEmpty()) else "") + java.io.File(ctx.filesDir, QbdlxApp.CRASH_FILE).takeIf { it.exists() }?.let { "\n\n== Último cierre inesperado ==\n" + it.readText().take(3000) }.orEmpty() + "\n\n== Sesión anterior (registro por segundo) ==\n" + DiagnosticLog.previousSession(ctx) + "\n\n== Reproducción (últimos eventos) ==\n" + PlaybackLog.read(ctx).ifEmpty { "(nada todavía)" } }, Modifier.padding(horizontal = 8.dp)) { Text(s.usbDiagButton) }
             diag?.let { txt ->
                 val clip = LocalClipboardManager.current
                 AlertDialog(
@@ -778,12 +1213,22 @@ fun SettingsScreen(vm: MainViewModel) {
 /** One settings block: a small title (and help) above a rounded card that holds the controls. */
 @Composable
 private fun SettingsGroup(title: String, help: String? = null, content: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-        SectionHeading(title, Modifier.padding(horizontal = 4.dp))
-        if (help != null) Text(help, Modifier.padding(horizontal = 4.dp, vertical = 2.dp), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(6.dp))
+    // Plegable: los ajustes empiezan cerrados y se abre solo lo que se necesita; se recuerda al girar la pantalla.
+    var open by androidx.compose.runtime.saveable.rememberSaveable(title) { mutableStateOf(false) }
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
         androidx.compose.material3.Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
-            Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), content = content)
+            Column(Modifier.fillMaxWidth()) {
+                Row(Modifier.fillMaxWidth().clickable { open = !open }.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(title, Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+                    Text(if (open) "▲" else "▼", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                androidx.compose.animation.AnimatedVisibility(open) {
+                    Column(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                        if (help != null) Text(help, Modifier.padding(horizontal = 16.dp, vertical = 2.dp), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        content()
+                    }
+                }
+            }
         }
     }
 }
@@ -811,7 +1256,7 @@ fun MiniPlayer(vm: MainViewModel) {
                     Text(album.artist, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 IconButton({ vm.togglePlay() }) {
-                    Icon(if (vm.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, LocalStrings.current.playPause, Modifier.size(32.dp), tint = MaterialTheme.colorScheme.onSurface)
+                    PlayPauseIcon(vm, 36.dp, MaterialTheme.colorScheme.onSurface)
                 }
             }
             LinearProgressIndicator(

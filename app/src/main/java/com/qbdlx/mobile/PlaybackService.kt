@@ -255,7 +255,7 @@ class PlaybackService : MediaBrowserService() {
                 .build(),
         )
 
-        NowPlayingWidget.render(this, playing, c.isPlaying, cover?.let { Bitmap.createScaledBitmap(it, 160, 160, true) }, cover?.let { if (it.width > 480) Bitmap.createScaledBitmap(it, 480, 480, true) else it })
+        NowPlayingWidget.render(this, playing, c.isPlaying, cover?.let { Bitmap.createScaledBitmap(it, 160, 160, true) }, cover?.let { if (it.width > 480) Bitmap.createScaledBitmap(it, 480, 480, true) else it }, c.shuffleOn, c.repeatMode)
         val notification = build(album, track, c.isPlaying)
         if (c.isPlaying) {
             startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)

@@ -11,6 +11,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Deferred
 import android.net.Uri
@@ -39,6 +40,8 @@ sealed interface DownloadRequest {
     data class Albums(val albums: List<Album>) : DownloadRequest
     /** "Download all" in the Library's Playlists tab. */
     data class Playlists(val playlists: List<Playlist>) : DownloadRequest
+    /** Settings → «Descargar toda mi cuenta»: favorite tracks, favorite albums and every playlist. */
+    data object Everything : DownloadRequest
 }
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
@@ -60,6 +63,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     var discover by mutableStateOf<Discover?>(null); private set
     var selectedTag by mutableStateOf<PlaylistTag?>(null); private set
+    /** Géneros de Qobuz para filtrar Descubrir (id, nombre) y el elegido (null = todos). */
+    var genres by mutableStateOf<List<Pair<String, String>>>(emptyList()); private set
+    var selectedGenre by mutableStateOf<String?>(null); private set
+    fun selectGenre(id: String?) { if (id == selectedGenre) return; selectedGenre = id; loadHome() }
     var tagPlaylists by mutableStateOf<List<Playlist>>(emptyList()); private set
     var playlistDetail by mutableStateOf<PlaylistDetail?>(null); private set
     var artistPage by mutableStateOf<ArtistPage?>(null); private set
@@ -80,6 +87,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         return caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) || caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET)
     }
     var librarySort by mutableIntStateOf(prefs.getInt("library_sort", 0)); private set
+    /** Pestaña de la biblioteca (índice de LibraryView) y su búsqueda: viven aquí para que atrás desde una lista vuelva a la misma pestaña. */
+    var libraryViewIdx by mutableIntStateOf(0)
+    var libraryQuery by mutableStateOf("")
     fun updateLibrarySort(i: Int) { librarySort = i; prefs.edit().putInt("library_sort", i).apply() }
     var favAlbums by mutableStateOf<List<Album>?>(null); private set
     var favTracks by mutableStateOf<List<Pair<Album, Track>>?>(null); private set
@@ -123,6 +133,46 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val knownFolder = KnownFolder(app, prefs)
     var knownName by mutableStateOf(knownFolder.name); private set
     var pickKnown by mutableStateOf(false)
+
+    // Carpetas locales: los árboles elegidos (persisten) y qué archivo corresponde a cada id negativo de pista local.
+    var pickLocal by mutableStateOf(false)
+    var localRoots by mutableStateOf(prefs.getString("local_roots", "").orEmpty().split('\n').filter { it.isNotBlank() }); private set
+    private val localUris = HashMap<Long, String>().apply {
+        runCatching { org.json.JSONObject(prefs.getString("local_map", "{}")!!).let { o -> o.keys().forEach { k -> put(k.toLong(), o.getString(k)) } } }
+    }
+
+    fun chooseLocalFolder() { pickLocal = true }
+
+    fun onLocalPicked(uri: Uri) {
+        runCatching { getApplication<Application>().contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+        localRoots = (localRoots + uri.toString()).distinct()
+        prefs.edit().putString("local_roots", localRoots.joinToString("\n")).apply()
+    }
+
+    fun removeLocalRoot(uri: String) {
+        runCatching { getApplication<Application>().contentResolver.releasePersistableUriPermission(Uri.parse(uri), android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+        localRoots = localRoots - uri
+        prefs.edit().putString("local_roots", localRoots.joinToString("\n")).apply()
+    }
+
+    /** Reproduce los archivos de audio de una carpeta desde [start], leyendo sus etiquetas. */
+    fun playLocal(files: List<LocalMusic.Entry>, folder: String, start: Int) {
+        viewModelScope.launch {
+            // Empieza a sonar enseguida: solo se leen las etiquetas de la que se tocó; las demás llegan después, sin esperar.
+            val items = files.mapIndexed { i, e -> LocalMusic.quickItem(e, folder, i) }.toMutableList()
+            files.getOrNull(start)?.let { e -> items[start] = withContext(Dispatchers.IO) { LocalMusic.toItem(getApplication(), e, folder, start) } }
+            files.forEachIndexed { i, e -> localUris[items[i].second.id] = e.uri.toString() }
+            prefs.edit().putString("local_map", org.json.JSONObject(localUris.entries.toList().takeLast(2000).associate { it.key.toString() to it.value }).toString()).apply()
+            playList(items, start)
+            val rest = files.withIndex().filter { it.index != start && !LocalMusic.isRead(it.value) }
+            if (rest.isEmpty()) return@launch
+            rest.chunked(25).forEach { part ->
+                val read = withContext(Dispatchers.IO) { part.associate { (i, e) -> LocalMusic.toItem(getApplication(), e, folder, i).let { it.second.id to it } } }
+                playQueue.update { old -> read[old.second.id] ?: old }
+                refreshQueue()
+            }
+        }
+    }
     fun chooseKnownFolder() { pickKnown = true }
     fun onKnownPicked(uri: android.net.Uri) {
         runCatching { knownFolder.save(uri) }.onFailure { error = it.message; return }
@@ -212,6 +262,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val engineDelegate = lazy {
         PlayerEngine(app, object : PlayerEngine.Listener {
             override fun onPlayingChanged(playing: Boolean) { isPlaying = playing; if (!playing) saveQueue(); syncNotification() }
+            override fun onBufferingChanged(buffering: Boolean) { this@MainViewModel.buffering = buffering }
             override fun onAdvanced() = advancedByEngine()
             override fun onEnded() { skipDir = 1; playQueue.next(auto = true)?.let { playCurrent() } }
             override fun onBitPerfect(state: BitPerfectState) { bitPerfectState = state }
@@ -226,6 +277,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val engine: PlayerEngine by engineDelegate
     var nowPlaying by mutableStateOf<Pair<Album, Track>?>(null); private set
     var isPlaying by mutableStateOf(false); private set
+    /** Cargando el búfer con la reproducción pedida (al dar play, al saltar de pista o de posición). */
+    var buffering by mutableStateOf(false); private set
     /** What the playing file really is (from Qobuz's answer), e.g. "24 Bit / 96 kHz"; null until known. */
     var nowQuality by mutableStateOf<AudioQuality?>(null); private set
 
@@ -248,6 +301,26 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         downloads.onCredentialsRefreshed = { notice = strings.credsAutoUpdated }
         downloads.onActiveChanged = { active -> if (active) DownloadService.start(app) }
         downloadScope.launch { downloads.restore() }
+
+        // A DAC plugged in (or its permission accepted) while a song already plays through Android's mixer:
+        // nothing else claims it until the next track, so claim it here and restart the song on it where it was.
+        UsbDirect.managerOrNull(app)?.let { m ->
+            viewModelScope.launch {
+                kotlinx.coroutines.flow.combine(m.devices, m.controlState) { d, c -> d.any { it.hasPermission } to (c != null) }
+                    .distinctUntilChanged()
+                    .collect { (permitido, lista) ->
+                        if (!UsbDirect.prefs(app).enabled || !isPlaying || !engineDelegate.isInitialized()) return@collect
+                        if (m.playbackRoute.value !is org.ostrichbat2k.usbdac.UsbAudioManager.PlaybackRoute.Fallback) return@collect
+                        if (lista) {
+                            PlaybackLog.add(app, "DAC USB listo a media canción: se reinicia la pista en USB directo")
+                            playCurrent(engine.position)
+                        } else if (permitido) {
+                            PlaybackLog.add(app, "DAC USB conectado a media canción: se pide la salida directa")
+                            m.triggerActivation()
+                        }
+                    }
+            }
+        }
 
         // Resume the previous session from the saved token, if there is one.
         val id = prefs.getString("user_id", null)
@@ -393,6 +466,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** The heart of the player: adds or removes the song in Qobuz, showing the change at once and undoing it if Qobuz refuses. */
     fun toggleFavorite(album: Album, track: Track) {
+        if (track.id < 0) return
         val before = favTracks.orEmpty()
         val adding = before.none { it.second.id == track.id }
         favTracks = if (adding) listOf(album to track) + before else before.filter { it.second.id != track.id }
@@ -1638,17 +1712,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         downloads.setEnabled(true) // resumes whatever was waiting in the saved queue
         tab = Tab.Home
         loadHome()
+        loadLibrary() // the hearts need the favorites from the start, not only after opening the library
     }
 
     private fun loadHome() {
-        discover = null
         selectedTag = null
         viewModelScope.launch {
             homeLoading = true
             try {
+                if (genres.isEmpty()) viewModelScope.launch { genres = withContext(Dispatchers.IO) { runCatching { api.genres() }.getOrDefault(emptyList()) } }
+                val genre = selectedGenre
                 discover = withContext(Dispatchers.IO) {
                     try {
-                        api.discover().takeIf { it.newReleases != null || it.sections.isNotEmpty() }
+                        api.discover(genre).takeIf { it.newReleases != null || it.sections.isNotEmpty() }
                             ?: throw ApiException("Discover came back empty")
                     } catch (e: Exception) {
                         // Fall back to the plain new-releases list so Home is never blank.
@@ -1694,15 +1770,28 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         libraryRefreshed = false; libraryCache.clear()
     }
 
+    /** Búsquedas recientes (lo escrito), la más nueva primero, como en Qobuz. */
+    var recentSearches by mutableStateOf(prefs.getString("recent_searches", "").orEmpty().split('\n').filter { it.isNotBlank() }); private set
+
+    private fun saveRecent(list: List<String>) {
+        recentSearches = list.take(20)
+        prefs.edit().putString("recent_searches", recentSearches.joinToString("\n")).apply()
+    }
+
+    fun removeRecentSearch(q: String) = saveRecent(recentSearches - q)
+    fun clearRecentSearches() = saveRecent(emptyList())
+
     fun search(query: String) {
         if (query.isBlank()) return
+        val q = query.trim().replace('\n', ' ')
+        saveRecent(listOf(q) + recentSearches.filterNot { it.equals(q, ignoreCase = true) })
         run {
             results = api.searchAlbums(query.trim())
             trackResults = runCatching { api.searchTracks(query.trim(), 40) }.getOrDefault(emptyList())
         }
     }
 
-    fun openAlbum(id: String) = run { detail = api.getAlbum(id) }
+    fun openAlbum(id: String) { if (id.startsWith("local:")) return; run { detail = api.getAlbum(id) } }
 
     /** Covers for playlist mosaics, loaded a few at a time for the playlists whose list entry had only one. */
     val playlistCovers = androidx.compose.runtime.mutableStateMapOf<String, List<String>>()
@@ -1750,7 +1839,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun requestDownload(r: DownloadRequest) {
         when {
             askQuality -> pendingRequest = r
-            r is DownloadRequest.Albums || r is DownloadRequest.Playlists -> pendingBulk = r
+            r is DownloadRequest.Albums || r is DownloadRequest.Playlists || r is DownloadRequest.Everything -> pendingBulk = r
             else -> startDownload(r, quality)
         }
     }
@@ -1767,11 +1856,26 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         startDownload(r, q)
     }
 
+    /** True mientras «Descargar toda mi cuenta» busca y pone todo en la cola (la animación del botón). */
+    var everythingBusy by mutableStateOf(false); private set
+
     private fun startDownload(r: DownloadRequest, q: Quality) {
         viewModelScope.launch {
             try {
                 askNotifications = true
                 when (r) {
+                    is DownloadRequest.Everything -> {
+                        everythingBusy = true
+                        try {
+                            loadLibrary(force = true)
+                            while (libraryLoading) kotlinx.coroutines.delay(300)
+                            val tracks = favTracks.orEmpty().filter { it.second.streamable && it.second.id > 0 }
+                            var added = downloads.enqueue(tracks, q).let { it.added to it.skipped }
+                            val alb = enqueueBulk(favAlbums.orEmpty(), { al -> withContext(Dispatchers.IO) { albumTracks(al.id) } }, { downloads.enqueue(it, q) })
+                            val pls = enqueueBulk(myPlaylists.orEmpty(), { pl -> withContext(Dispatchers.IO) { api.getPlaylist(pl.id).tracks } }, { downloads.enqueue(it, q) })
+                            notice = bulkNotice(BulkResult(alb.sources + pls.sources, alb.failedSources + pls.failedSources, added.first + alb.added + pls.added, added.second + alb.skipped + pls.skipped))
+                        } finally { everythingBusy = false }
+                    }
                     is DownloadRequest.Albums -> {
                         notice = strings.preparingAlbums(r.albums.size)
                         notice = bulkNotice(enqueueBulk(r.albums, { al -> withContext(Dispatchers.IO) { albumTracks(al.id) } }, { downloads.enqueue(it, q) }))
@@ -1787,7 +1891,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                                 is DownloadRequest.WholeAlbum -> albumTracks(r.album.id)
                                 is DownloadRequest.WholePlaylist -> api.getPlaylist(r.playlist.id).tracks
                                 else -> emptyList()
-                            }.filter { it.second.streamable }
+                            }.filter { it.second.streamable && it.second.id > 0 } // los archivos locales (id negativo) ya están en el teléfono
                         }
                         val result = downloads.enqueue(items, q)
                         notice = when {
@@ -1971,7 +2075,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Address and quality to play a track from: the downloaded file when there is one that is good enough, else Qobuz. */
     private fun resolve(trackId: Long): Pair<String, AudioQuality?> {
-        val local = downloads.tasks.firstOrNull { it.track.id == trackId && it.status == TaskStatus.COMPLETED && it.quality.formatId >= playFormat() && it.savedUri != null }?.savedUri
+        if (trackId < 0) return (localUris[trackId] ?: throw IllegalStateException("Ese archivo local ya no está disponible")) to null
+        val local = downloads.tasks.filter { it.track.id == trackId && it.status == TaskStatus.COMPLETED && it.savedUri != null }.maxByOrNull { -it.quality.ordinal }?.savedUri
         if (local != null && runCatching { context.contentResolver.openInputStream(Uri.parse(local))?.close() ?: error("") }.isSuccess) return local to null
         val used = api.appSecret
         val file = try {
@@ -1988,6 +2093,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private val secretRefreshLock = Any()
+
+    /** Mejor calidad ya descargada de la pista que suena, o null si no está descargada. */
+    fun downloadedQualityOfCurrent(): Quality? {
+        val id = nowPlaying?.second?.id ?: return null
+        return downloads.tasks.filter { it.track.id == id && it.status == TaskStatus.COMPLETED }.minByOrNull { it.quality.ordinal }?.quality
+    }
+
+    /** «Mejorar calidad»: descarga la pista que suena en la calidad más alta; la reproducción pasa a ella al terminar. */
+    fun upgradeCurrentDownload() {
+        val item = nowPlaying ?: return
+        val r = downloads.enqueue(listOf(item.first to item.second), Quality.HI_RES_MAX)
+        notice = if (r.added > 0) "Descargando en la mejor calidad…" else "Ya está en la mejor calidad (o en la cola)"
+    }
 
     // ---- queue that survives closing the app, history, sleep timer, lyrics -----------------------------------------
     private var restoredPosMs = -1L // >= 0: a queue was restored and nothing has been started yet
@@ -2143,7 +2261,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val item = playQueue.current ?: return
         restoredPosMs = -1L
         playJob?.cancel(); prefetchJob?.cancel(); prefetched = null
-        nowPlaying = item; nowQuality = null; refreshQueue()
+        nowPlaying = item; nowQuality = null; refreshQueue(); applyReplayGain(item.second)
         syncNotification()
         playJob = viewModelScope.launch {
             try {
@@ -2177,7 +2295,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         // The queue was edited while the next track was already loading: what plays isn't what the queue says.
         if (ready == null) { playCurrent(); return }
         prefetched = null
-        nowPlaying = item; nowQuality = ready?.second; refreshQueue()
+        nowPlaying = item; nowQuality = ready?.second; refreshQueue(); applyReplayGain(item.second)
         recordHistory(item); saveQueue()
         syncNotification()
         startPrefetch()
@@ -2281,6 +2399,29 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (engineDelegate.isInitialized()) { engine.bitPerfect = on; resetNext() }
         // The song that is playing was made under the old setting: start it again at the same spot.
         if (playQueue.current != null && restoredPosMs < 0 && isPlaying) playCurrent(if (engineDelegate.isInitialized()) engine.position else 0L)
+    }
+
+    /** ReplayGain (como UAPP): iguala el volumen entre canciones con la ganancia que Qobuz da por pista. Apagado de fábrica: con él la señal deja de ser bit-perfect. */
+    /** Barras de nivel L/R en el reproductor, como en UAPP. */
+    var levelMeter by mutableStateOf(prefs.getBoolean("level_meter", true)); private set
+    /** Qué dibuja: 0 = nivel L/R, 1 = barras (espectro), 2 = ámbito (osciloscopio). */
+    var meterMode by mutableStateOf(prefs.getInt("meter_mode", 0)); private set
+    fun updateMeterMode(m: Int) { meterMode = m.mod(3); prefs.edit().putInt("meter_mode", meterMode).apply() }
+    fun updateLevelMeter(on: Boolean) { levelMeter = on; prefs.edit().putBoolean("level_meter", on).apply() }
+    var replayGain by mutableStateOf(prefs.getBoolean("replay_gain", false)); private set
+
+    fun updateReplayGain(on: Boolean) {
+        replayGain = on; prefs.edit().putBoolean("replay_gain", on).apply()
+        nowPlaying?.let { applyReplayGain(it.second) }
+    }
+
+    /** Lineal: 10^(dB/20), sin pasar de 1/pico para no recortar. En el mezclador de Android solo puede bajar (ExoPlayer no sube de 1). */
+    private fun applyReplayGain(track: Track) {
+        val g = track.replayGainDb
+        val lin = if (!replayGain || g == null) 1f
+            else Math.pow(10.0, g / 20.0).coerceAtMost(track.replayPeak?.let { 1.0 / it } ?: 1.0).toFloat()
+        org.ostrichbat2k.usbdac.streaming.UsbTelemetry.gananciaReplay = lin
+        if (engineDelegate.isInitialized()) engine.gain = lin.coerceAtMost(1f)
     }
 
     fun updateCrossfade(ms: Int) {

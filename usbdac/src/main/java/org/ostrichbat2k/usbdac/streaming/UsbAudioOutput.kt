@@ -140,6 +140,13 @@ class UsbAudioOutput(
             reportPipelineStats = usbAudioManager::reportPipelineStats,
         )
 
+    private val telemetriaPropia: () -> String = {
+        val sinceUrb = System.currentTimeMillis() - streamEngine.lastUrbSubmittedAtMs
+        "streaming=${streamEngine.streaming} · pausado=$paused · sinceUrb=${sinceUrb}ms · reapEnCurso=${streamEngine.reapEnCursoMs()}ms · " +
+            "búfer=${ringBuffer.availableToRead()}B · ${streamEngine.resumenRitmo()}"
+    }
+    init { UsbTelemetry.snapshot = telemetriaPropia }
+
     // The isochronous schedule can't actually stop (the USB clock must keep ticking), so "pause"
     // means substituting silence for whatever's next, *without* draining it out of [ringBuffer] --
     // otherwise up to UsbAudioTuning.RING_BUFFER_MS of already-decoded audio keeps playing out audibly after
@@ -721,10 +728,12 @@ class UsbAudioOutput(
         val maxValue = (1L shl (subslot * 8 - 1)) - 1
         val minValue = -(1L shl (subslot * 8 - 1))
         var outIdx = 0
+        // El volumen digital y ReplayGain se aplican al sacar del búfer (UsbIsoStreamEngine.aplicarGanancia).
+        val escala = (maxValue + 1).toDouble()
         for (i in 0 until availableFloats) {
             val floatPos = pos + i * 4
             val raw = buffer.getFloat(floatPos)
-            val sample = (raw * (maxValue + 1)).toLong().coerceIn(minValue, maxValue)
+            val sample = (raw * escala).toLong().coerceIn(minValue, maxValue)
             for (b in 0 until subslot) {
                 floatConversionBuffer[outIdx + b] = ((sample shr (8 * b)) and 0xFF).toByte()
             }
@@ -797,6 +806,8 @@ class UsbAudioOutput(
         // instance (a track skip landing mid-relock) hand back its claim instead of starting a
         // stream nothing will ever read from.
         released = true
+        // Solo la quita si sigue siendo la suya: ya puede haber una salida nueva (otra frecuencia) registrada.
+        if (UsbTelemetry.snapshot === telemetriaPropia) UsbTelemetry.snapshot = null
         synchronized(activationLock) {
             stopStreamingThread()
             if (activated) {
@@ -866,6 +877,8 @@ class UsbAudioOutput(
      * sink implementation here never had, which left a genuinely stuck ring buffer with no way
      * back short of the user manually skipping the track.
      */
+    @Volatile private var lastRecoveryAtMs = 0L
+
     override fun isStalled(): Boolean {
         // play() just handed activateAndStream() off to activationExecutor and hasn't heard back
         // yet -- this is no longer the instantaneous window it used to be when play() ran that
@@ -878,8 +891,45 @@ class UsbAudioOutput(
         // pause() released it -- nothing will ever make lastUrbSubmittedAtMs move on its own in
         // this state (streaming itself is false), so the check below alone would never catch it.
         if (!paused && !activated) return true
-        return streamEngine.streaming &&
-            (System.currentTimeMillis() - streamEngine.lastUrbSubmittedAtMs) > UsbAudioTuning.STALL_THRESHOLD_MS
+        val sinceLastUrbMs = System.currentTimeMillis() - streamEngine.lastUrbSubmittedAtMs
+        // El FiiO deja de completar bloques (reapIso colgado) con el búfer lleno. cancelIso no basta
+        // (suelta unos pocos bloques y vuelve a colgarse, sin llegar nunca al umbral de atasco).
+        // Lo que lo arregla es reactivar el DAC como al pausar y reanudar -- parar el hilo, soltar y
+        // volver a reclamar la interfaz -- que conserva el búfer: sin salto, solo un corte breve.
+        if (UsbTelemetry.sinRecuperacionAutomatica) {
+            // Diagnóstico: no se toca nada; solo se deja constancia del atasco (una vez por segundo como mucho).
+            if (streamEngine.streaming && sinceLastUrbMs > 1000L && System.currentTimeMillis() - lastRecoveryAtMs > 1000L) {
+                lastRecoveryAtMs = System.currentTimeMillis()
+                usbAudioManager.reportDiagnostic(
+                    "UsbAudioOutput [SIN RECUPERACIÓN]: ${sinceLastUrbMs}ms sin completar · reap en curso=${streamEngine.reapEnCursoMs()}ms · ${streamEngine.resumenRitmo()} · ${streamEngine.lineaDeTiempo()}")
+            }
+            return false
+        }
+        if (streamEngine.streaming && sinceLastUrbMs > 1000L && streamEngine.reapEnCursoMs() > 1000L &&
+            System.currentTimeMillis() - lastRecoveryAtMs > 10_000L) {
+            lastRecoveryAtMs = System.currentTimeMillis()
+            usbAudioManager.reportDiagnostic(
+                "UsbAudioOutput: el DAC lleva ${sinceLastUrbMs}ms sin completar bloques · en búfer=${ringBuffer.availableToRead()} bytes -> se reactiva sin vaciar el búfer · ${streamEngine.resumenRitmo()} · ${streamEngine.lineaDeTiempo()}")
+            pause()
+            // pause() solo programa la liberación con RELEASE_GRACE_MS y play() la cancela: la interfaz
+            // nunca se soltaba de verdad y el DAC seguía colgado. Aquí se suelta ya, para que play() haga
+            // un relock real (alt 0 -> alt 1).
+            usbAudioManager.releaseClaim(delayMs = 0L)
+            usbAudioManager.reportDiagnostic("UsbAudioOutput: interfaz liberada de verdad · hilo detenido=${!streamEngine.streaming} · activado=$activated")
+            play()
+            return false
+        }
+        val stalled = streamEngine.streaming && sinceLastUrbMs > UsbAudioTuning.STALL_THRESHOLD_MS
+        if (stalled) {
+            val reapNs = streamEngine.reapStartedAtNs
+            val reapEnCursoMs = if (reapNs == 0L) -1L else (System.nanoTime() - reapNs) / 1_000_000L
+            // DefaultAudioSink will flush and rebuild the output right after this: the audible "jump".
+            usbAudioManager.reportDiagnostic(
+                "UsbAudioOutput.isStalled -> true: ${sinceLastUrbMs}ms sin enviar bloques · espera máxima en reap=${streamEngine.longestReapMs}ms · " +
+                    "${streamEngine.resumenRitmo()} · ${streamEngine.lineaDeTiempo(24)} · último retraso del hilo=${streamEngine.lastLateMs}ms · en búfer=${ringBuffer.availableToRead()} bytes · pausado=$paused · " +
+                    if (reapEnCursoMs >= 0) "esperando al DAC (reap en curso) desde hace ${reapEnCursoMs}ms" else "el hilo NO estaba en reap")
+        }
+        return stalled
     }
 
     override fun addListener(listener: AudioOutput.Listener) {}

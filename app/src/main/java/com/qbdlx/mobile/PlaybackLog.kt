@@ -9,6 +9,7 @@ object PlaybackLog {
     private const val MAX = 80
 
     @Synchronized fun add(context: Context, line: String) {
+        DiagnosticLog.event("EVENTO $line")
         runCatching {
             val f = File(context.filesDir, FILE)
             val old = if (f.exists()) f.readLines() else emptyList()

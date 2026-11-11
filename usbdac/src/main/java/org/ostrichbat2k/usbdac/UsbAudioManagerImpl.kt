@@ -320,7 +320,9 @@ class UsbAudioManagerImpl(
                     it.release()
                 }
                 directPlaybackTrack = null
-                if (active) {
+                if (active && org.ostrichbat2k.usbdac.streaming.UsbTelemetry.sinPistaSilenciosa) {
+                    L.w("UsbAudioManagerImpl: pista silenciosa no creada (interruptor de diagnóstico)")
+                } else if (active) {
                     directPlaybackTrack = buildSilentDirectPlaybackTrack().also { it.play() }
                 }
             } catch (e: RuntimeException) {

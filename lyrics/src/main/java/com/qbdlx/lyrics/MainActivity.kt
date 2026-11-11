@@ -67,7 +67,7 @@ class MainActivity : ComponentActivity() {
     private var inPip by mutableStateOf(false)
     private fun pipOn() = getSharedPreferences("lyrics", MODE_PRIVATE).getBoolean("pip_on_leave", true)
 
-    /** Leaving the app opens the floating bubble; the small picture-in-picture window is only the fallback while the overlay permission is missing. */
+    /** Leaving the app opens the floating bubble (never the picture-in-picture window). */
     private fun bubbleReady() = Settings.canDrawOverlays(this)
 
     private fun pipParams(auto: Boolean) = android.app.PictureInPictureParams.Builder().setAspectRatio(android.util.Rational(239, 100)).also {
@@ -75,18 +75,23 @@ class MainActivity : ComponentActivity() {
     }.build()
 
     /** The floating bubble when it can be shown; otherwise the picture-in-picture window. */
-    private fun enterPip() { if (!FloatingService.show(this, false)) runCatching { enterPictureInPictureMode(pipParams(false)) } }
+    private fun enterPip() {
+        // Solo la burbuja: sin el permiso de superponerse se pide, en vez de abrir la ventanita de imagen en imagen.
+        if (!FloatingService.show(this, false)) runCatching {
+            android.widget.Toast.makeText(this, "Para la burbuja, permite a Q Lyrics mostrarse sobre otras apps.", android.widget.Toast.LENGTH_LONG).show()
+            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:$packageName")))
+        }
+    }
 
     override fun onResume() { super.onResume(); FloatingService.appForeground = true; FloatingService.hideIfAuto(this) }
     override fun onPause() { super.onPause(); FloatingService.appForeground = false }
 
     /** Leaving the app (Home) keeps the lyrics in a small window when the setting is on: automatically on Android 12+, from here before. */
-    fun applyPipSetting() { if (android.os.Build.VERSION.SDK_INT >= 31) runCatching { setPictureInPictureParams(pipParams(pipOn() && !bubbleReady())) } }
+    fun applyPipSetting() { if (android.os.Build.VERSION.SDK_INT >= 31) runCatching { setPictureInPictureParams(pipParams(false)) } }
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         if (!pipOn() || Tracker.state.value.track == null) return
-        if (bubbleReady()) FloatingService.show(this, true)
-        else if (android.os.Build.VERSION.SDK_INT < 31) enterPip()
+        if (bubbleReady()) FloatingService.show(this, true) // sin permiso no se abre nada: nunca la ventana de imagen en imagen
     }
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: android.content.res.Configuration) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig); inPip = isInPictureInPictureMode
@@ -366,6 +371,11 @@ class MainActivity : ComponentActivity() {
                             Text("Poner tiempos solo a las letras sin sincronizar, escuchando la voz (Whisper; gasta batería)", Modifier.weight(1f), fontSize = 13.sp)
                             androidx.compose.material3.Switch(autoW, { autoW = it; Tracker.autoWhisper = it; sp.edit().putBoolean("auto_whisper", it).apply() })
                         }
+                        var autoFix by remember { mutableStateOf(sp.getBoolean("auto_sync_fix", true)) }
+                        Row(Modifier.padding(top = 6.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                            Text("Corregir sola una letra que va adelantada o atrasada (la compara con la canción al cargarla)", Modifier.weight(1f), fontSize = 13.sp)
+                            androidx.compose.material3.Switch(autoFix, { autoFix = it; sp.edit().putBoolean("auto_sync_fix", it).apply() })
+                        }
                         Row(Modifier.padding(top = 6.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                             Text("Sincronía: $offset ms", Modifier.weight(1f))
                             TextButton({ setOffset((offset - 250).coerceIn(-10_000, 10_000)) }) { Text("−", fontSize = 20.sp) }
@@ -437,6 +447,7 @@ class MainActivity : ComponentActivity() {
                         var fAlpha by remember { mutableFloatStateOf(sp.getInt("float_alpha", 100).toFloat()) }
                         var fScale by remember { mutableFloatStateOf(sp.getFloat("float_scale", 1f)) }
                         var fWidth by remember { mutableFloatStateOf(sp.getInt("float_w", (resources.displayMetrics.widthPixels * 0.86f).toInt()).toFloat()) }
+                        var fHeight by remember { mutableFloatStateOf(sp.getInt("float_h", 0).toFloat()) }
                         var fBubble by remember { mutableFloatStateOf(sp.getInt("float_bubble_dp", 60).toFloat()) }
                         var fFolded by remember { mutableStateOf(sp.getBoolean("float_min", false)) }
                         var fNext by remember { mutableStateOf(sp.getBoolean("float_next", true)) }
@@ -452,6 +463,7 @@ class MainActivity : ComponentActivity() {
                         slider("Transparencia del fondo: ${100 - fAlpha.toInt()} %", fAlpha, 0f..100f) { fAlpha = it; sp.edit().putInt("float_alpha", it.toInt()).apply() }
                         slider("Tamaño del texto: ${(fScale * 100).toInt()} %", fScale, 0.6f..2.2f) { fScale = it; sp.edit().putFloat("float_scale", it).apply() }
                         slider("Ancho: ${(fWidth / resources.displayMetrics.density).toInt()} dp", fWidth.coerceIn(minW, maxW), minW..maxW) { fWidth = it; sp.edit().putInt("float_w", it.toInt()).apply() }
+                        slider(if (fHeight < 1f) "Alto: automático" else "Alto: ${(fHeight / resources.displayMetrics.density).toInt()} dp", fHeight, 0f..(resources.displayMetrics.heightPixels * 0.6f)) { fHeight = if (it < 40 * resources.displayMetrics.density) 0f else it; sp.edit().putInt("float_h", fHeight.toInt()).apply() }
                         slider("Tamaño de la burbuja: ${fBubble.toInt()} dp", fBubble, 28f..80f) { fBubble = it; sp.edit().putInt("float_bubble_dp", it.toInt()).apply() }
                         @Composable fun toggle(label: String, on: Boolean, key: String, set: (Boolean) -> Unit) = Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                             Text(label, Modifier.weight(1f), fontSize = 13.sp)
@@ -464,7 +476,7 @@ class MainActivity : ComponentActivity() {
                         toggle("Pegarse al borde al soltarla", fSnap, "float_snap") { fSnap = it }
                         Text("En la ventana, arrastra ⤡ para cambiar el ancho (izquierda/derecha) y el texto (arriba/abajo).", style = small)
                         TextButton({
-                            sp.edit().remove("float_alpha").remove("float_scale").remove("float_w").remove("float_bubble_dp").remove("float_bubble").remove("float_min").remove("float_bar").remove("float_next").remove("float_snap").apply()
+                            sp.edit().remove("float_alpha").remove("float_scale").remove("float_w").remove("float_h").remove("float_bubble_dp").remove("float_bubble").remove("float_min").remove("float_bar").remove("float_next").remove("float_snap").apply()
                             fAlpha = 100f; fScale = 1f; fWidth = resources.displayMetrics.widthPixels * 0.86f; fBubble = 46f; fFolded = false; fBar = true; fNext = true; fSnap = false
                         }) { Text("Restablecer el aspecto") }
                     }
@@ -616,7 +628,7 @@ class MainActivity : ComponentActivity() {
                                 else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = when (dist) { 1 -> .8f; 2 -> .6f; else -> .45f }),
                                 tween(ms, easing = UiEaseOut), label = "color",
                             )
-                            val lit = if (on && Tracker.karaoke && state.status == Status.SYNCED) Lrc.litChars(l.text, l.timeMs, state.lines.getOrNull(i + 1)?.timeMs, clock.longValue, l.endMs) else 0
+                            val lit = if (on && Tracker.karaoke && state.status == Status.SYNCED) Lrc.litChars(l.text, l.timeMs, state.lines.getOrNull(i + 1)?.timeMs, clock.longValue, l.endMs, l.marks) else 0
                             val shown = if (lit > 0) androidx.compose.ui.text.buildAnnotatedString {
                                 append(l.text)
                                 addStyle(androidx.compose.ui.text.SpanStyle(color = MaterialTheme.colorScheme.onSurface), 0, lit)
